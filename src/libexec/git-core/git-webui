@@ -305,6 +305,44 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             result = delete_branch(WebUiRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("force", False))
             self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/branches/compare":
+            if not self.ensure_repo_selected():
+                return
+            payload = self.read_json_body()
+            result = compare_branches(
+                WebUiRequestHandler.REPO_ROOT,
+                payload.get("source_ref"),
+                payload.get("target_ref"),
+            )
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/branches/merge":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected():
+                return
+            payload = self.read_json_body()
+            result = merge_branch(
+                WebUiRequestHandler.REPO_ROOT,
+                payload.get("source_ref"),
+                payload.get("target_ref"),
+                False,
+            )
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/branches/squash-merge":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected():
+                return
+            payload = self.read_json_body()
+            result = merge_branch(
+                WebUiRequestHandler.REPO_ROOT,
+                payload.get("source_ref"),
+                payload.get("target_ref"),
+                True,
+            )
+            self.send_json(result["status"], result["payload"])
         elif self.path == "/git":
             if not self.ensure_repo_selected():
                 return
@@ -519,6 +557,13 @@ def run_git_capture(repo_root, git_args):
         }
 
 
+def get_current_branch_name(repo_root):
+    result = run_git_capture(repo_root, ["symbolic-ref", "--quiet", "--short", "HEAD"])
+    if result["returncode"] == 0:
+        return result["stdout"].strip()
+    return None
+
+
 def resolve_repo_root(path):
     if not path:
         return None
@@ -677,7 +722,7 @@ def build_branch_action_response(repo_root, result, success_message):
         }
     return {
         "status": 400,
-        "payload": {"error": result["stderr"] or "Git command failed."},
+        "payload": {"error": result["stderr"] or result["stdout"] or "Git command failed."},
     }
 
 
@@ -711,6 +756,74 @@ def delete_branch(repo_root, local_name, force):
     command = ["branch", "-D" if force else "-d", local_name.strip()]
     result = run_git_capture(repo_root, command)
     return build_branch_action_response(repo_root, result, "Deleted branch " + local_name.strip())
+
+
+def compare_branches(repo_root, source_ref, target_ref):
+    if not source_ref or len(source_ref.strip()) == 0:
+        return {"status": 400, "payload": {"error": "A source branch is required for compare."}}
+    source_ref = source_ref.strip()
+    if not target_ref or len(target_ref.strip()) == 0:
+        target_ref = get_current_branch_name(repo_root)
+    if not target_ref:
+        return {"status": 400, "payload": {"error": "A target branch is required for compare."}}
+    target_ref = target_ref.strip()
+    summary = run_git_capture(repo_root, ["diff", "--stat", target_ref + "..." + source_ref])
+    diff = run_git_capture(repo_root, ["diff", target_ref + "..." + source_ref])
+    if summary["returncode"] != 0 or diff["returncode"] != 0:
+        return {
+            "status": 400,
+            "payload": {"error": summary["stderr"] or diff["stderr"] or summary["stdout"] or diff["stdout"] or "Compare failed."},
+        }
+    return {
+        "status": 200,
+        "payload": {
+            "source_ref": source_ref,
+            "target_ref": target_ref,
+            "summary": summary["stdout"],
+            "diff": diff["stdout"],
+        },
+    }
+
+
+def merge_branch(repo_root, source_ref, target_ref, squash):
+    if not source_ref or len(source_ref.strip()) == 0:
+        return {"status": 400, "payload": {"error": "A source branch is required for merge."}}
+    source_ref = source_ref.strip()
+    current_branch = get_current_branch_name(repo_root)
+    if not target_ref or len(target_ref.strip()) == 0:
+        target_ref = current_branch
+    if not target_ref:
+        return {"status": 400, "payload": {"error": "A target branch is required for merge."}}
+    target_ref = target_ref.strip()
+
+    if current_branch != target_ref:
+        checkout_result = run_git_capture(repo_root, ["checkout", target_ref])
+        if checkout_result["returncode"] != 0:
+            return {
+                "status": 400,
+                "payload": {"error": checkout_result["stderr"] or checkout_result["stdout"] or "Unable to checkout target branch."},
+            }
+
+    merge_args = ["merge"]
+    if squash:
+        merge_args.append("--squash")
+    merge_args.append(source_ref)
+    result = run_git_capture(repo_root, merge_args)
+    if result["returncode"] == 0:
+        return build_branch_action_response(
+            repo_root,
+            result,
+            ("Squashed " if squash else "Merged ") + source_ref + " into " + target_ref,
+        )
+
+    return {
+        "status": 409,
+        "payload": {
+            "error": result["stderr"] or result["stdout"] or "Git merge failed.",
+            "message": ("Squash merge" if squash else "Merge") + " needs attention.",
+            "branches": get_branch_entries(repo_root),
+        },
+    }
 
 
 def get_repo_summary(repo_root, active=False):

@@ -359,10 +359,38 @@ body {
 
     .repo-branch-card-actions {
         margin-top: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
     }
 
     .repo-branch-empty {
         color: rgba(247, 244, 236, 0.62);
+    }
+}
+
+#branch-compare-modal {
+
+    .modal-content {
+        background: #fcfbf7;
+    }
+
+    .branch-compare-summary,
+    .branch-compare-diff {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #f4f1ea;
+        border: 1px solid rgba(34, 34, 34, 0.08);
+        border-radius: 10px;
+        padding: 12px;
+        font-size: 12px;
+        line-height: 1.45;
+    }
+
+    .branch-compare-diff {
+        max-height: 28em;
+        overflow-y: auto;
+        margin-bottom: 0;
     }
 }
 

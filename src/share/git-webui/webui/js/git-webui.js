@@ -96,7 +96,7 @@ webui.apiGet = function(url, callback) {
     });
 }
 
-webui.apiPost = function(url, payload, callback) {
+webui.apiPost = function(url, payload, callback, errorCallback) {
     $.ajax({
         url: url,
         method: "POST",
@@ -106,7 +106,11 @@ webui.apiPost = function(url, payload, callback) {
     })
     .done(callback)
     .fail(function(xhr) {
-        webui.showError(webui.parseApiError(xhr, "Request failed"));
+        if (errorCallback) {
+            errorCallback(xhr);
+        } else {
+            webui.showError(webui.parseApiError(xhr, "Request failed"));
+        }
     });
 }
 
@@ -116,6 +120,34 @@ webui.escapeHtml = function(text) {
 
 webui.reloadApp = function() {
     document.location.reload();
+}
+
+webui.reloadWithPostAction = function(viewName) {
+    if (viewName) {
+        sessionStorage.setItem("git-webui-post-action", viewName);
+    }
+    webui.reloadApp();
+}
+
+webui.setFlashMessage = function(title, message, type) {
+    sessionStorage.setItem("git-webui-flash", JSON.stringify({
+        title: title,
+        message: message,
+        type: type || "info"
+    }));
+}
+
+webui.consumeFlashMessage = function() {
+    var payload = sessionStorage.getItem("git-webui-flash");
+    if (!payload) {
+        return null;
+    }
+    sessionStorage.removeItem("git-webui-flash");
+    try {
+        return JSON.parse(payload);
+    } catch (error) {
+        return null;
+    }
 }
 
 webui.formatRepoCounts = function(repo) {
@@ -398,6 +430,15 @@ webui.RepoChrome = function(mainView) {
 
     var self = this;
 
+    self.currentBranch = function() {
+        for (var i = 0; i < webui.branches.length; ++i) {
+            if (webui.branches[i].current) {
+                return webui.branches[i];
+            }
+        }
+        return null;
+    }
+
     self.loadBranches = function() {
         if (!webui.repoPath) {
             webui.branches = [];
@@ -453,6 +494,65 @@ webui.RepoChrome = function(mainView) {
             remote_name: event.currentTarget.getAttribute("data-remote") || null,
         };
         webui.apiPost("/api/branches/checkout", payload, webui.reloadApp);
+    }
+
+    self.compareBranch = function(event) {
+        var current = self.currentBranch();
+        var sourceRef = event.currentTarget.getAttribute("data-ref") || null;
+        var targetRef = current && current.local_name ? current.local_name : null;
+        webui.apiPost("/api/branches/compare", {
+            source_ref: sourceRef,
+            target_ref: targetRef,
+        }, function(data) {
+            $(".branch-compare-title", self.compareModal).text(data.source_ref + " compared to " + data.target_ref);
+            $(".branch-compare-summary", self.compareModal).text(data.summary || "No diff summary available.");
+            $(".branch-compare-diff", self.compareModal).text(data.diff || "No diff output.");
+            $(self.compareModal).modal("show");
+        });
+    }
+
+    self.mergeBranch = function(event) {
+        var sourceRef = event.currentTarget.getAttribute("data-ref") || null;
+        var current = self.currentBranch();
+        var targetRef = current && current.local_name ? current.local_name : null;
+        if (!sourceRef || !targetRef) {
+            return;
+        }
+        if (!window.confirm("Merge '" + sourceRef + "' into '" + targetRef + "'?")) {
+            return;
+        }
+        webui.apiPost("/api/branches/merge", {
+            source_ref: sourceRef,
+            target_ref: targetRef,
+        }, function(data) {
+            webui.setFlashMessage("Merge completed", data.message || ("Merged " + sourceRef + " into " + targetRef), "info");
+            webui.reloadWithPostAction("history");
+        }, function(xhr) {
+            webui.setFlashMessage("Merge needs attention", webui.parseApiError(xhr, "Merge failed"), "error");
+            webui.reloadWithPostAction("workspace");
+        });
+    }
+
+    self.squashBranch = function(event) {
+        var sourceRef = event.currentTarget.getAttribute("data-ref") || null;
+        var current = self.currentBranch();
+        var targetRef = current && current.local_name ? current.local_name : null;
+        if (!sourceRef || !targetRef) {
+            return;
+        }
+        if (!window.confirm("Squash merge '" + sourceRef + "' into '" + targetRef + "'?")) {
+            return;
+        }
+        webui.apiPost("/api/branches/squash-merge", {
+            source_ref: sourceRef,
+            target_ref: targetRef,
+        }, function(data) {
+            webui.setFlashMessage("Squash merge completed", data.message || ("Squashed " + sourceRef + " into " + targetRef), "info");
+            webui.reloadWithPostAction("workspace");
+        }, function(xhr) {
+            webui.setFlashMessage("Squash merge needs attention", webui.parseApiError(xhr, "Squash merge failed"), "error");
+            webui.reloadWithPostAction("workspace");
+        });
     }
 
     self.deleteBranch = function(event) {
@@ -533,6 +633,21 @@ webui.RepoChrome = function(mainView) {
                 .attr("data-remote", branch.remote_name || "")
                 .prop("disabled", branch.current || webui.viewonly)
                 .click(self.checkoutBranch)
+                .appendTo(actions);
+            $("<button type=\"button\" class=\"btn btn-default\">Compare</button>")
+                .attr("data-ref", refName)
+                .prop("disabled", !refName || branch.current)
+                .click(self.compareBranch)
+                .appendTo(actions);
+            $("<button type=\"button\" class=\"btn btn-warning\">Merge</button>")
+                .attr("data-ref", refName)
+                .prop("disabled", !refName || branch.current || webui.viewonly || !self.currentBranch() || !self.currentBranch().local_name)
+                .click(self.mergeBranch)
+                .appendTo(actions);
+            $("<button type=\"button\" class=\"btn btn-info\">Squash</button>")
+                .attr("data-ref", refName)
+                .prop("disabled", !refName || branch.current || webui.viewonly || !self.currentBranch() || !self.currentBranch().local_name)
+                .click(self.squashBranch)
                 .appendTo(actions);
             if (branch.local_name) {
                 $("<button type=\"button\" class=\"btn btn-danger\">Delete</button>")
@@ -665,9 +780,26 @@ webui.RepoChrome = function(mainView) {
                             '</div>' +
                         '</div>')[0];
 
+    self.compareModal = $(   '<div class="modal fade" id="branch-compare-modal" tabindex="-1" role="dialog">' +
+                                '<div class="modal-dialog modal-lg" role="document">' +
+                                    '<div class="modal-content">' +
+                                        '<div class="modal-header">' +
+                                            '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
+                                            '<div class="repo-picker-eyebrow">Branch Compare</div>' +
+                                            '<h4 class="modal-title branch-compare-title">Compare Branches</h4>' +
+                                        '</div>' +
+                                        '<div class="modal-body">' +
+                                            '<pre class="branch-compare-summary"></pre>' +
+                                            '<pre class="branch-compare-diff"></pre>' +
+                                        '</div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>')[0];
+
     $(".repo-chrome-browse", self.element).click(self.openPicker);
     $(".repo-chrome-open-workspace", self.element).click(self.openWorkspacePicker);
     $(".repo-branch-create-button", self.element).click(self.createBranch);
+    $("body").append(self.compareModal);
 };
 
 webui.NoRepoView = function(mainView) {
@@ -2381,6 +2513,12 @@ function MainUi() {
     }
 
     self.bootstrap = function(context) {
+        var postAction = sessionStorage.getItem("git-webui-post-action");
+        if (postAction) {
+            sessionStorage.removeItem("git-webui-post-action");
+        }
+        var flashMessage = webui.consumeFlashMessage();
+
         webui.repo = context.repo_name || "/";
         webui.repoPath = context.repo_path;
         webui.recentRepos = context.recent_repos || [];
@@ -2416,8 +2554,19 @@ function MainUi() {
             if (!webui.viewonly) {
                 self.workspaceView = new webui.WorkspaceView(self);
             }
+            if (postAction == "workspace" && self.workspaceView) {
+                self.workspaceView.update("stage");
+            }
         } else {
             self.switchTo(new webui.NoRepoView(self).element);
+        }
+
+        if (flashMessage) {
+            webui.showModal(
+                flashMessage.title || (flashMessage.type == "error" ? "Error" : "Result"),
+                flashMessage.message || "",
+                flashMessage.type == "error" ? "error" : "info"
+            );
         }
     }
 
