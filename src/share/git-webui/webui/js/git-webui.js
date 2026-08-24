@@ -852,23 +852,25 @@ webui.RepoChrome = function(mainView) {
                                 '<div class="repo-chrome-recent-title">Recent Repositories</div>' +
                                 '<div class="repo-chrome-recent-list repo-chrome-repo-recents"></div>' +
                             '</div>' +
-                            '<div class="repo-workspace-shell">' +
-                                '<div class="repo-workspace-header">' +
-                                    '<div class="repo-chrome-recent-title">Workspace Rail</div>' +
-                                    '<div class="repo-workspace-path"></div>' +
-                                '</div>' +
-                                '<div class="repo-workspace-list"></div>' +
-                            '</div>' +
-                            '<div class="repo-branch-shell">' +
-                                '<div class="repo-workspace-header">' +
-                                    '<div class="repo-chrome-recent-title">Branches</div>' +
-                                    '<div class="repo-branch-create">' +
-                                        '<input type="text" class="form-control input-sm repo-branch-create-name" placeholder="new branch name">' +
-                                        '<select class="form-control input-sm repo-branch-create-start"></select>' +
-                                        '<button type="button" class="btn btn-success btn-sm repo-branch-create-button">Create + Checkout</button>' +
+                            '<div class="repo-chrome-grid">' +
+                                '<div class="repo-workspace-shell">' +
+                                    '<div class="repo-workspace-header">' +
+                                        '<div class="repo-chrome-recent-title">Workspace Rail</div>' +
+                                        '<div class="repo-workspace-path"></div>' +
                                     '</div>' +
+                                    '<div class="repo-workspace-list"></div>' +
                                 '</div>' +
-                                '<div class="repo-branch-list"></div>' +
+                                '<div class="repo-branch-shell">' +
+                                    '<div class="repo-workspace-header">' +
+                                        '<div class="repo-chrome-recent-title">Branches</div>' +
+                                        '<div class="repo-branch-create">' +
+                                            '<input type="text" class="form-control input-sm repo-branch-create-name" placeholder="new branch name">' +
+                                            '<select class="form-control input-sm repo-branch-create-start"></select>' +
+                                            '<button type="button" class="btn btn-success btn-xs repo-branch-create-button">Create</button>' +
+                                        '</div>' +
+                                    '</div>' +
+                                    '<div class="repo-branch-list"></div>' +
+                                '</div>' +
                             '</div>' +
                         '</div>')[0];
 

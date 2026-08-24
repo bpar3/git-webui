@@ -206,6 +206,22 @@ body {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(143, 211, 255, 0.18);
 }
+#repo-chrome .repo-chrome-grid {
+  display: grid;
+  grid-template-columns: minmax(22em, 0.9fr) minmax(0, 1.5fr);
+  gap: 12px;
+  margin-top: 12px;
+  align-items: start;
+}
+@media (max-width: 1180px) {
+  #repo-chrome .repo-chrome-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #repo-chrome .repo-workspace-shell,
+  #repo-chrome .repo-branch-shell {
+    margin-top: 0;
+  }
+}
 #repo-chrome .repo-workspace-header {
   display: flex;
   display: -webkit-flex;
@@ -219,7 +235,10 @@ body {
 }
 #repo-chrome .repo-workspace-path {
   color: rgba(247, 244, 236, 0.72);
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 24em;
 }
 #repo-chrome .repo-workspace-list {
   display: flex;
@@ -230,6 +249,8 @@ body {
   -webkit-flex-direction: column;
   gap: 8px;
   margin-top: 10px;
+  max-height: 8.75em;
+  overflow-y: auto;
 }
 #repo-chrome .repo-workspace-card {
   width: 100%;
@@ -313,14 +334,15 @@ body {
   display: -webkit-flex;
   min-height: 0;
   min-width: 0;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
 }
 #repo-chrome .repo-branch-create-name {
-  min-width: 12em;
+  min-width: 10em;
 }
 #repo-chrome .repo-branch-create-start {
-  min-width: 14em;
+  min-width: 11em;
 }
 #repo-chrome .repo-branch-list {
   display: flex;
@@ -331,6 +353,8 @@ body {
   -webkit-flex-direction: column;
   gap: 0;
   margin-top: 10px;
+  max-height: 14.5em;
+  overflow-y: auto;
 }
 #repo-chrome .repo-branch-table-head {
   display: grid;
