@@ -24,6 +24,7 @@ webui.recentRepos = [];
 webui.workspacePath = null;
 webui.recentWorkspaces = [];
 webui.workspaceRepos = [];
+webui.branches = [];
 webui.hostname = "localhost";
 webui.viewonly = false;
 
@@ -144,6 +145,23 @@ webui.formatRepoTracking = function(repo) {
     }
     if (parts.length == 0) {
         return "in sync";
+    }
+    return parts.join(" • ");
+}
+
+webui.formatBranchTracking = function(branch) {
+    var parts = [];
+    if (branch.upstream) {
+        parts.push(branch.upstream);
+    }
+    if (branch.ahead > 0) {
+        parts.push("ahead " + branch.ahead);
+    }
+    if (branch.behind > 0) {
+        parts.push("behind " + branch.behind);
+    }
+    if (parts.length == 0) {
+        parts.push(branch.status);
     }
     return parts.join(" • ");
 }
@@ -380,6 +398,19 @@ webui.RepoChrome = function(mainView) {
 
     var self = this;
 
+    self.loadBranches = function() {
+        if (!webui.repoPath) {
+            webui.branches = [];
+            self.renderBranches();
+            return;
+        }
+        webui.apiGet("/api/branches", function(data) {
+            webui.branches = data.branches || [];
+            self.renderBranches();
+            self.populateBranchStartPoints();
+        });
+    }
+
     self.openPicker = function() {
         mainView.repoPicker.open(webui.repoPath, "repo");
     }
@@ -407,6 +438,111 @@ webui.RepoChrome = function(mainView) {
         if (path) {
             mainView.repoPicker.selectRepo(path);
         }
+    }
+
+    self.viewBranch = function(event) {
+        var refName = event.currentTarget.getAttribute("data-ref");
+        if (refName && mainView.sideBarView) {
+            mainView.sideBarView.selectRef(refName);
+        }
+    }
+
+    self.checkoutBranch = function(event) {
+        var payload = {
+            local_name: event.currentTarget.getAttribute("data-local") || null,
+            remote_name: event.currentTarget.getAttribute("data-remote") || null,
+        };
+        webui.apiPost("/api/branches/checkout", payload, webui.reloadApp);
+    }
+
+    self.deleteBranch = function(event) {
+        var localName = event.currentTarget.getAttribute("data-local");
+        if (!localName) {
+            return;
+        }
+        if (!window.confirm("Delete branch '" + localName + "'?")) {
+            return;
+        }
+        webui.apiPost("/api/branches/delete", {local_name: localName}, webui.reloadApp);
+    }
+
+    self.createBranch = function() {
+        var name = $(".repo-branch-create-name", self.element).val();
+        var startPoint = $(".repo-branch-create-start", self.element).val();
+        webui.apiPost("/api/branches/create", {
+            name: name,
+            start_point: startPoint,
+            checkout: true,
+        }, webui.reloadApp);
+    }
+
+    self.populateBranchStartPoints = function() {
+        var select = $(".repo-branch-create-start", self.element);
+        select.empty();
+        webui.branches.forEach(function(branch) {
+            var refName = branch.local_name || branch.remote_name;
+            if (!refName) {
+                return;
+            }
+            $("<option>").val(refName).text(refName).appendTo(select);
+        });
+        var current = webui.branches.filter(function(branch) { return branch.current; })[0];
+        if (current) {
+            select.val(current.local_name || current.remote_name);
+        }
+    }
+
+    self.renderBranches = function() {
+        var branchList = $(".repo-branch-list", self.element);
+        branchList.empty();
+        if (!webui.repoPath) {
+            $('<div class="repo-branch-empty">Open a repository to inspect and manage branches.</div>').appendTo(branchList);
+            return;
+        }
+        if (webui.branches.length == 0) {
+            $('<div class="repo-branch-empty">No branches found in this repository yet.</div>').appendTo(branchList);
+            return;
+        }
+
+        webui.branches.forEach(function(branch) {
+            var refName = branch.local_name || branch.remote_name || "";
+            var card = $( '<div class="repo-branch-card">' +
+                            '<div class="repo-branch-card-top">' +
+                                '<div class="repo-branch-card-title"></div>' +
+                                '<div class="repo-branch-card-state"></div>' +
+                            '</div>' +
+                            '<div class="repo-branch-card-meta repo-branch-card-track"></div>' +
+                            '<div class="repo-branch-card-meta repo-branch-card-updated"></div>' +
+                            '<div class="repo-branch-card-subject"></div>' +
+                            '<div class="repo-branch-card-actions btn-group btn-group-xs"></div>' +
+                        '</div>');
+            $(".repo-branch-card-title", card).text(branch.display_name);
+            $(".repo-branch-card-state", card).text(branch.current ? "current" : branch.status);
+            $(".repo-branch-card-track", card).text(webui.formatBranchTracking(branch));
+            $(".repo-branch-card-updated", card).text(branch.last_updated || "");
+            $(".repo-branch-card-subject", card).text(branch.subject || "No recent commit subject");
+
+            var actions = $(".repo-branch-card-actions", card);
+            $("<button type=\"button\" class=\"btn btn-default\">View</button>")
+                .attr("data-ref", refName)
+                .prop("disabled", !refName)
+                .click(self.viewBranch)
+                .appendTo(actions);
+            $("<button type=\"button\" class=\"btn btn-primary\">Checkout</button>")
+                .attr("data-local", branch.local_name || "")
+                .attr("data-remote", branch.remote_name || "")
+                .prop("disabled", branch.current || webui.viewonly)
+                .click(self.checkoutBranch)
+                .appendTo(actions);
+            if (branch.local_name) {
+                $("<button type=\"button\" class=\"btn btn-danger\">Delete</button>")
+                    .attr("data-local", branch.local_name)
+                    .prop("disabled", !branch.can_delete || webui.viewonly)
+                    .click(self.deleteBranch)
+                    .appendTo(actions);
+            }
+            branchList.append(card);
+        });
     }
 
     self.renderWorkspaceRepos = function() {
@@ -447,6 +583,7 @@ webui.RepoChrome = function(mainView) {
         $(".repo-chrome-browse", self.element).prop("disabled", webui.viewonly);
         $(".repo-chrome-open-workspace", self.element).prop("disabled", webui.viewonly);
         $(".repo-workspace-path", self.element).text(webui.workspacePath || "No folder-of-repos selected yet.");
+        $(".repo-branch-create-button", self.element).prop("disabled", webui.viewonly || !webui.repoPath);
 
         var recentWorkspaceList = $(".repo-chrome-workspace-recents", self.element);
         recentWorkspaceList.empty();
@@ -485,6 +622,7 @@ webui.RepoChrome = function(mainView) {
         }
 
         self.renderWorkspaceRepos();
+        self.loadBranches();
     }
 
     self.element = $(   '<div id="repo-chrome">' +
@@ -506,6 +644,17 @@ webui.RepoChrome = function(mainView) {
                                 '</div>' +
                                 '<div class="repo-workspace-list"></div>' +
                             '</div>' +
+                            '<div class="repo-branch-shell">' +
+                                '<div class="repo-workspace-header">' +
+                                    '<div class="repo-chrome-recent-title">Branches</div>' +
+                                    '<div class="repo-branch-create">' +
+                                        '<input type="text" class="form-control input-sm repo-branch-create-name" placeholder="new branch name">' +
+                                        '<select class="form-control input-sm repo-branch-create-start"></select>' +
+                                        '<button type="button" class="btn btn-success btn-sm repo-branch-create-button">Create + Checkout</button>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<div class="repo-branch-list"></div>' +
+                            '</div>' +
                             '<div class="repo-chrome-recent repo-chrome-workspace-section">' +
                                 '<div class="repo-chrome-recent-title">Recent Repo Folders</div>' +
                                 '<div class="repo-chrome-recent-list repo-chrome-workspace-recents"></div>' +
@@ -518,6 +667,7 @@ webui.RepoChrome = function(mainView) {
 
     $(".repo-chrome-browse", self.element).click(self.openPicker);
     $(".repo-chrome-open-workspace", self.element).click(self.openWorkspacePicker);
+    $(".repo-branch-create-button", self.element).click(self.createBranch);
 };
 
 webui.NoRepoView = function(mainView) {

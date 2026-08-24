@@ -198,6 +198,14 @@ body {
         border: 1px solid rgba(143, 211, 255, 0.18);
     }
 
+    .repo-branch-shell {
+        margin-top: 16px;
+        padding: 16px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(143, 211, 255, 0.18);
+    }
+
     .repo-workspace-header {
         .display-flex();
         .align-items(baseline);
@@ -281,6 +289,79 @@ body {
     }
 
     .repo-workspace-empty {
+        color: rgba(247, 244, 236, 0.62);
+    }
+
+    .repo-branch-create {
+        .display-flex();
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .repo-branch-create-name {
+        min-width: 12em;
+    }
+
+    .repo-branch-create-start {
+        min-width: 14em;
+    }
+
+    .repo-branch-list {
+        .display-flex();
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+    }
+
+    .repo-branch-card {
+        width: 19em;
+        min-height: 11em;
+        padding: 14px;
+        border-radius: 14px;
+        background: rgba(7, 16, 22, 0.48);
+        border: 1px solid rgba(143, 211, 255, 0.16);
+    }
+
+    .repo-branch-card-top {
+        .display-flex();
+        .align-items(center);
+        gap: 12px;
+        justify-content: space-between;
+    }
+
+    .repo-branch-card-title {
+        font-size: 16px;
+        font-weight: bold;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .repo-branch-card-state {
+        flex-shrink: 0;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgba(143, 211, 255, 0.16);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    .repo-branch-card-meta,
+    .repo-branch-card-subject {
+        margin-top: 8px;
+        color: rgba(247, 244, 236, 0.82);
+    }
+
+    .repo-branch-card-subject {
+        min-height: 2.8em;
+    }
+
+    .repo-branch-card-actions {
+        margin-top: 12px;
+    }
+
+    .repo-branch-empty {
         color: rgba(247, 244, 236, 0.62);
     }
 }

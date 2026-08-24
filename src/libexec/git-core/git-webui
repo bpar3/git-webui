@@ -220,6 +220,10 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 self.send_error(403)
                 return
             self.send_json(200, get_workspace_payload(WebUiRequestHandler.WORKSPACE_ROOT, WebUiRequestHandler.REPO_ROOT))
+        elif self.path == "/api/branches":
+            if not self.ensure_repo_selected():
+                return
+            self.send_json(200, {"branches": get_branch_entries(WebUiRequestHandler.REPO_ROOT)})
         elif self.path.startswith("/git/cat-file/"):
             if not self.ensure_repo_selected():
                 return
@@ -269,6 +273,38 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             if len(workspace_repos) > 0 and not any(repo["active"] for repo in workspace_repos):
                 WebUiRequestHandler.set_repo_root(workspace_repos[0]["path"])
             self.send_json(200, self.get_repo_context())
+        elif self.path == "/api/branches/checkout":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected():
+                return
+            payload = self.read_json_body()
+            result = checkout_branch(WebUiRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("remote_name"))
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/branches/create":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected():
+                return
+            payload = self.read_json_body()
+            result = create_branch(
+                WebUiRequestHandler.REPO_ROOT,
+                payload.get("name"),
+                payload.get("start_point"),
+                payload.get("checkout", True),
+            )
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/branches/delete":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected():
+                return
+            payload = self.read_json_body()
+            result = delete_branch(WebUiRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("force", False))
+            self.send_json(result["status"], result["payload"])
         elif self.path == "/git":
             if not self.ensure_repo_selected():
                 return
@@ -455,6 +491,34 @@ def get_app_state_dir():
     return os.path.join(os.path.expanduser("~"), ".config", "git-webui")
 
 
+def decode_output(data):
+    if sys.version > '3' and isinstance(data, bytes):
+        return codecs.decode(data, "utf-8")
+    return data
+
+
+def run_git_capture(repo_root, git_args):
+    try:
+        git = subprocess.Popen(
+            ["git", "-c", "color.ui=false"] + git_args,
+            cwd=repo_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        stdout, stderr = git.communicate()
+        return {
+            "returncode": git.returncode,
+            "stdout": decode_output(stdout),
+            "stderr": decode_output(stderr),
+        }
+    except OSError as error:
+        return {
+            "returncode": 1,
+            "stdout": "",
+            "stderr": str(error),
+        }
+
+
 def resolve_repo_root(path):
     if not path:
         return None
@@ -480,6 +544,173 @@ def resolve_repo_root(path):
 
 def looks_like_git_root(path):
     return os.path.exists(os.path.join(path, ".git"))
+
+
+def parse_track_details(track):
+    ahead = 0
+    behind = 0
+    if not track:
+        return ahead, behind
+    track = track.strip()
+    if track.startswith("[") and track.endswith("]"):
+        track = track[1:-1]
+    for item in track.split(","):
+        item = item.strip()
+        if item.startswith("ahead "):
+            ahead = int(item[6:])
+        elif item.startswith("behind "):
+            behind = int(item[7:])
+    return ahead, behind
+
+
+def parse_for_each_ref_line(line):
+    fields = line.split("\t")
+    while len(fields) < 6:
+        fields.append("")
+    return {
+        "name": fields[0],
+        "is_current": fields[1] == "*",
+        "upstream": fields[2],
+        "track": fields[3],
+        "date": fields[4],
+        "subject": fields[5],
+    }
+
+
+def get_branch_entries(repo_root):
+    local_refs = run_git_capture(
+        repo_root,
+        [
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)\t%(HEAD)\t%(upstream:short)\t%(upstream:track)\t%(committerdate:relative)\t%(subject)",
+            "refs/heads",
+        ],
+    )
+    remote_refs = run_git_capture(
+        repo_root,
+        [
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)\t%(HEAD)\t%(upstream:short)\t%(upstream:track)\t%(committerdate:relative)\t%(subject)",
+            "refs/remotes",
+        ],
+    )
+    local_branches = []
+    remote_map = {}
+    if local_refs["returncode"] == 0:
+        for line in local_refs["stdout"].splitlines():
+            if line.strip():
+                local_branches.append(parse_for_each_ref_line(line))
+    if remote_refs["returncode"] == 0:
+        for line in remote_refs["stdout"].splitlines():
+            if not line.strip():
+                continue
+            remote_branch = parse_for_each_ref_line(line)
+            if remote_branch["name"].endswith("/HEAD"):
+                continue
+            short_name = remote_branch["name"].split("/", 1)[1] if "/" in remote_branch["name"] else remote_branch["name"]
+            remote_map.setdefault(short_name, []).append(remote_branch)
+
+    branches = []
+    consumed_remote_names = set()
+    for local_branch in local_branches:
+        local_name = local_branch["name"]
+        upstream = local_branch["upstream"]
+        remote_branch = None
+        if upstream:
+            for candidate in remote_map.get(local_name, []):
+                if candidate["name"] == upstream:
+                    remote_branch = candidate
+                    break
+        if remote_branch is None:
+            candidates = remote_map.get(local_name, [])
+            if len(candidates) > 0:
+                remote_branch = candidates[0]
+        if remote_branch is not None:
+            consumed_remote_names.add(remote_branch["name"])
+        ahead, behind = parse_track_details(local_branch["track"])
+        branches.append({
+            "display_name": local_name,
+            "local_name": local_name,
+            "remote_name": remote_branch["name"] if remote_branch is not None else None,
+            "current": local_branch["is_current"],
+            "status": "tracking" if remote_branch is not None else "local-only",
+            "upstream": upstream or (remote_branch["name"] if remote_branch is not None else None),
+            "ahead": ahead,
+            "behind": behind,
+            "last_updated": local_branch["date"] or (remote_branch["date"] if remote_branch is not None else ""),
+            "subject": local_branch["subject"] or (remote_branch["subject"] if remote_branch is not None else ""),
+            "can_delete": not local_branch["is_current"],
+        })
+
+    for remote_candidates in remote_map.values():
+        for remote_branch in remote_candidates:
+            if remote_branch["name"] in consumed_remote_names:
+                continue
+            branches.append({
+                "display_name": remote_branch["name"],
+                "local_name": None,
+                "remote_name": remote_branch["name"],
+                "current": False,
+                "status": "remote-only",
+                "upstream": None,
+                "ahead": 0,
+                "behind": 0,
+                "last_updated": remote_branch["date"],
+                "subject": remote_branch["subject"],
+                "can_delete": False,
+            })
+
+    branches.sort(key=lambda branch: (not branch["current"], branch["status"] == "remote-only", branch["display_name"].lower()))
+    return branches
+
+
+def build_branch_action_response(repo_root, result, success_message):
+    if result["returncode"] == 0:
+        return {
+            "status": 200,
+            "payload": {
+                "message": success_message,
+                "branches": get_branch_entries(repo_root),
+            },
+        }
+    return {
+        "status": 400,
+        "payload": {"error": result["stderr"] or "Git command failed."},
+    }
+
+
+def checkout_branch(repo_root, local_name, remote_name):
+    if local_name:
+        result = run_git_capture(repo_root, ["checkout", local_name])
+        return build_branch_action_response(repo_root, result, "Checked out " + local_name)
+    if remote_name:
+        result = run_git_capture(repo_root, ["checkout", "--track", remote_name])
+        return build_branch_action_response(repo_root, result, "Checked out " + remote_name)
+    return {"status": 400, "payload": {"error": "No branch specified."}}
+
+
+def create_branch(repo_root, name, start_point, checkout):
+    if not name or len(name.strip()) == 0:
+        return {"status": 400, "payload": {"error": "Branch name is required."}}
+    name = name.strip()
+    if checkout:
+        command = ["checkout", "-b", name]
+    else:
+        command = ["branch", name]
+    if start_point and len(start_point.strip()) > 0:
+        command.append(start_point.strip())
+    result = run_git_capture(repo_root, command)
+    return build_branch_action_response(repo_root, result, "Created branch " + name)
+
+
+def delete_branch(repo_root, local_name, force):
+    if not local_name or len(local_name.strip()) == 0:
+        return {"status": 400, "payload": {"error": "Local branch name is required."}}
+    command = ["branch", "-D" if force else "-d", local_name.strip()]
+    result = run_git_capture(repo_root, command)
+    return build_branch_action_response(repo_root, result, "Deleted branch " + local_name.strip())
 
 
 def get_repo_summary(repo_root, active=False):
