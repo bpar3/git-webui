@@ -833,7 +833,6 @@ webui.RepoChrome = function(mainView) {
                             '<div class="repo-chrome-drawer-section" data-drawer="repos">' +
                                 '<div class="repo-chrome-recent-title">Recent Repositories</div>' +
                                 '<div class="repo-chrome-recent-list repo-chrome-repo-recents"></div>' +
-                                '</div>' +
                             '</div>' +
                             '<div class="repo-workspace-shell">' +
                                 '<div class="repo-workspace-header">' +

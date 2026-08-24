@@ -285,20 +285,24 @@ body {
 
     .repo-workspace-list {
         .display-flex();
-        gap: 12px;
-        flex-wrap: wrap;
-        margin-top: 14px;
+        .flex-direction(column);
+        gap: 8px;
+        margin-top: 10px;
     }
 
     .repo-workspace-card {
-        width: 19em;
-        min-height: 8.5em;
-        padding: 14px;
+        width: 100%;
+        min-height: 0;
+        padding: 8px 10px;
         text-align: left;
-        border-radius: 14px;
+        border-radius: 10px;
         background: rgba(7, 16, 22, 0.48);
         color: #f7f4ec;
         border: 1px solid rgba(143, 211, 255, 0.16);
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) auto auto minmax(0, 1.6fr);
+        gap: 10px;
+        align-items: center;
 
         &:hover,
         &:focus,
@@ -313,17 +317,18 @@ body {
     .repo-workspace-card-meta,
     .repo-workspace-card-path {
         display: block;
+        margin: 0;
     }
 
     .repo-workspace-card-top {
         .display-flex();
         .align-items(center);
-        gap: 12px;
+        gap: 8px;
         justify-content: space-between;
     }
 
     .repo-workspace-card-name {
-        font-size: 16px;
+        font-size: 14px;
         font-weight: bold;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -332,24 +337,37 @@ body {
 
     .repo-workspace-card-branch {
         flex-shrink: 0;
-        padding: 3px 8px;
+        padding: 2px 7px;
         border-radius: 999px;
         background: rgba(143, 211, 255, 0.16);
-        font-size: 11px;
+        font-size: 10px;
         letter-spacing: 0.06em;
         text-transform: uppercase;
     }
 
     .repo-workspace-card-meta {
-        margin-top: 8px;
         color: rgba(247, 244, 236, 0.82);
+        font-size: 12px;
+        white-space: nowrap;
     }
 
     .repo-workspace-card-path {
-        margin-top: 12px;
         font-size: 11px;
         opacity: 0.68;
-        word-break: break-all;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: right;
+    }
+
+    @media (max-width: 980px) {
+        .repo-workspace-card {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .repo-workspace-card-path {
+            text-align: left;
+        }
     }
 
     .repo-workspace-empty {
