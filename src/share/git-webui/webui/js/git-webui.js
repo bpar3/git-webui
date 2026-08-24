@@ -664,7 +664,25 @@ webui.RepoChrome = function(mainView) {
             return;
         }
 
-        webui.branches.forEach(function(branch) {
+        $( '<div class="repo-branch-table-head">' +
+                '<div>Name</div>' +
+                '<div>Tracking</div>' +
+                '<div>Updated</div>' +
+                '<div>Commit</div>' +
+                '<div>Actions</div>' +
+            '</div>').appendTo(branchList);
+
+        var branches = webui.branches.slice().sort(function(a, b) {
+            if (a.current != b.current) {
+                return a.current ? -1 : 1;
+            }
+            if (!!a.local_name != !!b.local_name) {
+                return a.local_name ? -1 : 1;
+            }
+            return (a.display_name || "").localeCompare(b.display_name || "");
+        });
+
+        branches.forEach(function(branch) {
             var refName = branch.local_name || branch.remote_name || "";
             var card = $( '<div class="repo-branch-card">' +
                             '<div class="repo-branch-card-top">' +

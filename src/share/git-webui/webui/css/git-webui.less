@@ -390,29 +390,55 @@ body {
 
     .repo-branch-list {
         .display-flex();
-        gap: 12px;
-        flex-wrap: wrap;
-        margin-top: 14px;
+        .flex-direction(column);
+        gap: 0;
+        margin-top: 10px;
+    }
+
+    .repo-branch-table-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(10em, 1fr) 8em minmax(0, 1.5fr) auto;
+        gap: 10px;
+        padding: 0 10px 6px 10px;
+        color: rgba(143, 211, 255, 0.82);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
     }
 
     .repo-branch-card {
-        width: 19em;
-        min-height: 11em;
-        padding: 14px;
-        border-radius: 14px;
+        width: 100%;
+        min-height: 0;
+        padding: 8px 10px;
+        border-radius: 0;
         background: rgba(7, 16, 22, 0.48);
         border: 1px solid rgba(143, 211, 255, 0.16);
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(10em, 1fr) 8em minmax(0, 1.5fr) auto;
+        gap: 10px;
+        align-items: center;
+
+        &:last-of-type {
+            border-bottom-left-radius: 10px;
+            border-bottom-right-radius: 10px;
+        }
+    }
+
+    .repo-branch-table-head + .repo-branch-card {
+        border-top: 1px solid rgba(143, 211, 255, 0.16);
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
     }
 
     .repo-branch-card-top {
         .display-flex();
         .align-items(center);
-        gap: 12px;
+        gap: 8px;
         justify-content: space-between;
     }
 
     .repo-branch-card-title {
-        font-size: 16px;
+        font-size: 14px;
         font-weight: bold;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -421,33 +447,59 @@ body {
 
     .repo-branch-card-state {
         flex-shrink: 0;
-        padding: 3px 8px;
+        padding: 2px 7px;
         border-radius: 999px;
         background: rgba(143, 211, 255, 0.16);
-        font-size: 11px;
+        font-size: 10px;
         letter-spacing: 0.06em;
         text-transform: uppercase;
     }
 
     .repo-branch-card-meta,
     .repo-branch-card-subject {
-        margin-top: 8px;
         color: rgba(247, 244, 236, 0.82);
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .repo-branch-card-subject {
-        min-height: 2.8em;
+        min-height: 0;
     }
 
     .repo-branch-card-actions {
-        margin-top: 12px;
+        margin-top: 0;
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
+        justify-content: flex-end;
     }
 
     .repo-branch-empty {
         color: rgba(247, 244, 236, 0.62);
+    }
+
+    @media (max-width: 1180px) {
+        .repo-branch-table-head {
+            display: none;
+        }
+
+        .repo-branch-card {
+            grid-template-columns: minmax(0, 1fr);
+            gap: 6px;
+            border-radius: 10px;
+            margin-top: 8px;
+            border-top: 1px solid rgba(143, 211, 255, 0.16);
+        }
+
+        .repo-branch-table-head + .repo-branch-card {
+            margin-top: 0;
+        }
+
+        .repo-branch-card-actions {
+            justify-content: flex-start;
+        }
     }
 }
 
