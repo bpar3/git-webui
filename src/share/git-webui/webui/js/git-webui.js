@@ -279,6 +279,10 @@ webui.RepoPicker = function() {
     var self = this;
     self.mode = "repo";
 
+    self.getPickerTitle = function() {
+        return self.mode == "workspace" ? "Select Folder Of Repositories" : "Select Git Repository";
+    }
+
     self.selectWorkspace = function(path) {
         webui.apiPost("/api/workspaces/select", {path: path}, webui.reloadApp);
     }
@@ -297,6 +301,31 @@ webui.RepoPicker = function() {
         } else {
             self.selectRepo(value);
         }
+    }
+
+    self.openNative = function(path, mode) {
+        self.mode = mode || self.mode || "repo";
+        webui.apiPost("/api/fs/pick-directory", {
+            path: path || webui.repoPath || null,
+            title: self.getPickerTitle(),
+        }, function(data) {
+            if (data.unsupported) {
+                webui.showWarning((data.error || "Native folder picker unavailable.") + " Falling back to the built-in browser.");
+                self.open(path, self.mode);
+                return;
+            }
+            if (data.cancelled) {
+                return;
+            }
+            if (self.mode == "workspace") {
+                self.selectWorkspace(data.path);
+            } else {
+                self.selectRepo(data.path);
+            }
+        }, function(xhr) {
+            webui.showWarning(webui.parseApiError(xhr, "Native folder picker unavailable.") + " Falling back to the built-in browser.");
+            self.open(path, self.mode);
+        });
     }
 
     self.loadPath = function(path) {
@@ -453,11 +482,11 @@ webui.RepoChrome = function(mainView) {
     }
 
     self.openPicker = function() {
-        mainView.repoPicker.open(webui.repoPath, "repo");
+        mainView.repoPicker.openNative(webui.repoPath, "repo");
     }
 
     self.openWorkspacePicker = function() {
-        mainView.repoPicker.open(webui.workspacePath || webui.repoPath, "workspace");
+        mainView.repoPicker.openNative(webui.workspacePath || webui.repoPath, "workspace");
     }
 
     self.selectRecentRepo = function(event) {
@@ -814,10 +843,10 @@ webui.NoRepoView = function(mainView) {
                         '</div>')[0];
 
     $(".no-repo-browse", self.element).click(function() {
-        mainView.repoPicker.open(null, "repo");
+        mainView.repoPicker.openNative(null, "repo");
     });
     $(".no-repo-workspace", self.element).click(function() {
-        mainView.repoPicker.open(null, "workspace");
+        mainView.repoPicker.openNative(null, "workspace");
     });
 };
 

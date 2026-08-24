@@ -22,6 +22,7 @@ import os
 import platform
 import posixpath
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -258,6 +259,17 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 return
             WebUiRequestHandler.set_repo_root(repo_root)
             self.send_json(200, self.get_repo_context())
+        elif self.path == "/api/fs/pick-directory":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            payload = self.read_json_body()
+            result = pick_directory_path(
+                payload.get("path"),
+                payload.get("title"),
+                WebUiRequestHandler.REPO_ROOT,
+            )
+            self.send_json(result["status"], result["payload"])
         elif self.path == "/api/workspaces/select":
             if self.is_view_only():
                 self.send_error(403)
@@ -535,6 +547,27 @@ def decode_output(data):
     return data
 
 
+def run_command_capture(command):
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        stdout, stderr = process.communicate()
+        return {
+            "returncode": process.returncode,
+            "stdout": decode_output(stdout),
+            "stderr": decode_output(stderr),
+        }
+    except OSError as error:
+        return {
+            "returncode": 1,
+            "stdout": "",
+            "stderr": str(error),
+        }
+
+
 def run_git_capture(repo_root, git_args):
     try:
         git = subprocess.Popen(
@@ -562,6 +595,154 @@ def get_current_branch_name(repo_root):
     if result["returncode"] == 0:
         return result["stdout"].strip()
     return None
+
+
+def normalize_directory_path(path):
+    if not path:
+        return None
+    path = os.path.realpath(os.path.expanduser(path))
+    if os.path.isdir(path):
+        return path
+    return None
+
+
+def get_default_picker_directory(path, current_repo_root=None):
+    normalized = normalize_directory_path(path)
+    if normalized is not None:
+        return normalized
+    if current_repo_root is not None:
+        repo_parent = normalize_directory_path(os.path.dirname(current_repo_root))
+        if repo_parent is not None:
+            return repo_parent
+    return os.path.expanduser("~")
+
+
+def run_tk_directory_picker(initial_dir, title):
+    if not sys.executable:
+        return {"returncode": 1, "stdout": "", "stderr": "Python executable unavailable."}
+    if not IS_WINDOWS and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        return {"returncode": 1, "stdout": "", "stderr": "No graphical desktop session detected."}
+    script = (
+        "import sys, tkinter as tk\n"
+        "from tkinter import filedialog\n"
+        "root = tk.Tk()\n"
+        "root.withdraw()\n"
+        "root.attributes('-topmost', True)\n"
+        "path = filedialog.askdirectory(initialdir=sys.argv[1], title=sys.argv[2], mustexist=True)\n"
+        "root.destroy()\n"
+        "sys.stdout.write(path or '')\n"
+    )
+    return run_command_capture([sys.executable, "-c", script, initial_dir, title])
+
+
+def run_powershell_directory_picker(initial_dir, title):
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog;"
+        "$dialog.Description = $args[1];"
+        "$dialog.SelectedPath = $args[0];"
+        "$dialog.ShowNewFolderButton = $true;"
+        "$result = $dialog.ShowDialog();"
+        "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($dialog.SelectedPath) }"
+    )
+    return run_command_capture(["powershell", "-NoProfile", "-Command", script, initial_dir, title])
+
+
+def run_osascript_directory_picker(initial_dir, title):
+    script = (
+        "set startPath to POSIX file (item 1 of argv)\n"
+        "set pickedFolder to choose folder with prompt (item 2 of argv) default location startPath\n"
+        "POSIX path of pickedFolder"
+    )
+    return run_command_capture(["osascript", "-e", script, initial_dir, title])
+
+
+def run_zenity_directory_picker(initial_dir, title):
+    filename = initial_dir
+    if filename and not filename.endswith(os.sep):
+        filename += os.sep
+    return run_command_capture([
+        "zenity",
+        "--file-selection",
+        "--directory",
+        "--title=" + title,
+        "--filename=" + filename,
+    ])
+
+
+def run_kdialog_directory_picker(initial_dir, title):
+    return run_command_capture(["kdialog", "--getexistingdirectory", initial_dir, "--title", title])
+
+
+def command_exists(name):
+    return shutil.which(name) is not None
+
+
+def pick_directory_path(path, title, current_repo_root=None):
+    initial_dir = get_default_picker_directory(path, current_repo_root)
+    title = title or "Select a folder"
+
+    results = []
+    if IS_WINDOWS:
+        if command_exists("powershell"):
+            results.append(run_powershell_directory_picker(initial_dir, title))
+        results.append(run_tk_directory_picker(initial_dir, title))
+    elif platform.system() == "Darwin":
+        if command_exists("osascript"):
+            results.append(run_osascript_directory_picker(initial_dir, title))
+        results.append(run_tk_directory_picker(initial_dir, title))
+    else:
+        if command_exists("zenity"):
+            results.append(run_zenity_directory_picker(initial_dir, title))
+        if command_exists("kdialog"):
+            results.append(run_kdialog_directory_picker(initial_dir, title))
+
+    if len(results) == 0:
+        return {
+            "status": 200,
+            "payload": {
+                "unsupported": True,
+                "error": "Native folder picker unavailable. Open the manual browser instead.",
+            },
+        }
+
+    errors = []
+    for result in results:
+        stdout = result["stdout"].strip()
+        stderr = result["stderr"].strip()
+        if result["returncode"] == 0:
+            selected_path = normalize_directory_path(stdout)
+            if selected_path is not None:
+                return {
+                    "status": 200,
+                    "payload": {
+                        "path": selected_path,
+                    },
+                }
+            if len(stdout) == 0:
+                return {
+                    "status": 200,
+                    "payload": {
+                        "cancelled": True,
+                    },
+                }
+        if len(stdout) == 0 and (len(stderr) == 0 or "canceled" in stderr.lower() or "cancelled" in stderr.lower()):
+            return {
+                "status": 200,
+                "payload": {
+                    "cancelled": True,
+                },
+            }
+        if stderr:
+            errors.append(stderr)
+
+    return {
+        "status": 200,
+        "payload": {
+            "unsupported": True,
+            "error": "Native folder picker unavailable. " + (errors[0] if len(errors) > 0 else "Open the manual browser instead."),
+        },
+    }
 
 
 def resolve_repo_root(path):
