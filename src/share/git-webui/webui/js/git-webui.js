@@ -318,8 +318,25 @@ webui.SideBarView = function(mainView) {
                                 '<section id="sidebar-tags">' +
                                     '<h4>Tags</h4>' +
                                 '</section>' +
+                                '<section id="sidebar-theme">' +
+                                    '<button class="btn btn-sm btn-default" style="margin: 10px;" id="theme-toggle">Toggle Dark Mode</button>' +
+                                '</section>' +
                             '</div>' +
                         '</div>')[0];
+                        
+    $("#theme-toggle", self.element).click(function() {
+        $("body").toggleClass("dark-mode");
+        var isDarkMode = $("body").hasClass("dark-mode");
+        if (isDarkMode) {
+            localStorage.setItem("theme", "dark");
+        } else {
+            localStorage.setItem("theme", "light");
+        }
+    });
+    
+    if (localStorage.getItem("theme") === "dark") {
+        $("body").addClass("dark-mode");
+    }
 
     if (webui.viewonly) {
         $("#sidebar-workspace", self.element).remove();
@@ -633,9 +650,12 @@ webui.LogView = function(historyView) {
 /*
  * == DiffView ================================================================
  */
-webui.DiffView = function(sideBySide, hunkSelectionAllowed, parent) {
+webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
 
     var self = this;
+    self.sideBySide = initialSideBySide;
+    
+    var left, right, single, leftLines, rightLines, singleLines;
 
     self.update = function(cmd, diffOpts, file, mode) {
         gitApplyType = mode;
@@ -646,14 +666,18 @@ webui.DiffView = function(sideBySide, hunkSelectionAllowed, parent) {
             self.gitCmd = cmd;
             self.gitDiffOpts = diffOpts;
             if (file != self.gitFile) {
-                left.scrollTop = 0;
-                left.scrollLeft = 0;
-                right.scrollTop = 0;
-                right.scrollLeft = 0;
-                left.webuiPrevScrollTop = 0;
-                left.webuiPrevScrollLeft = 0;
-                right.webuiPrevScrollTop = 0;
-                right.webuiPrevScrollLeft = 0;
+                if (left) {
+                    left.scrollTop = 0;
+                    left.scrollLeft = 0;
+                    left.webuiPrevScrollTop = 0;
+                    left.webuiPrevScrollLeft = 0;
+                }
+                if (right) {
+                    right.scrollTop = 0;
+                    right.scrollLeft = 0;
+                    right.webuiPrevScrollTop = 0;
+                    right.webuiPrevScrollLeft = 0;
+                }
             }
             self.gitFile = file;
         }
@@ -685,7 +709,7 @@ webui.DiffView = function(sideBySide, hunkSelectionAllowed, parent) {
         self.currentDiff = diff;
         self.diffHeader = "";
         $("span", self.element).text('Context: ' + self.context);
-        if (sideBySide) {
+        if (self.sideBySide) {
             var diffLines = diff.split("\n");
             self.updateSplitView(leftLines, diffLines, '-');
             self.updateSplitView(rightLines, diffLines, '+');
@@ -942,6 +966,7 @@ webui.DiffView = function(sideBySide, hunkSelectionAllowed, parent) {
         var lineContainers = [leftLines, rightLines];
         for (var i = 0; i < lineContainers.length; ++i) {
             var lineContainer = lineContainers[i];
+            if (!lineContainer) continue;
             for (var j = 0; j < lineContainer.childElementCount; ++j) {
                 var elt = lineContainer.children[j];
                 if ($(elt).hasClass("active")) {
@@ -986,68 +1011,91 @@ webui.DiffView = function(sideBySide, hunkSelectionAllowed, parent) {
         var commitExplorerView = new webui.CommitExplorerView(mainView, self.currentDiff);
         commitExplorerView.show();
     };
-
-    var html = '<div class="diff-view-container panel panel-default">';
-    if (! (parent instanceof webui.CommitExplorerView)) {
-        html +=
-            '<div class="panel-heading btn-toolbar" role="toolbar">' +
-                '<button type="button" class="btn btn-sm btn-default diff-ignore-whitespace" data-toggle="button">Ignore Whitespace</button>' +
-                '<button type="button" class="btn btn-sm btn-default diff-context-all" data-toggle="button">Complete file</button>' +
-                '<div class="btn-group btn-group-sm">' +
-                    '<span></span>&nbsp;' +
-                    '<button type="button" class="btn btn-default diff-context-remove">-</button>' +
-                    '<button type="button" class="btn btn-default diff-context-add">+</button>' +
-                '</div>' +
-                '<div class="btn-group btn-group-sm diff-selection-buttons">' +
-                    '<button type="button" class="btn btn-default diff-stage" style="display:none">Stage</button>' +
-                    '<button type="button" class="btn btn-default diff-cancel" style="display:none">Cancel</button>' +
-                    '<button type="button" class="btn btn-default diff-unstage" style="display:none">Unstage</button>' +
-                '</div>' +
-                (sideBySide ? '' : '<button type="button"  class="btn btn-sm btn-default diff-explore">Explore</button>') +
-            '</div>';
-    }
-    html += '<div class="panel-body"></div></div>'
-    self.element = $(html)[0];
-    var panelBody = $(".panel-body", self.element)[0];
-    if (sideBySide) {
-        var left = $('<div class="diff-view"><div class="diff-view-lines"></div></div>')[0];
-        panelBody.appendChild(left);
-        var leftLines = left.firstChild;
-        $(left).scroll(self.diffViewScrolled);
-        left.webuiPrevScrollTop = left.scrollTop;
-        left.webuiPrevScrollLeft = left.scrollLeft;
-        var right = $('<div class="diff-view"><div class="diff-view-lines"></div></div>')[0];
-        panelBody.appendChild(right);
-        var rightLines = right.firstChild;
-        $(right).scroll(self.diffViewScrolled);
-        right.webuiPrevScrollTop = right.scrollTop;
-        right.webuiPrevScrollLeft = right.scrollLeft;
-        if (hunkSelectionAllowed) {
-            $(left).click(self.handleClick);
-            $(right).click(self.handleClick);
+    
+    self.toggleSideBySide = function() {
+        self.sideBySide = !self.sideBySide;
+        self.buildDOM();
+        if (self.currentDiff) {
+            self.refresh(self.currentDiff);
         }
-    } else {
-        var single = $('<div class="diff-view"><div class="diff-view-lines"></div></div>')[0];
-        panelBody.appendChild(single);
-        var singleLines = single.firstChild;
-    }
+    };
 
-    $(".diff-context-remove", self.element).click(self.removeContext);
-    $(".diff-context-add", self.element).click(self.addContext);
-    $(".diff-context-all", self.element).click(self.allContext);
-    $(".diff-ignore-whitespace", self.element).click(self.toggleIgnoreWhitespace);
+    self.buildDOM = function() {
+        var html = '<div class="diff-view-container panel panel-default">';
+        if (! (parent instanceof webui.CommitExplorerView)) {
+            html +=
+                '<div class="panel-heading btn-toolbar" role="toolbar">' +
+                    '<button type="button" class="btn btn-sm btn-default diff-ignore-whitespace" data-toggle="button">Ignore Whitespace</button>' +
+                    '<button type="button" class="btn btn-sm btn-default diff-context-all" data-toggle="button">Complete file</button>' +
+                    '<div class="btn-group btn-group-sm">' +
+                        '<span></span>&nbsp;' +
+                        '<button type="button" class="btn btn-default diff-context-remove">-</button>' +
+                        '<button type="button" class="btn btn-default diff-context-add">+</button>' +
+                    '</div>' +
+                    '<div class="btn-group btn-group-sm diff-selection-buttons">' +
+                        '<button type="button" class="btn btn-default diff-stage" style="display:none">Stage</button>' +
+                        '<button type="button" class="btn btn-default diff-cancel" style="display:none">Cancel</button>' +
+                        '<button type="button" class="btn btn-default diff-unstage" style="display:none">Unstage</button>' +
+                    '</div>' +
+                    '<div class="btn-group btn-group-sm pull-right">' +
+                        '<button type="button" class="btn btn-default diff-toggle-view">Toggle Side-by-Side</button>' +
+                    '</div>' +
+                    (!self.sideBySide ? '<button type="button"  class="btn btn-sm btn-default diff-explore">Explore</button>' : '') +
+                '</div>';
+        }
+        html += '<div class="panel-body"></div></div>'
+        var newElement = $(html)[0];
+        var panelBody = $(".panel-body", newElement)[0];
+        
+        if (self.sideBySide) {
+            left = $('<div class="diff-view"><div class="diff-view-lines"></div></div>')[0];
+            panelBody.appendChild(left);
+            leftLines = left.firstChild;
+            $(left).scroll(self.diffViewScrolled);
+            left.webuiPrevScrollTop = 0;
+            left.webuiPrevScrollLeft = 0;
+            
+            right = $('<div class="diff-view"><div class="diff-view-lines"></div></div>')[0];
+            panelBody.appendChild(right);
+            rightLines = right.firstChild;
+            $(right).scroll(self.diffViewScrolled);
+            right.webuiPrevScrollTop = 0;
+            right.webuiPrevScrollLeft = 0;
+            
+            if (hunkSelectionAllowed) {
+                $(left).click(self.handleClick);
+                $(right).click(self.handleClick);
+            }
+        } else {
+            single = $('<div class="diff-view"><div class="diff-view-lines"></div></div>')[0];
+            panelBody.appendChild(single);
+            singleLines = single.firstChild;
+        }
 
-    $(".diff-stage", self.element).click(function() { self.applySelection(false, true); });
-    $(".diff-cancel", self.element).click(function() { self.applySelection(true, false); });
-    $(".diff-unstage", self.element).click(function() { self.applySelection(true, true); });
+        $(".diff-context-remove", newElement).click(self.removeContext);
+        $(".diff-context-add", newElement).click(self.addContext);
+        $(".diff-context-all", newElement).click(self.allContext);
+        $(".diff-ignore-whitespace", newElement).click(self.toggleIgnoreWhitespace);
 
-    $(".diff-explore", self.element).click(function() { self.switchToExploreView(); });
+        $(".diff-stage", newElement).click(function() { self.applySelection(false, true); });
+        $(".diff-cancel", newElement).click(function() { self.applySelection(true, false); });
+        $(".diff-unstage", newElement).click(function() { self.applySelection(true, true); });
 
+        $(".diff-explore", newElement).click(function() { self.switchToExploreView(); });
+        $(".diff-toggle-view", newElement).click(self.toggleSideBySide);
+        
+        if (self.element && self.element.parentNode) {
+            self.element.parentNode.replaceChild(newElement, self.element);
+        }
+        self.element = newElement;
+    };
+
+    self.buildDOM();
     self.context = 3;
     self.complete = false;
     self.ignoreWhitespace = false;
     var gitApplyType = "stage";
-};
+}
 
 /*
  * == TreeView ================================================================
@@ -1438,6 +1486,7 @@ webui.WorkspaceView = function(mainView) {
         self.workingCopyView.update();
         self.stagingAreaView.update();
         self.commitMessageView.update();
+        self.remoteActionsView.update();
         if (self.workingCopyView.getSelectedItemsCount() + self.stagingAreaView.getSelectedItemsCount() == 0) {
             self.diffView.update(undefined, undefined, undefined, mode);
         }
@@ -1455,6 +1504,8 @@ webui.WorkspaceView = function(mainView) {
     workspaceEditor.appendChild(self.workingCopyView.element);
     self.commitMessageView = new webui.CommitMessageView(self);
     workspaceEditor.appendChild(self.commitMessageView.element);
+    self.remoteActionsView = new webui.RemoteActionsView(self);
+    workspaceEditor.appendChild(self.remoteActionsView.element);
     self.stagingAreaView = new webui.ChangedFilesView(self, "staging-area", "Staging Area");
     workspaceEditor.appendChild(self.stagingAreaView.element);
 };
@@ -1682,6 +1733,52 @@ webui.CommitMessageView = function(workspaceView) {
     var amend = $(".commit-message-amend", self.element);
     amend.click(self.onAmend);
     $(".commit-message-commit", self.element).click(self.onCommit);
+};
+
+/*
+ * == RemoteActionsView =======================================================
+ */
+webui.RemoteActionsView = function(workspaceView) {
+
+    var self = this;
+
+    self.onPush = function() {
+        webui.git("push", function(data) {
+            webui.showError("Push completed.\n\n" + data);
+            workspaceView.update("stage");
+        });
+    }
+
+    self.onPull = function() {
+        webui.git("pull", function(data) {
+            webui.showError("Pull completed.\n\n" + data);
+            workspaceView.update("stage");
+        });
+    }
+
+    self.onFetch = function() {
+        webui.git("fetch", function(data) {
+            webui.showError("Fetch completed.\n\n" + data);
+            workspaceView.update("stage");
+        });
+    }
+
+    self.update = function() {
+    }
+
+    self.element = $(   '<div id="remote-actions-view" class="panel panel-default">' +
+                            '<div class="panel-heading">' +
+                                '<h5>Remote Actions</h5>' +
+                                '<div class="btn-group btn-group-sm">' +
+                                    '<button type="button" class="btn btn-default remote-action-fetch">Fetch</button>' +
+                                    '<button type="button" class="btn btn-default remote-action-pull">Pull</button>' +
+                                    '<button type="button" class="btn btn-default remote-action-push">Push</button>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>')[0];
+    $(".remote-action-fetch", self.element).click(self.onFetch);
+    $(".remote-action-pull", self.element).click(self.onPull);
+    $(".remote-action-push", self.element).click(self.onPush);
 };
 
 webui.RemoteView = function(mainView) {

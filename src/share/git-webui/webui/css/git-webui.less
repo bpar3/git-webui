@@ -577,6 +577,11 @@ body {
             }
         }
 
+        #remote-actions-view {
+            .flex(1);
+            max-height: 50px;
+        }
+
         .panel {
             .flex(1);
             .display-flex();
@@ -619,5 +624,87 @@ body {
                 overflow: auto;
             }
         }
+    }
+}
+
+body.dark-mode {
+    background-color: #1e1e1e;
+    color: #c8c8c8;
+
+    .panel {
+        background-color: #252526;
+        border-color: #3e3e42;
+    }
+    .panel-heading, .panel-default > .panel-heading {
+        background-color: #2d2d30;
+        border-color: #3e3e42;
+        color: #c8c8c8;
+    }
+    .list-group-item {
+        background-color: #252526;
+        border-color: #3e3e42;
+        color: #c8c8c8;
+    }
+    .list-group-item:hover, .list-group-item:focus {
+        background-color: #2d2d30;
+    }
+    a.list-group-item {
+        color: #c8c8c8;
+    }
+    .btn-default {
+        background-color: #333337;
+        color: #c8c8c8;
+        border-color: #3e3e42;
+    }
+    .btn-default:hover, .btn-default:focus {
+        background-color: #3e3e42;
+        color: #c8c8c8;
+    }
+    .btn-default.active {
+        background-color: #1e1e1e;
+        color: #fff;
+    }
+    .modal-content {
+        background-color: #252526;
+        color: #c8c8c8;
+    }
+    textarea, input {
+        background-color: #1e1e1e;
+        color: #c8c8c8;
+        border: 1px solid #3e3e42;
+    }
+    
+    .diff-view-line {
+        color: #d4d4d4;
+    }
+    .diff-line-add {
+        background-color: rgba(102, 153, 0, 0.3);
+    }
+    .diff-line-del {
+        background-color: rgba(204, 0, 0, 0.3);
+    }
+    .diff-line-offset, .diff-line-header {
+        background-color: rgba(153, 51, 204, 0.3);
+    }
+    .diff-line-add.active {
+        background-color: rgba(102, 153, 0, 0.6);
+    }
+    .diff-line-del.active {
+        background-color: rgba(204, 0, 0, 0.6);
+    }
+    .diff-line-offset.active {
+        background-color: rgba(153, 51, 204, 0.6);
+    }
+
+    #sidebar {
+        background-color: #252526;
+        border-right: 1px solid #3e3e42;
+    }
+    #sidebar section h4 {
+        color: #c8c8c8;
+    }
+    #sidebar section.active h4 {
+        background-color: #3e3e42;
+        color: #fff;
     }
 }
