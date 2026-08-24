@@ -34,9 +34,21 @@ webui.COLORS = ["#ffab1d", "#fd8c25", "#f36e4a", "#fc6148", "#d75ab6", "#b25ade"
                 "#ff911a", "#fc8120", "#e7623e", "#fa5236", "#ca4da9", "#a74fd3", "#5a68ff", "#6d69db", "#489bd9", "#00bcde", "#36a436", "#47a519", "#798d0a", "#c1a120", "#bf7730", "#8e8e8e"]
 
 
-webui.showError = function(message) {
-    $("#error-modal .alert").text(message);
+webui.showModal = function(title, message, type) {
+    var body = $("#error-modal .alert");
+    $("#error-modal .modal-title").text(title);
+    body.removeClass("alert-danger alert-info");
+    body.addClass(type == "info" ? "alert-info" : "alert-danger");
+    body.text(message);
     $("#error-modal").modal('show');
+}
+
+webui.showError = function(message) {
+    webui.showModal("Error", message, "error");
+}
+
+webui.showResult = function(title, message) {
+    webui.showModal(title, message, "info");
 }
 
 webui.showWarning = function(message) {
@@ -94,7 +106,6 @@ webui.git = function(cmd, arg1, arg2) {
                     console.log(message);
                     webui.showWarning(message);
                 }
-                $("#error-modal .alert").text("");
             } else {
                 console.log(message);
                 webui.showError(message);
@@ -1744,21 +1755,21 @@ webui.RemoteActionsView = function(workspaceView) {
 
     self.onPush = function() {
         webui.git("push", function(data) {
-            webui.showError("Push completed.\n\n" + data);
+            webui.showResult("Push completed", data);
             workspaceView.update("stage");
         });
     }
 
     self.onPull = function() {
         webui.git("pull", function(data) {
-            webui.showError("Pull completed.\n\n" + data);
+            webui.showResult("Pull completed", data);
             workspaceView.update("stage");
         });
     }
 
     self.onFetch = function() {
         webui.git("fetch", function(data) {
-            webui.showError("Fetch completed.\n\n" + data);
+            webui.showResult("Fetch completed", data);
             workspaceView.update("stage");
         });
     }
