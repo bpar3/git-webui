@@ -17,6 +17,7 @@
 import argparse
 import codecs
 import datetime
+import json
 import os
 import platform
 import posixpath
@@ -28,12 +29,12 @@ import webbrowser
 
 if sys.version > '3':
     from http.server import SimpleHTTPRequestHandler, HTTPServer
-    from urllib.parse import unquote, urlparse
+    from urllib.parse import parse_qs, unquote, urlparse
 else:
     from SimpleHTTPServer import SimpleHTTPRequestHandler
     from BaseHTTPServer import HTTPServer
     from urllib import unquote
-    from urlparse import urlparse
+    from urlparse import parse_qs, urlparse
 
 
 
@@ -65,13 +66,75 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
 
     WEB_ROOT = None
     REPO_ROOT = None
+    APP_STATE_PATH = None
+    RECENT_REPOS = []
 
     @classmethod
     def initialize(cls, repo_root):
         web_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[0]))))
         web_root = os.path.join(web_root, "share", "git-webui", "webui")
         WebUiRequestHandler.WEB_ROOT = web_root
-        WebUiRequestHandler.REPO_ROOT = repo_root
+        WebUiRequestHandler.APP_STATE_PATH = os.path.join(get_app_state_dir(), "state.json")
+        WebUiRequestHandler.load_state()
+        WebUiRequestHandler.set_repo_root(repo_root, persist=repo_root is not None)
+
+    @classmethod
+    def load_state(cls):
+        cls.RECENT_REPOS = []
+        if not cls.APP_STATE_PATH or not os.path.exists(cls.APP_STATE_PATH):
+            return
+        try:
+            with open(cls.APP_STATE_PATH, "r") as state_file:
+                state = json.load(state_file)
+            recent_repos = state.get("recent_repos", [])
+            cls.RECENT_REPOS = [repo for repo in recent_repos if os.path.isdir(repo)]
+        except Exception:
+            cls.RECENT_REPOS = []
+
+    @classmethod
+    def save_state(cls):
+        if not cls.APP_STATE_PATH:
+            return
+        state_dir = os.path.dirname(cls.APP_STATE_PATH)
+        if not os.path.isdir(state_dir):
+            os.makedirs(state_dir)
+        state = {"recent_repos": cls.RECENT_REPOS[:10]}
+        with open(cls.APP_STATE_PATH, "w") as state_file:
+            json.dump(state, state_file)
+
+    @classmethod
+    def set_repo_root(cls, repo_root, persist=True):
+        cls.REPO_ROOT = repo_root
+        if persist and repo_root:
+            repo_root = os.path.realpath(repo_root)
+            cls.RECENT_REPOS = [repo for repo in cls.RECENT_REPOS if repo != repo_root and os.path.isdir(repo)]
+            cls.RECENT_REPOS.insert(0, repo_root)
+            cls.save_state()
+
+    @classmethod
+    def get_recent_repo_entries(cls):
+        entries = []
+        for repo in cls.RECENT_REPOS:
+            if os.path.isdir(repo):
+                entries.append({
+                    "name": os.path.basename(repo) or repo,
+                    "path": repo,
+                    "active": repo == cls.REPO_ROOT,
+                })
+        return entries
+
+    def get_repo_context(self):
+        repo_root = WebUiRequestHandler.REPO_ROOT
+        repo_name = os.path.basename(repo_root) if repo_root else ""
+        context = {
+            "repo_name": repo_name,
+            "repo_path": repo_root if not self.is_view_only() else None,
+            "has_repo": repo_root is not None,
+            "recent_repos": [] if self.is_view_only() else WebUiRequestHandler.get_recent_repo_entries(),
+            "view_only": self.is_view_only(),
+            "hostname": socket.gethostname(),
+        }
+        return context
 
 
     def translate_path(self, path):
@@ -98,11 +161,22 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
 
 
     def do_GET(self):
-        if self.path.startswith("/git/cat-file/"):
+        if self.path == "/api/context":
+            self.send_json(200, self.get_repo_context())
+        elif self.path.startswith("/api/fs/list"):
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            parsed_path = urlparse(self.path)
+            requested_path = parse_qs(parsed_path.query).get("path", [None])[0]
+            self.send_json(200, list_directory_entries(requested_path, WebUiRequestHandler.REPO_ROOT))
+        elif self.path.startswith("/git/cat-file/"):
+            if not self.ensure_repo_selected():
+                return
             obj = self.path[14:]
             self.process(["git", "-c", "color.ui=false", "cat-file", "-p", obj], b"", True, False)
         elif self.path == "/dirname":
-            wc = os.path.split(WebUiRequestHandler.REPO_ROOT)[1]
+            wc = os.path.split(WebUiRequestHandler.REPO_ROOT)[1] if WebUiRequestHandler.REPO_ROOT else ""
             self.send_text(200, codecs.encode(wc, "utf-8"))
         elif self.path == "/hostname":
             self.send_text(200, codecs.encode(socket.gethostname(), "utf-8"))
@@ -110,13 +184,29 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             vo = "1" if self.is_view_only() else "0"
             self.send_text(200, codecs.encode(vo, "utf-8"))
         elif self.is_git_request():
+            if not self.ensure_repo_selected():
+                return
             self.process_http_backend()
         else:
             SimpleHTTPRequestHandler.do_GET(self)
 
 
     def do_POST(self):
-        if self.path == "/git":
+        if self.path == "/api/repos/select":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            payload = self.read_json_body()
+            selected_path = payload.get("path")
+            repo_root = resolve_repo_root(selected_path)
+            if repo_root is None:
+                self.send_json(400, {"error": "No git repository found at the selected path."})
+                return
+            WebUiRequestHandler.set_repo_root(repo_root)
+            self.send_json(200, self.get_repo_context())
+        elif self.path == "/git":
+            if not self.ensure_repo_selected():
+                return
             content_length = int(self.headers["Content-Length"])
             content = self.rfile.read(content_length)
             # Convention : First line = git arguments, rest = git process stdin
@@ -136,6 +226,8 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             else:
                 self.send_error(403)
         elif self.is_git_request():
+            if not self.ensure_repo_selected():
+                return
             self.process_http_backend()
         else:
             SimpleHTTPRequestHandler.do_POST(self)
@@ -175,6 +267,13 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
         return self.headers.get("User-Agent", "").startswith("git/")
 
 
+    def ensure_repo_selected(self):
+        if WebUiRequestHandler.REPO_ROOT is not None:
+            return True
+        self.send_json(409, {"error": "No repository is currently selected."})
+        return False
+
+
     def process(self, cmd, stdin, add_headers, add_footers, env = None):
         if add_headers:
             self.send_response(200)
@@ -212,6 +311,31 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", len(text))
         self.end_headers()
         self.wfile.write(text)
+
+
+    def send_json(self, http_status, payload):
+        if sys.version > '3':
+            text = json.dumps(payload).encode("utf-8")
+        else:
+            text = json.dumps(payload)
+        self.send_response(http_status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", len(text))
+        self.end_headers()
+        self.wfile.write(text)
+
+
+    def read_json_body(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            return {}
+        content = self.rfile.read(content_length)
+        if sys.version > '3':
+            content = codecs.decode(content, "utf-8")
+        try:
+            return json.loads(content)
+        except ValueError:
+            return {}
 
 
 
@@ -260,6 +384,68 @@ def read_config_boolean(name, default=False):
     return str(r).lower() == "true"
 
 
+def get_app_state_dir():
+    if IS_WINDOWS:
+        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "git-webui")
+    return os.path.join(os.path.expanduser("~"), ".config", "git-webui")
+
+
+def resolve_repo_root(path):
+    if not path or not os.path.isdir(path):
+        return None
+    try:
+        git = subprocess.Popen(
+            ["git", "-c", "color.ui=false", "rev-parse", "--show-toplevel"],
+            cwd=path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        stdout = git.communicate()[0]
+        if git.returncode != 0:
+            return None
+        if sys.version > '3':
+            stdout = codecs.decode(stdout, "utf-8")
+        return os.path.realpath(stdout.strip())
+    except OSError:
+        return None
+
+
+def looks_like_git_root(path):
+    return os.path.exists(os.path.join(path, ".git"))
+
+
+def list_directory_entries(path, current_repo_root=None):
+    if path is None:
+        if current_repo_root is not None:
+            path = os.path.dirname(current_repo_root)
+        else:
+            path = os.path.expanduser("~")
+    path = os.path.realpath(os.path.expanduser(path))
+    if not os.path.isdir(path):
+        path = os.path.expanduser("~")
+    entries = []
+    try:
+        dir_entries = os.listdir(path)
+    except OSError:
+        dir_entries = []
+    for name in dir_entries:
+        full_path = os.path.join(path, name)
+        if os.path.isdir(full_path):
+            entries.append({
+                "name": name,
+                "path": full_path,
+                "is_repo": looks_like_git_root(full_path),
+                "active": full_path == current_repo_root,
+            })
+    entries.sort(key=lambda entry: (not entry["is_repo"], entry["name"].lower()))
+    parent_path = os.path.dirname(path) if os.path.dirname(path) != path else None
+    return {
+        "path": path,
+        "parent_path": parent_path,
+        "entries": entries,
+    }
+
+
 
 
 def get_setting_string(args, name, default=None):
@@ -290,14 +476,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.repo_root is None:
-        args.repo_root = os.path.abspath(os.getcwd())
-        while '.git' not in os.listdir(args.repo_root):
-            new_root = os.path.dirname(args.repo_root)
-            if new_root == args.repo_root:
-                args.repo_root = None
-                break
-            else:
-                args.repo_root = new_root
+        args.repo_root = resolve_repo_root(os.path.abspath(os.getcwd()))
+    else:
+        args.repo_root = resolve_repo_root(os.path.abspath(args.repo_root))
 
     writeaccess = read_config_string("writeaccess")
     if writeaccess is not None:
@@ -305,9 +486,6 @@ if __name__ == '__main__':
     if args.allow_hosts is not None:
         allowed_hosts += args.allow_hosts.split(',')
 
-    if args.repo_root is None or '.git' not in os.listdir(args.repo_root):
-        sys.stderr.write("No git repository found\n")
-        sys.exit(1)
     WebUiRequestHandler.initialize(args.repo_root)
 
     args.port = get_setting_string(args, 'port', None)

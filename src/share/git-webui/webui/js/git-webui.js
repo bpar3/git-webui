@@ -19,6 +19,10 @@
 var webui = webui || {};
 
 webui.repo = "/";
+webui.repoPath = null;
+webui.recentRepos = [];
+webui.hostname = "localhost";
+webui.viewonly = false;
 
 webui.COLORS = ["#ffab1d", "#fd8c25", "#f36e4a", "#fc6148", "#d75ab6", "#b25ade", "#6575ff", "#7b77e9", "#4ea8ec", "#00d0f5", "#4eb94e", "#51af23", "#8b9f1c", "#d0b02f", "#d0853a", "#a4a4a4",
                 "#ffc51f", "#fe982c", "#fd7854", "#ff705f", "#e467c3", "#bd65e9", "#7183ff", "#8985f7", "#55b6ff", "#10dcff", "#51cd51", "#5cba2e", "#9eb22f", "#debe3d", "#e19344", "#b8b8b8",
@@ -61,6 +65,49 @@ webui.showWarning = function(message) {
             '</button>' +
             message +
         '</div>').appendTo(messageBox);
+}
+
+webui.parseApiError = function(xhr, fallbackMessage) {
+    if (xhr.responseJSON && xhr.responseJSON.error) {
+        return xhr.responseJSON.error;
+    }
+    if (xhr.responseText) {
+        try {
+            var payload = JSON.parse(xhr.responseText);
+            if (payload.error) {
+                return payload.error;
+            }
+        } catch (error) {
+        }
+        return xhr.responseText;
+    }
+    return fallbackMessage;
+}
+
+webui.apiGet = function(url, callback) {
+    $.getJSON(url)
+    .done(callback)
+    .fail(function(xhr) {
+        webui.showError(webui.parseApiError(xhr, "Git webui server not running"));
+    });
+}
+
+webui.apiPost = function(url, payload, callback) {
+    $.ajax({
+        url: url,
+        method: "POST",
+        data: JSON.stringify(payload || {}),
+        contentType: "application/json",
+        dataType: "json"
+    })
+    .done(callback)
+    .fail(function(xhr) {
+        webui.showError(webui.parseApiError(xhr, "Request failed"));
+    });
+}
+
+webui.escapeHtml = function(text) {
+    return $("<div>").text(text || "").html();
 }
 
 webui.git = function(cmd, arg1, arg2) {
@@ -138,6 +185,194 @@ webui.getNodeIndex = function(element) {
     }
     return index;
 }
+
+webui.RepoPicker = function() {
+
+    var self = this;
+
+    self.selectRepo = function(path) {
+        webui.apiPost("/api/repos/select", {path: path}, function() {
+            document.location.reload();
+        });
+    }
+
+    self.loadPath = function(path) {
+        var requestPath = path ? "?path=" + encodeURIComponent(path) : "";
+        webui.apiGet("/api/fs/list" + requestPath, function(data) {
+            self.currentPath = data.path;
+            self.parentPath = data.parent_path;
+            self.renderDirectory(data);
+        });
+    }
+
+    self.goUp = function() {
+        if (self.parentPath) {
+            self.loadPath(self.parentPath);
+        }
+    }
+
+    self.goHome = function() {
+        self.loadPath(null);
+    }
+
+    self.submitPath = function() {
+        var value = $(".repo-picker-path", self.element).val();
+        if (value.length > 0) {
+            self.loadPath(value);
+        }
+    }
+
+    self.renderDirectory = function(data) {
+        var pathInput = $(".repo-picker-path", self.element);
+        pathInput.val(data.path);
+
+        var list = $(".repo-picker-list", self.element);
+        list.empty();
+        if (data.entries.length == 0) {
+            $('<div class="repo-picker-empty">No subdirectories in this location.</div>').appendTo(list);
+            return;
+        }
+
+        data.entries.forEach(function(entry) {
+            var badge = entry.is_repo ? '<span class="repo-picker-badge">repo</span>' : '';
+            var row = $( '<div class="repo-picker-row">' +
+                            '<button type="button" class="btn btn-link repo-picker-entry"></button>' +
+                            '<div class="repo-picker-actions">' +
+                                badge +
+                                '<button type="button" class="btn btn-default btn-xs repo-picker-browse">Browse</button>' +
+                            '</div>' +
+                        '</div>');
+            $(".repo-picker-entry", row).text(entry.name);
+            $(".repo-picker-entry", row).attr("title", entry.path);
+            $(".repo-picker-entry", row).click(function() {
+                self.loadPath(entry.path);
+            });
+            $(".repo-picker-browse", row).click(function() {
+                self.loadPath(entry.path);
+            });
+            if (entry.is_repo) {
+                $('<button type="button" class="btn btn-primary btn-xs repo-picker-open">Open Repo</button>')
+                    .appendTo($(".repo-picker-actions", row))
+                    .click(function() {
+                        self.selectRepo(entry.path);
+                    });
+            }
+            list.append(row);
+        });
+    }
+
+    self.open = function(path) {
+        self.loadPath(path || webui.repoPath || null);
+        $(self.element).modal("show");
+    }
+
+    self.element = $(   '<div class="modal fade" id="repo-picker-modal" tabindex="-1" role="dialog">' +
+                            '<div class="modal-dialog modal-lg" role="document">' +
+                                '<div class="modal-content">' +
+                                    '<div class="modal-header">' +
+                                        '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
+                                        '<div class="repo-picker-eyebrow">Repository Control</div>' +
+                                        '<h4 class="modal-title">Browse Local Repositories</h4>' +
+                                    '</div>' +
+                                    '<div class="modal-body">' +
+                                        '<div class="repo-picker-toolbar">' +
+                                            '<input type="text" class="form-control repo-picker-path" placeholder="Enter a path">' +
+                                            '<div class="btn-group">' +
+                                                '<button type="button" class="btn btn-default repo-picker-home">Home</button>' +
+                                                '<button type="button" class="btn btn-default repo-picker-up">Up</button>' +
+                                                '<button type="button" class="btn btn-primary repo-picker-go">Go</button>' +
+                                            '</div>' +
+                                        '</div>' +
+                                        '<div class="repo-picker-list"></div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>')[0];
+
+    $(".repo-picker-home", self.element).click(self.goHome);
+    $(".repo-picker-up", self.element).click(self.goUp);
+    $(".repo-picker-go", self.element).click(self.submitPath);
+    $(".repo-picker-path", self.element).keypress(function(event) {
+        if (event.which == 13) {
+            self.submitPath();
+        }
+    });
+};
+
+webui.RepoChrome = function(mainView) {
+
+    var self = this;
+
+    self.openPicker = function() {
+        mainView.repoPicker.open(webui.repoPath);
+    }
+
+    self.selectRecentRepo = function(event) {
+        var path = event.currentTarget.getAttribute("data-path");
+        if (path) {
+            mainView.repoPicker.selectRepo(path);
+        }
+    }
+
+    self.update = function() {
+        $(".repo-chrome-name", self.element).text(webui.repo || "No Repository Selected");
+        $(".repo-chrome-path", self.element).text(webui.repoPath || "Choose a repository from recent history or browse the local filesystem.");
+        $(".repo-chrome-browse", self.element).prop("disabled", webui.viewonly);
+
+        var recentList = $(".repo-chrome-recent-list", self.element);
+        recentList.empty();
+        if (webui.recentRepos.length == 0) {
+            $('<span class="repo-chrome-empty">No recent repositories yet.</span>').appendTo(recentList);
+        } else {
+            webui.recentRepos.forEach(function(repo) {
+                var button = $('<button type="button" class="btn btn-default repo-chip">')[0];
+                button.setAttribute("data-path", repo.path);
+                $(button).append('<span class="repo-chip-name">' + webui.escapeHtml(repo.name) + '</span>');
+                $(button).append('<span class="repo-chip-path">' + webui.escapeHtml(repo.path) + '</span>');
+                if (repo.active) {
+                    $(button).addClass("active");
+                }
+                $(button).click(self.selectRecentRepo);
+                recentList.append(button);
+            });
+        }
+    }
+
+    self.element = $(   '<div id="repo-chrome">' +
+                            '<div class="repo-chrome-header">' +
+                                '<div class="repo-chrome-copy">' +
+                                    '<div class="repo-chrome-eyebrow">Repository Control</div>' +
+                                    '<div class="repo-chrome-name"></div>' +
+                                    '<div class="repo-chrome-path"></div>' +
+                                '</div>' +
+                                '<div class="repo-chrome-actions">' +
+                                    '<button type="button" class="btn btn-primary repo-chrome-browse">Browse Repo</button>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="repo-chrome-recent">' +
+                                '<div class="repo-chrome-recent-title">Recent Repositories</div>' +
+                                '<div class="repo-chrome-recent-list"></div>' +
+                            '</div>' +
+                        '</div>')[0];
+
+    $(".repo-chrome-browse", self.element).click(self.openPicker);
+};
+
+webui.NoRepoView = function(mainView) {
+
+    var self = this;
+
+    self.element = $(   '<div id="no-repo-view" class="jumbotron">' +
+                            '<div class="no-repo-kicker">Local Git Dashboard</div>' +
+                            '<h1>Choose a repository</h1>' +
+                            '<p>Start from recent repositories or browse your filesystem to switch the active repo without restarting git-webui.</p>' +
+                            '<p><button type="button" class="btn btn-primary btn-lg no-repo-browse">Browse Repo</button></p>' +
+                        '</div>')[0];
+
+    $(".no-repo-browse", self.element).click(function() {
+        mainView.repoPicker.open(null);
+    });
+};
 
 webui.TabBox = function(buttons) {
 
@@ -1830,33 +2065,45 @@ function MainUi() {
         self.mainView.appendChild(element);
     }
 
-    $.get("/dirname", function (data) {
-        webui.repo = data;
+    self.bootstrap = function(context) {
+        webui.repo = context.repo_name || "/";
+        webui.repoPath = context.repo_path;
+        webui.recentRepos = context.recent_repos || [];
+        webui.viewonly = context.view_only;
+        webui.hostname = context.hostname;
+
         var title = $("title")[0];
-        title.textContent = "Git - " + webui.repo;
-        $.get("/viewonly", function (data) {
-            webui.viewonly = data == "1";
-            $.get("/hostname", function (data) {
-                webui.hostname = data
+        title.textContent = context.has_repo ? "Git - " + webui.repo : "Git WebUI";
 
-                var body = $("body")[0];
-                $('<div id="message-box">').appendTo(body);
-                var globalContainer = $('<div id="global-container">').appendTo(body)[0];
+        var body = $("body")[0];
+        $('<div id="message-box">').appendTo(body);
 
-                self.sideBarView = new webui.SideBarView(self);
-                globalContainer.appendChild(self.sideBarView.element);
+        self.repoPicker = new webui.RepoPicker();
+        body.appendChild(self.repoPicker.element);
 
-                self.mainView = $('<div id="main-view">')[0];
-                globalContainer.appendChild(self.mainView);
+        self.repoChrome = new webui.RepoChrome(self);
+        body.appendChild(self.repoChrome.element);
+        self.repoChrome.update();
 
-                self.historyView = new webui.HistoryView(self);
-                self.remoteView = new webui.RemoteView(self);
-                if (!webui.viewonly) {
-                    self.workspaceView = new webui.WorkspaceView(self);
-                }
-            });
-        });
-    });
+        var globalContainer = $('<div id="global-container">').appendTo(body)[0];
+        self.mainView = $('<div id="main-view">')[0];
+        globalContainer.appendChild(self.mainView);
+
+        if (context.has_repo) {
+            self.sideBarView = new webui.SideBarView(self);
+            globalContainer.insertBefore(self.sideBarView.element, self.mainView);
+
+            self.historyView = new webui.HistoryView(self);
+            self.remoteView = new webui.RemoteView(self);
+            if (!webui.viewonly) {
+                self.workspaceView = new webui.WorkspaceView(self);
+            }
+        } else {
+            self.switchTo(new webui.NoRepoView(self).element);
+        }
+    }
+
+    webui.apiGet("/api/context", self.bootstrap);
 }
 
 $(document).ready(function () {
