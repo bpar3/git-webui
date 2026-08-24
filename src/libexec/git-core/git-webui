@@ -68,6 +68,8 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
     REPO_ROOT = None
     APP_STATE_PATH = None
     RECENT_REPOS = []
+    WORKSPACE_ROOT = None
+    RECENT_WORKSPACES = []
 
     @classmethod
     def initialize(cls, repo_root):
@@ -81,6 +83,8 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
     @classmethod
     def load_state(cls):
         cls.RECENT_REPOS = []
+        cls.RECENT_WORKSPACES = []
+        cls.WORKSPACE_ROOT = None
         if not cls.APP_STATE_PATH or not os.path.exists(cls.APP_STATE_PATH):
             return
         try:
@@ -88,8 +92,15 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 state = json.load(state_file)
             recent_repos = state.get("recent_repos", [])
             cls.RECENT_REPOS = [repo for repo in recent_repos if os.path.isdir(repo)]
+            recent_workspaces = state.get("recent_workspaces", [])
+            cls.RECENT_WORKSPACES = [workspace for workspace in recent_workspaces if os.path.isdir(workspace)]
+            workspace_root = state.get("workspace_root")
+            if workspace_root and os.path.isdir(workspace_root):
+                cls.WORKSPACE_ROOT = os.path.realpath(workspace_root)
         except Exception:
             cls.RECENT_REPOS = []
+            cls.RECENT_WORKSPACES = []
+            cls.WORKSPACE_ROOT = None
 
     @classmethod
     def save_state(cls):
@@ -98,7 +109,11 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
         state_dir = os.path.dirname(cls.APP_STATE_PATH)
         if not os.path.isdir(state_dir):
             os.makedirs(state_dir)
-        state = {"recent_repos": cls.RECENT_REPOS[:10]}
+        state = {
+            "recent_repos": cls.RECENT_REPOS[:10],
+            "recent_workspaces": cls.RECENT_WORKSPACES[:10],
+            "workspace_root": cls.WORKSPACE_ROOT,
+        }
         with open(cls.APP_STATE_PATH, "w") as state_file:
             json.dump(state, state_file)
 
@@ -109,6 +124,17 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             repo_root = os.path.realpath(repo_root)
             cls.RECENT_REPOS = [repo for repo in cls.RECENT_REPOS if repo != repo_root and os.path.isdir(repo)]
             cls.RECENT_REPOS.insert(0, repo_root)
+            cls.save_state()
+
+    @classmethod
+    def set_workspace_root(cls, workspace_root, persist=True):
+        cls.WORKSPACE_ROOT = os.path.realpath(workspace_root) if workspace_root else None
+        if persist and cls.WORKSPACE_ROOT:
+            cls.RECENT_WORKSPACES = [
+                workspace for workspace in cls.RECENT_WORKSPACES
+                if workspace != cls.WORKSPACE_ROOT and os.path.isdir(workspace)
+            ]
+            cls.RECENT_WORKSPACES.insert(0, cls.WORKSPACE_ROOT)
             cls.save_state()
 
     @classmethod
@@ -123,14 +149,33 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 })
         return entries
 
+    @classmethod
+    def get_recent_workspace_entries(cls):
+        entries = []
+        for workspace in cls.RECENT_WORKSPACES:
+            if os.path.isdir(workspace):
+                entries.append({
+                    "name": os.path.basename(workspace) or workspace,
+                    "path": workspace,
+                    "active": workspace == cls.WORKSPACE_ROOT,
+                })
+        return entries
+
     def get_repo_context(self):
         repo_root = WebUiRequestHandler.REPO_ROOT
         repo_name = os.path.basename(repo_root) if repo_root else ""
+        workspace_root = WebUiRequestHandler.WORKSPACE_ROOT
+        workspace_repos = []
+        if not self.is_view_only() and workspace_root:
+            workspace_repos = scan_workspace_repos(workspace_root, repo_root)
         context = {
             "repo_name": repo_name,
             "repo_path": repo_root if not self.is_view_only() else None,
             "has_repo": repo_root is not None,
             "recent_repos": [] if self.is_view_only() else WebUiRequestHandler.get_recent_repo_entries(),
+            "workspace_path": workspace_root if not self.is_view_only() else None,
+            "recent_workspaces": [] if self.is_view_only() else WebUiRequestHandler.get_recent_workspace_entries(),
+            "workspace_repos": workspace_repos,
             "view_only": self.is_view_only(),
             "hostname": socket.gethostname(),
         }
@@ -170,6 +215,11 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             parsed_path = urlparse(self.path)
             requested_path = parse_qs(parsed_path.query).get("path", [None])[0]
             self.send_json(200, list_directory_entries(requested_path, WebUiRequestHandler.REPO_ROOT))
+        elif self.path == "/api/workspaces/current":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            self.send_json(200, get_workspace_payload(WebUiRequestHandler.WORKSPACE_ROOT, WebUiRequestHandler.REPO_ROOT))
         elif self.path.startswith("/git/cat-file/"):
             if not self.ensure_repo_selected():
                 return
@@ -203,6 +253,21 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 self.send_json(400, {"error": "No git repository found at the selected path."})
                 return
             WebUiRequestHandler.set_repo_root(repo_root)
+            self.send_json(200, self.get_repo_context())
+        elif self.path == "/api/workspaces/select":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            payload = self.read_json_body()
+            selected_path = payload.get("path")
+            workspace_root = os.path.realpath(os.path.expanduser(selected_path)) if selected_path else None
+            if workspace_root is None or not os.path.isdir(workspace_root):
+                self.send_json(400, {"error": "No directory found at the selected path."})
+                return
+            WebUiRequestHandler.set_workspace_root(workspace_root)
+            workspace_repos = scan_workspace_repos(workspace_root, WebUiRequestHandler.REPO_ROOT)
+            if len(workspace_repos) > 0 and not any(repo["active"] for repo in workspace_repos):
+                WebUiRequestHandler.set_repo_root(workspace_repos[0]["path"])
             self.send_json(200, self.get_repo_context())
         elif self.path == "/git":
             if not self.ensure_repo_selected():
@@ -391,7 +456,10 @@ def get_app_state_dir():
 
 
 def resolve_repo_root(path):
-    if not path or not os.path.isdir(path):
+    if not path:
+        return None
+    path = os.path.realpath(os.path.expanduser(path))
+    if not os.path.isdir(path):
         return None
     try:
         git = subprocess.Popen(
@@ -412,6 +480,98 @@ def resolve_repo_root(path):
 
 def looks_like_git_root(path):
     return os.path.exists(os.path.join(path, ".git"))
+
+
+def get_repo_summary(repo_root, active=False):
+    branch = "Detached"
+    ahead = 0
+    behind = 0
+    staged_count = 0
+    changed_count = 0
+    untracked_count = 0
+    try:
+        git = subprocess.Popen(
+            ["git", "-c", "color.ui=false", "status", "--short", "--branch"],
+            cwd=repo_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        stdout, stderr = git.communicate()
+        if git.returncode == 0:
+            if sys.version > '3':
+                stdout = codecs.decode(stdout, "utf-8")
+            lines = stdout.splitlines()
+            if len(lines) > 0 and lines[0].startswith("## "):
+                branch_line = lines[0][3:]
+                if "..." in branch_line:
+                    branch = branch_line.split("...")[0]
+                elif branch_line.startswith("HEAD"):
+                    branch = "Detached"
+                else:
+                    branch = branch_line
+                if "[" in branch_line and "]" in branch_line:
+                    details = branch_line.split("[", 1)[1].split("]", 1)[0]
+                    for item in details.split(","):
+                        item = item.strip()
+                        if item.startswith("ahead "):
+                            ahead = int(item[6:])
+                        elif item.startswith("behind "):
+                            behind = int(item[7:])
+            for line in lines[1:]:
+                if line.startswith("??"):
+                    untracked_count += 1
+                    continue
+                if len(line) < 2:
+                    continue
+                if line[0] not in [" ", "?"]:
+                    staged_count += 1
+                if line[1] not in [" ", "?"]:
+                    changed_count += 1
+    except Exception:
+        pass
+    return {
+        "name": os.path.basename(repo_root) or repo_root,
+        "path": repo_root,
+        "active": active,
+        "branch": branch,
+        "ahead": ahead,
+        "behind": behind,
+        "staged_count": staged_count,
+        "changed_count": changed_count,
+        "untracked_count": untracked_count,
+    }
+
+
+def scan_workspace_repos(path, active_repo_root=None):
+    if not path or not os.path.isdir(path):
+        return []
+    workspace_root = os.path.realpath(os.path.expanduser(path))
+    candidates = [workspace_root]
+    try:
+        child_names = os.listdir(workspace_root)
+    except OSError:
+        child_names = []
+    for child_name in child_names:
+        child_path = os.path.join(workspace_root, child_name)
+        if os.path.isdir(child_path):
+            candidates.append(child_path)
+    repo_roots = []
+    seen = set()
+    for candidate in candidates:
+        repo_root = resolve_repo_root(candidate)
+        if repo_root == os.path.realpath(candidate) and repo_root not in seen:
+            seen.add(repo_root)
+            repo_roots.append(repo_root)
+    repo_roots.sort(key=lambda repo: (repo != active_repo_root, os.path.basename(repo).lower(), repo.lower()))
+    return [get_repo_summary(repo_root, repo_root == active_repo_root) for repo_root in repo_roots]
+
+
+def get_workspace_payload(workspace_root, active_repo_root=None):
+    workspace_root = os.path.realpath(workspace_root) if workspace_root and os.path.isdir(workspace_root) else None
+    return {
+        "workspace_path": workspace_root,
+        "workspace_repos": scan_workspace_repos(workspace_root, active_repo_root),
+    }
 
 
 def list_directory_entries(path, current_repo_root=None):

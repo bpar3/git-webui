@@ -63,6 +63,7 @@ body {
   align-items: center;
   -webkit-align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
   justify-content: space-between;
 }
 #repo-chrome .repo-chrome-copy {
@@ -81,6 +82,14 @@ body {
 }
 #repo-chrome .repo-chrome-recent {
   margin-top: 14px;
+}
+#repo-chrome .repo-chrome-actions {
+  display: flex;
+  display: -webkit-flex;
+  min-height: 0;
+  min-width: 0;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 #repo-chrome .repo-chrome-recent-list {
   display: flex;
@@ -124,6 +133,98 @@ body {
 #repo-chrome .repo-chrome-empty {
   color: rgba(247, 244, 236, 0.6);
 }
+#repo-chrome .repo-workspace-shell {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(143, 211, 255, 0.18);
+}
+#repo-chrome .repo-workspace-header {
+  display: flex;
+  display: -webkit-flex;
+  min-height: 0;
+  min-width: 0;
+  align-items: baseline;
+  -webkit-align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+#repo-chrome .repo-workspace-path {
+  color: rgba(247, 244, 236, 0.72);
+  word-break: break-all;
+}
+#repo-chrome .repo-workspace-list {
+  display: flex;
+  display: -webkit-flex;
+  min-height: 0;
+  min-width: 0;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+#repo-chrome .repo-workspace-card {
+  width: 19em;
+  min-height: 8.5em;
+  padding: 14px;
+  text-align: left;
+  border-radius: 14px;
+  background: rgba(7, 16, 22, 0.48);
+  color: #f7f4ec;
+  border: 1px solid rgba(143, 211, 255, 0.16);
+}
+#repo-chrome .repo-workspace-card:hover,
+#repo-chrome .repo-workspace-card:focus,
+#repo-chrome .repo-workspace-card.active {
+  background: rgba(143, 211, 255, 0.18);
+  border-color: rgba(143, 211, 255, 0.44);
+  color: #ffffff;
+}
+#repo-chrome .repo-workspace-card-top,
+#repo-chrome .repo-workspace-card-meta,
+#repo-chrome .repo-workspace-card-path {
+  display: block;
+}
+#repo-chrome .repo-workspace-card-top {
+  display: flex;
+  display: -webkit-flex;
+  min-height: 0;
+  min-width: 0;
+  align-items: center;
+  -webkit-align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+#repo-chrome .repo-workspace-card-name {
+  font-size: 16px;
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#repo-chrome .repo-workspace-card-branch {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(143, 211, 255, 0.16);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+#repo-chrome .repo-workspace-card-meta {
+  margin-top: 8px;
+  color: rgba(247, 244, 236, 0.82);
+}
+#repo-chrome .repo-workspace-card-path {
+  margin-top: 12px;
+  font-size: 11px;
+  opacity: 0.68;
+  word-break: break-all;
+}
+#repo-chrome .repo-workspace-empty {
+  color: rgba(247, 244, 236, 0.62);
+}
 #global-container {
   display: flex;
   display: -webkit-flex;
@@ -159,7 +260,12 @@ body {
   align-items: center;
   -webkit-align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 16px;
+}
+#repo-picker-modal .repo-picker-hint {
+  color: #777777;
+  margin-bottom: 14px;
 }
 #repo-picker-modal .repo-picker-path {
   font-family: Menlo, Monaco, Consolas, "Courier New", monospace;

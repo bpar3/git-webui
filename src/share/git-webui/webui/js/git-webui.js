@@ -21,6 +21,9 @@ var webui = webui || {};
 webui.repo = "/";
 webui.repoPath = null;
 webui.recentRepos = [];
+webui.workspacePath = null;
+webui.recentWorkspaces = [];
+webui.workspaceRepos = [];
 webui.hostname = "localhost";
 webui.viewonly = false;
 
@@ -110,6 +113,41 @@ webui.escapeHtml = function(text) {
     return $("<div>").text(text || "").html();
 }
 
+webui.reloadApp = function() {
+    document.location.reload();
+}
+
+webui.formatRepoCounts = function(repo) {
+    var parts = [];
+    if (repo.staged_count > 0) {
+        parts.push(repo.staged_count + " staged");
+    }
+    if (repo.changed_count > 0) {
+        parts.push(repo.changed_count + " changed");
+    }
+    if (repo.untracked_count > 0) {
+        parts.push(repo.untracked_count + " untracked");
+    }
+    if (parts.length == 0) {
+        return "Clean working tree";
+    }
+    return parts.join(" • ");
+}
+
+webui.formatRepoTracking = function(repo) {
+    var parts = [];
+    if (repo.ahead > 0) {
+        parts.push("ahead " + repo.ahead);
+    }
+    if (repo.behind > 0) {
+        parts.push("behind " + repo.behind);
+    }
+    if (parts.length == 0) {
+        return "in sync";
+    }
+    return parts.join(" • ");
+}
+
 webui.git = function(cmd, arg1, arg2) {
     // cmd = git command line arguments
     // other arguments = optional stdin content and a callback function:
@@ -189,11 +227,26 @@ webui.getNodeIndex = function(element) {
 webui.RepoPicker = function() {
 
     var self = this;
+    self.mode = "repo";
+
+    self.selectWorkspace = function(path) {
+        webui.apiPost("/api/workspaces/select", {path: path}, webui.reloadApp);
+    }
 
     self.selectRepo = function(path) {
-        webui.apiPost("/api/repos/select", {path: path}, function() {
-            document.location.reload();
-        });
+        webui.apiPost("/api/repos/select", {path: path}, webui.reloadApp);
+    }
+
+    self.openCurrentPath = function() {
+        var value = $(".repo-picker-path", self.element).val();
+        if (value.length == 0) {
+            return;
+        }
+        if (self.mode == "workspace") {
+            self.selectWorkspace(value);
+        } else {
+            self.selectRepo(value);
+        }
     }
 
     self.loadPath = function(path) {
@@ -201,6 +254,7 @@ webui.RepoPicker = function() {
         webui.apiGet("/api/fs/list" + requestPath, function(data) {
             self.currentPath = data.path;
             self.parentPath = data.parent_path;
+            self.updateChrome();
             self.renderDirectory(data);
         });
     }
@@ -220,6 +274,18 @@ webui.RepoPicker = function() {
         if (value.length > 0) {
             self.loadPath(value);
         }
+    }
+
+    self.updateChrome = function() {
+        var isWorkspaceMode = self.mode == "workspace";
+        $(".repo-picker-eyebrow", self.element).text(isWorkspaceMode ? "Workspace Control" : "Repository Control");
+        $(".repo-picker-title", self.element).text(isWorkspaceMode ? "Open Folder Of Repositories" : "Browse Local Repositories");
+        $(".repo-picker-open-current", self.element).text(isWorkspaceMode ? "Open Folder" : "Open Repo");
+        $(".repo-picker-hint", self.element).text(
+            isWorkspaceMode
+                ? "Choose a parent directory and git-webui will surface each repo as a workspace rail."
+                : "Choose a single git repo or drill into a repo folder from the local filesystem."
+        );
     }
 
     self.renderDirectory = function(data) {
@@ -250,7 +316,13 @@ webui.RepoPicker = function() {
             $(".repo-picker-browse", row).click(function() {
                 self.loadPath(entry.path);
             });
-            if (entry.is_repo) {
+            if (self.mode == "workspace") {
+                $('<button type="button" class="btn btn-primary btn-xs repo-picker-open">Open Folder</button>')
+                    .appendTo($(".repo-picker-actions", row))
+                    .click(function() {
+                        self.selectWorkspace(entry.path);
+                    });
+            } else if (entry.is_repo) {
                 $('<button type="button" class="btn btn-primary btn-xs repo-picker-open">Open Repo</button>')
                     .appendTo($(".repo-picker-actions", row))
                     .click(function() {
@@ -261,7 +333,9 @@ webui.RepoPicker = function() {
         });
     }
 
-    self.open = function(path) {
+    self.open = function(path, mode) {
+        self.mode = mode || "repo";
+        self.updateChrome();
         self.loadPath(path || webui.repoPath || null);
         $(self.element).modal("show");
     }
@@ -272,15 +346,17 @@ webui.RepoPicker = function() {
                                     '<div class="modal-header">' +
                                         '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
                                         '<div class="repo-picker-eyebrow">Repository Control</div>' +
-                                        '<h4 class="modal-title">Browse Local Repositories</h4>' +
+                                        '<h4 class="modal-title repo-picker-title">Browse Local Repositories</h4>' +
                                     '</div>' +
                                     '<div class="modal-body">' +
+                                        '<p class="repo-picker-hint"></p>' +
                                         '<div class="repo-picker-toolbar">' +
                                             '<input type="text" class="form-control repo-picker-path" placeholder="Enter a path">' +
                                             '<div class="btn-group">' +
                                                 '<button type="button" class="btn btn-default repo-picker-home">Home</button>' +
                                                 '<button type="button" class="btn btn-default repo-picker-up">Up</button>' +
                                                 '<button type="button" class="btn btn-primary repo-picker-go">Go</button>' +
+                                                '<button type="button" class="btn btn-success repo-picker-open-current">Open Repo</button>' +
                                             '</div>' +
                                         '</div>' +
                                         '<div class="repo-picker-list"></div>' +
@@ -292,6 +368,7 @@ webui.RepoPicker = function() {
     $(".repo-picker-home", self.element).click(self.goHome);
     $(".repo-picker-up", self.element).click(self.goUp);
     $(".repo-picker-go", self.element).click(self.submitPath);
+    $(".repo-picker-open-current", self.element).click(self.openCurrentPath);
     $(".repo-picker-path", self.element).keypress(function(event) {
         if (event.which == 13) {
             self.submitPath();
@@ -304,7 +381,11 @@ webui.RepoChrome = function(mainView) {
     var self = this;
 
     self.openPicker = function() {
-        mainView.repoPicker.open(webui.repoPath);
+        mainView.repoPicker.open(webui.repoPath, "repo");
+    }
+
+    self.openWorkspacePicker = function() {
+        mainView.repoPicker.open(webui.workspacePath || webui.repoPath, "workspace");
     }
 
     self.selectRecentRepo = function(event) {
@@ -314,12 +395,78 @@ webui.RepoChrome = function(mainView) {
         }
     }
 
+    self.selectRecentWorkspace = function(event) {
+        var path = event.currentTarget.getAttribute("data-path");
+        if (path) {
+            mainView.repoPicker.selectWorkspace(path);
+        }
+    }
+
+    self.selectWorkspaceRepo = function(event) {
+        var path = event.currentTarget.getAttribute("data-path");
+        if (path) {
+            mainView.repoPicker.selectRepo(path);
+        }
+    }
+
+    self.renderWorkspaceRepos = function() {
+        var workspaceList = $(".repo-workspace-list", self.element);
+        workspaceList.empty();
+        if (webui.workspaceRepos.length == 0) {
+            $('<div class="repo-workspace-empty">Open a repo folder to pin a multi-repo workspace here.</div>').appendTo(workspaceList);
+            return;
+        }
+
+        webui.workspaceRepos.forEach(function(repo) {
+            var card = $( '<button type="button" class="btn btn-default repo-workspace-card">' +
+                            '<span class="repo-workspace-card-top">' +
+                                '<span class="repo-workspace-card-name"></span>' +
+                                '<span class="repo-workspace-card-branch"></span>' +
+                            '</span>' +
+                            '<span class="repo-workspace-card-meta repo-workspace-card-track"></span>' +
+                            '<span class="repo-workspace-card-meta repo-workspace-card-counts"></span>' +
+                            '<span class="repo-workspace-card-path"></span>' +
+                        '</button>')[0];
+            card.setAttribute("data-path", repo.path);
+            $(".repo-workspace-card-name", card).text(repo.name);
+            $(".repo-workspace-card-branch", card).text(repo.branch);
+            $(".repo-workspace-card-track", card).text(webui.formatRepoTracking(repo));
+            $(".repo-workspace-card-counts", card).text(webui.formatRepoCounts(repo));
+            $(".repo-workspace-card-path", card).text(repo.path);
+            if (repo.active) {
+                $(card).addClass("active");
+            }
+            $(card).click(self.selectWorkspaceRepo);
+            workspaceList.append(card);
+        });
+    }
+
     self.update = function() {
         $(".repo-chrome-name", self.element).text(webui.repo || "No Repository Selected");
         $(".repo-chrome-path", self.element).text(webui.repoPath || "Choose a repository from recent history or browse the local filesystem.");
         $(".repo-chrome-browse", self.element).prop("disabled", webui.viewonly);
+        $(".repo-chrome-open-workspace", self.element).prop("disabled", webui.viewonly);
+        $(".repo-workspace-path", self.element).text(webui.workspacePath || "No folder-of-repos selected yet.");
 
-        var recentList = $(".repo-chrome-recent-list", self.element);
+        var recentWorkspaceList = $(".repo-chrome-workspace-recents", self.element);
+        recentWorkspaceList.empty();
+        if (webui.recentWorkspaces.length == 0) {
+            $('<span class="repo-chrome-empty">No recent repo folders yet.</span>').appendTo(recentWorkspaceList);
+        } else {
+            webui.recentWorkspaces.forEach(function(workspace) {
+                var button = $('<button type="button" class="btn btn-default repo-chip repo-workspace-chip">')[0];
+                button.setAttribute("data-path", workspace.path);
+                $(button).append('<span class="repo-chip-name">' + webui.escapeHtml(workspace.name) + '</span>');
+                $(button).append('<span class="repo-chip-path">' + webui.escapeHtml(workspace.path) + '</span>');
+                if (workspace.active) {
+                    $(button).addClass("active");
+                }
+                $(button).click(self.selectRecentWorkspace);
+                recentWorkspaceList.append(button);
+            });
+        }
+
+        var recentList = $(".repo-chrome-repo-recents", self.element);
         recentList.empty();
         if (webui.recentRepos.length == 0) {
             $('<span class="repo-chrome-empty">No recent repositories yet.</span>').appendTo(recentList);
@@ -336,6 +483,8 @@ webui.RepoChrome = function(mainView) {
                 recentList.append(button);
             });
         }
+
+        self.renderWorkspaceRepos();
     }
 
     self.element = $(   '<div id="repo-chrome">' +
@@ -347,15 +496,28 @@ webui.RepoChrome = function(mainView) {
                                 '</div>' +
                                 '<div class="repo-chrome-actions">' +
                                     '<button type="button" class="btn btn-primary repo-chrome-browse">Browse Repo</button>' +
+                                    '<button type="button" class="btn btn-default repo-chrome-open-workspace">Open Repo Folder</button>' +
                                 '</div>' +
+                            '</div>' +
+                            '<div class="repo-workspace-shell">' +
+                                '<div class="repo-workspace-header">' +
+                                    '<div class="repo-chrome-recent-title">Workspace Rail</div>' +
+                                    '<div class="repo-workspace-path"></div>' +
+                                '</div>' +
+                                '<div class="repo-workspace-list"></div>' +
+                            '</div>' +
+                            '<div class="repo-chrome-recent repo-chrome-workspace-section">' +
+                                '<div class="repo-chrome-recent-title">Recent Repo Folders</div>' +
+                                '<div class="repo-chrome-recent-list repo-chrome-workspace-recents"></div>' +
                             '</div>' +
                             '<div class="repo-chrome-recent">' +
                                 '<div class="repo-chrome-recent-title">Recent Repositories</div>' +
-                                '<div class="repo-chrome-recent-list"></div>' +
+                                '<div class="repo-chrome-recent-list repo-chrome-repo-recents"></div>' +
                             '</div>' +
                         '</div>')[0];
 
     $(".repo-chrome-browse", self.element).click(self.openPicker);
+    $(".repo-chrome-open-workspace", self.element).click(self.openWorkspacePicker);
 };
 
 webui.NoRepoView = function(mainView) {
@@ -365,12 +527,15 @@ webui.NoRepoView = function(mainView) {
     self.element = $(   '<div id="no-repo-view" class="jumbotron">' +
                             '<div class="no-repo-kicker">Local Git Dashboard</div>' +
                             '<h1>Choose a repository</h1>' +
-                            '<p>Start from recent repositories or browse your filesystem to switch the active repo without restarting git-webui.</p>' +
-                            '<p><button type="button" class="btn btn-primary btn-lg no-repo-browse">Browse Repo</button></p>' +
+                            '<p>Start from recent repositories, or open a folder of repos to build a multi-repo workspace without restarting git-webui.</p>' +
+                            '<p><button type="button" class="btn btn-primary btn-lg no-repo-browse">Browse Repo</button> <button type="button" class="btn btn-default btn-lg no-repo-workspace">Open Repo Folder</button></p>' +
                         '</div>')[0];
 
     $(".no-repo-browse", self.element).click(function() {
-        mainView.repoPicker.open(null);
+        mainView.repoPicker.open(null, "repo");
+    });
+    $(".no-repo-workspace", self.element).click(function() {
+        mainView.repoPicker.open(null, "workspace");
     });
 };
 
@@ -2069,6 +2234,9 @@ function MainUi() {
         webui.repo = context.repo_name || "/";
         webui.repoPath = context.repo_path;
         webui.recentRepos = context.recent_repos || [];
+        webui.workspacePath = context.workspace_path;
+        webui.recentWorkspaces = context.recent_workspaces || [];
+        webui.workspaceRepos = context.workspace_repos || [];
         webui.viewonly = context.view_only;
         webui.hostname = context.hostname;
 
