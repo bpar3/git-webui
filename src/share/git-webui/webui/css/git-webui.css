@@ -50,7 +50,7 @@ body {
   color: #8fd3ff;
 }
 #repo-chrome {
-  padding: 14px 18px 16px 18px;
+  padding: 10px 14px 12px 14px;
   color: #f7f4ec;
   background: linear-gradient(135deg, #1f2328 0%, #2d333b 55%, #14181d 100%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -68,43 +68,101 @@ body {
 }
 #repo-chrome .repo-chrome-copy {
   min-width: 0;
+  flex: 1 1 auto;
 }
 #repo-chrome .repo-chrome-name {
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1.1;
-  margin-top: 4px;
+  margin-top: 2px;
   font-weight: bold;
 }
 #repo-chrome .repo-chrome-path {
-  margin-top: 4px;
+  margin-top: 2px;
   color: rgba(247, 244, 236, 0.72);
   word-break: break-all;
+  font-size: 12px;
 }
-#repo-chrome .repo-chrome-recent {
-  margin-top: 14px;
-}
-#repo-chrome .repo-chrome-actions {
+#repo-chrome .repo-chrome-status {
   display: flex;
   display: -webkit-flex;
   min-height: 0;
   min-width: 0;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+  margin-top: 8px;
+}
+#repo-chrome .repo-chrome-status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(143, 211, 255, 0.16);
+}
+#repo-chrome .repo-chrome-status-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(143, 211, 255, 0.92);
+}
+#repo-chrome .repo-chrome-status-value {
+  min-width: 0;
+  max-width: 22em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+#repo-chrome .repo-chrome-actions,
+#repo-chrome .repo-chrome-drawers {
+  display: flex;
+  display: -webkit-flex;
+  min-height: 0;
+  min-width: 0;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#repo-chrome .repo-chrome-drawers {
+  margin-top: 10px;
+}
+#repo-chrome .repo-chrome-drawer-button {
+  border-radius: 999px;
+  border-color: rgba(143, 211, 255, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f7f4ec;
+}
+#repo-chrome .repo-chrome-drawer-button:hover,
+#repo-chrome .repo-chrome-drawer-button:focus,
+#repo-chrome .repo-chrome-drawer-button.active {
+  background: rgba(143, 211, 255, 0.18);
+  color: #ffffff;
+}
+#repo-chrome .repo-chrome-drawer-button .badge {
+  margin-left: 4px;
+  background: rgba(7, 16, 22, 0.55);
+}
+#repo-chrome .repo-chrome-drawer-section {
+  display: none;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 #repo-chrome .repo-chrome-recent-list {
   display: flex;
   display: -webkit-flex;
   min-height: 0;
   min-width: 0;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 #repo-chrome .repo-chip {
   max-width: 24em;
   text-align: left;
-  border-radius: 12px;
-  padding: 8px 12px;
+  border-radius: 10px;
+  padding: 6px 10px;
   border: 1px solid rgba(143, 211, 255, 0.25);
   background: rgba(255, 255, 255, 0.04);
   color: #f7f4ec;
@@ -124,26 +182,27 @@ body {
 }
 #repo-chrome .repo-chip .repo-chip-name {
   font-weight: bold;
+  font-size: 12px;
 }
 #repo-chrome .repo-chip .repo-chip-path {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: 10px;
   opacity: 0.72;
 }
 #repo-chrome .repo-chrome-empty {
   color: rgba(247, 244, 236, 0.6);
 }
 #repo-chrome .repo-workspace-shell {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: 14px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(143, 211, 255, 0.18);
 }
 #repo-chrome .repo-branch-shell {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: 14px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(143, 211, 255, 0.18);
 }

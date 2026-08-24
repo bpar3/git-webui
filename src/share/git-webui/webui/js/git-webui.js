@@ -458,6 +458,7 @@ webui.RepoPicker = function() {
 webui.RepoChrome = function(mainView) {
 
     var self = this;
+    self.expandedDrawer = null;
 
     self.currentBranch = function() {
         for (var i = 0; i < webui.branches.length; ++i) {
@@ -468,6 +469,35 @@ webui.RepoChrome = function(mainView) {
         return null;
     }
 
+    self.branchSummary = function() {
+        var current = self.currentBranch();
+        if (!current) {
+            return "No branch selected";
+        }
+        return current.display_name || current.local_name || current.remote_name || "Detached";
+    }
+
+    self.updateStatusMeta = function() {
+        $(".repo-chrome-branch-value", self.element).text(self.branchSummary());
+        $(".repo-chrome-workspace-value", self.element).text(webui.workspacePath || "No workspace folder");
+        $(".repo-chrome-recents-value", self.element).text(webui.recentRepos.length + " repos / " + webui.recentWorkspaces.length + " folders");
+    }
+
+    self.setDrawerState = function(drawerName) {
+        self.expandedDrawer = drawerName;
+        var sections = ["repos", "workspaces"];
+        sections.forEach(function(name) {
+            var isOpen = name == drawerName;
+            $(".repo-chrome-drawer-button[data-drawer='" + name + "']", self.element).toggleClass("active", isOpen);
+            $(".repo-chrome-drawer-section[data-drawer='" + name + "']", self.element).toggle(isOpen);
+        });
+    }
+
+    self.toggleDrawer = function(event) {
+        var drawerName = event.currentTarget.getAttribute("data-drawer");
+        self.setDrawerState(self.expandedDrawer == drawerName ? null : drawerName);
+    }
+
     self.loadBranches = function() {
         if (!webui.repoPath) {
             webui.branches = [];
@@ -476,6 +506,7 @@ webui.RepoChrome = function(mainView) {
         }
         webui.apiGet("/api/branches", function(data) {
             webui.branches = data.branches || [];
+            self.updateStatusMeta();
             self.renderBranches();
             self.populateBranchStartPoints();
         });
@@ -765,6 +796,11 @@ webui.RepoChrome = function(mainView) {
             });
         }
 
+        $(".repo-chrome-drawer-button[data-drawer='repos'] .repo-chrome-drawer-count", self.element).text(webui.recentRepos.length);
+        $(".repo-chrome-drawer-button[data-drawer='workspaces'] .repo-chrome-drawer-count", self.element).text(webui.recentWorkspaces.length);
+        self.updateStatusMeta();
+        self.setDrawerState(self.expandedDrawer);
+
         self.renderWorkspaceRepos();
         self.loadBranches();
     }
@@ -775,10 +811,28 @@ webui.RepoChrome = function(mainView) {
                                     '<div class="repo-chrome-eyebrow">Repository Control</div>' +
                                     '<div class="repo-chrome-name"></div>' +
                                     '<div class="repo-chrome-path"></div>' +
+                                    '<div class="repo-chrome-status">' +
+                                        '<span class="repo-chrome-status-item"><span class="repo-chrome-status-label">Branch</span><span class="repo-chrome-status-value repo-chrome-branch-value"></span></span>' +
+                                        '<span class="repo-chrome-status-item"><span class="repo-chrome-status-label">Workspace</span><span class="repo-chrome-status-value repo-chrome-workspace-value"></span></span>' +
+                                        '<span class="repo-chrome-status-item"><span class="repo-chrome-status-label">Recent</span><span class="repo-chrome-status-value repo-chrome-recents-value"></span></span>' +
+                                    '</div>' +
                                 '</div>' +
                                 '<div class="repo-chrome-actions">' +
-                                    '<button type="button" class="btn btn-primary repo-chrome-browse">Browse Repo</button>' +
-                                    '<button type="button" class="btn btn-default repo-chrome-open-workspace">Open Repo Folder</button>' +
+                                    '<button type="button" class="btn btn-primary btn-sm repo-chrome-browse">Browse Repo</button>' +
+                                    '<button type="button" class="btn btn-default btn-sm repo-chrome-open-workspace">Open Repo Folder</button>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="repo-chrome-drawers">' +
+                                '<button type="button" class="btn btn-default btn-sm repo-chrome-drawer-button" data-drawer="repos">Recent Repositories <span class="badge repo-chrome-drawer-count"></span></button>' +
+                                '<button type="button" class="btn btn-default btn-sm repo-chrome-drawer-button" data-drawer="workspaces">Recent Repo Folders <span class="badge repo-chrome-drawer-count"></span></button>' +
+                            '</div>' +
+                            '<div class="repo-chrome-drawer-section" data-drawer="workspaces">' +
+                                '<div class="repo-chrome-recent-title">Recent Repo Folders</div>' +
+                                '<div class="repo-chrome-recent-list repo-chrome-workspace-recents"></div>' +
+                            '</div>' +
+                            '<div class="repo-chrome-drawer-section" data-drawer="repos">' +
+                                '<div class="repo-chrome-recent-title">Recent Repositories</div>' +
+                                '<div class="repo-chrome-recent-list repo-chrome-repo-recents"></div>' +
                                 '</div>' +
                             '</div>' +
                             '<div class="repo-workspace-shell">' +
@@ -798,14 +852,6 @@ webui.RepoChrome = function(mainView) {
                                     '</div>' +
                                 '</div>' +
                                 '<div class="repo-branch-list"></div>' +
-                            '</div>' +
-                            '<div class="repo-chrome-recent repo-chrome-workspace-section">' +
-                                '<div class="repo-chrome-recent-title">Recent Repo Folders</div>' +
-                                '<div class="repo-chrome-recent-list repo-chrome-workspace-recents"></div>' +
-                            '</div>' +
-                            '<div class="repo-chrome-recent">' +
-                                '<div class="repo-chrome-recent-title">Recent Repositories</div>' +
-                                '<div class="repo-chrome-recent-list repo-chrome-repo-recents"></div>' +
                             '</div>' +
                         '</div>')[0];
 
@@ -827,8 +873,10 @@ webui.RepoChrome = function(mainView) {
 
     $(".repo-chrome-browse", self.element).click(self.openPicker);
     $(".repo-chrome-open-workspace", self.element).click(self.openWorkspacePicker);
+    $(".repo-chrome-drawer-button", self.element).click(self.toggleDrawer);
     $(".repo-branch-create-button", self.element).click(self.createBranch);
     $("body").append(self.compareModal);
+    self.setDrawerState(null);
 };
 
 webui.NoRepoView = function(mainView) {
