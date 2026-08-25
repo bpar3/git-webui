@@ -479,6 +479,123 @@ body {
     }
 }
 
+.worktrees-list, .stashes-list, .reflog-list, .submodules-list {
+    max-height: 22em;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+.worktrees-row, .stashes-row, .reflog-row, .submodules-row {
+    .display-flex();
+    .align-items(center);
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid @gf-border;
+    font-size: 12.5px;
+}
+
+.worktrees-row-path, .submodules-row-path {
+    .flex(1);
+    font-family: @font-family-monospace;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.worktrees-row-branch, .submodules-row-status {
+    flex: 0 0 auto;
+    color: @gf-text-muted;
+}
+
+.worktrees-add {
+    .display-flex();
+    .align-items(center);
+    gap: 8px;
+    flex-wrap: wrap;
+
+    input {
+        flex: 1 1 10em;
+    }
+
+    .worktrees-add-create-label {
+        font-weight: normal;
+        font-size: 11px;
+        white-space: nowrap;
+    }
+}
+
+.stashes-row {
+    .flex-direction(column);
+    .align-items(stretch);
+    gap: 4px;
+}
+
+.stashes-row-message {
+    font-weight: bold;
+}
+
+.stashes-row-meta {
+    font-size: 11px;
+    color: @gf-text-faint;
+}
+
+.stashes-row-actions {
+    .display-flex();
+    gap: 6px;
+}
+
+.reflog-row-selector {
+    flex: 0 0 6em;
+    font-family: @font-family-monospace;
+    font-size: 11px;
+}
+
+.reflog-row-action {
+    .flex(1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.reflog-row-date {
+    flex: 0 0 8em;
+    color: @gf-text-faint;
+    font-size: 11px;
+}
+
+.interactive-rebase-list {
+    max-height: 26em;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+.interactive-rebase-row {
+    .display-flex();
+    .align-items(center);
+    gap: 10px;
+    padding: 4px 0;
+    border-bottom: 1px solid @gf-border;
+    font-size: 12.5px;
+
+    .interactive-rebase-action {
+        flex: 0 0 7em;
+    }
+
+    .interactive-rebase-hash {
+        flex: 0 0 5em;
+        font-family: @font-family-monospace;
+        color: @gf-text-faint;
+    }
+
+    .interactive-rebase-message {
+        .flex(1);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
 #global-container {
     .display-flex();
     .flex(1);
@@ -776,6 +893,45 @@ body {
         .display-flex();
         .flex-direction(column);
         min-width: 0;
+    }
+}
+
+.conflict-banner {
+    flex: 0 0 auto;
+    padding: 10px 14px;
+    background: #fdf1ee;
+    border-bottom: 1px solid #f3c8bd;
+
+    .conflict-banner-header {
+        .display-flex();
+        .align-items(center);
+        gap: 8px;
+    }
+
+    .conflict-banner-title {
+        .flex(1);
+        font-weight: bold;
+        color: @gf-danger;
+    }
+
+    .conflict-banner-files {
+        margin-top: 8px;
+    }
+
+    .conflict-banner-file {
+        .display-flex();
+        .align-items(center);
+        gap: 8px;
+        padding: 3px 0;
+        font-size: 12px;
+    }
+
+    .conflict-banner-file-path {
+        .flex(1);
+        font-family: @font-family-monospace;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 }
 
@@ -1255,6 +1411,44 @@ body {
             .flex(1);
             border: 0;
         }
+
+        .tree-blob-toolbar {
+            flex: 0 0 auto;
+            padding: 6px 10px;
+            border-bottom: 1px solid @gf-border;
+        }
+
+        #tree-view-blame-content {
+            .flex(1);
+            overflow: auto;
+            font-family: @font-family-monospace;
+            font-size: 11px;
+
+            .blame-line {
+                .display-flex();
+                border-bottom: 1px solid @gf-border;
+
+                &:hover {
+                    background: @gf-row-hover;
+                }
+            }
+
+            .blame-line-meta {
+                flex: 0 0 16em;
+                padding: 2px 8px;
+                color: @gf-text-faint;
+                border-right: 1px solid @gf-border;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .blame-line-text {
+                .flex(1);
+                padding: 2px 8px;
+                white-space: pre;
+            }
+        }
     }
 
     .list-group-item {
@@ -1344,6 +1538,19 @@ body {
     &.uncommitted-status-M { color: @gf-chip-yellow-text; }
     &.uncommitted-status-D { color: @gf-danger; }
     &.uncommitted-status-untracked { color: @gf-text-faint; }
+}
+
+.changed-file-ignore {
+    float: right;
+    margin-right: 6px;
+    padding: 0;
+    font-size: 10px;
+    color: @gf-text-faint;
+
+    &:hover, &:focus {
+        color: @gf-accent;
+        text-decoration: none;
+    }
 }
 
 #workspace-view, #commit-explorer-view {

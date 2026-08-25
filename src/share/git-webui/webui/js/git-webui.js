@@ -829,6 +829,7 @@ webui.Toolbar = function(mainView) {
 
     self.onAppMenuAction = function(event) {
         var action = event.currentTarget.getAttribute("data-action");
+        self.closeMenus();
         if (action == "open-local") {
             self.openPicker();
         } else if (action == "open-workspace") {
@@ -839,6 +840,14 @@ webui.Toolbar = function(mainView) {
             self.createRepoFlow();
         } else if (action == "toggle-theme") {
             self.toggleTheme();
+        } else if (action == "worktrees") {
+            mainView.worktreesView.show();
+        } else if (action == "stashes") {
+            mainView.stashesView.show();
+        } else if (action == "reflog") {
+            mainView.reflogView.show();
+        } else if (action == "submodules") {
+            mainView.submodulesView.show();
         }
     }
 
@@ -895,6 +904,13 @@ webui.Toolbar = function(mainView) {
         menu.append('<button type="button" class="toolbar-menu-item" data-action="open-workspace">Open Repo Folder&hellip;</button>');
         menu.append('<button type="button" class="toolbar-menu-item" data-action="clone-repo">Clone Repo&hellip;</button>');
         menu.append('<button type="button" class="toolbar-menu-item" data-action="create-repo">Create Repo&hellip;</button>');
+        if (!webui.viewonly) {
+            menu.append('<div class="toolbar-menu-divider"></div>');
+            menu.append('<button type="button" class="toolbar-menu-item" data-action="worktrees">Worktrees&hellip;</button>');
+            menu.append('<button type="button" class="toolbar-menu-item" data-action="stashes">Stashes&hellip;</button>');
+            menu.append('<button type="button" class="toolbar-menu-item" data-action="reflog">Reflog&hellip;</button>');
+            menu.append('<button type="button" class="toolbar-menu-item" data-action="submodules">Submodules&hellip;</button>');
+        }
         $(".toolbar-menu-item[data-action]", menu).click(self.onAppMenuAction);
     }
 
@@ -1244,6 +1260,394 @@ webui.ConfigureRemotesView = function() {
     $("body").append(self.element);
 };
 
+/*
+ * == WorktreesView =============================================================
+ */
+webui.WorktreesView = function(mainView) {
+
+    var self = this;
+
+    self.refresh = function() {
+        webui.apiGet("/api/worktrees", function(data) {
+            self.render(data.worktrees || []);
+        });
+    }
+
+    self.render = function(worktrees) {
+        var list = $(".worktrees-list", self.element);
+        list.empty();
+        if (worktrees.length == 0) {
+            list.append('<div class="toolbar-menu-empty">No worktrees.</div>');
+        }
+        worktrees.forEach(function(worktree) {
+            var row = $(  '<div class="worktrees-row">' +
+                                '<div class="worktrees-row-path"></div>' +
+                                '<div class="worktrees-row-branch"></div>' +
+                                '<button type="button" class="btn btn-danger btn-xs worktrees-remove">Remove</button>' +
+                            '</div>');
+            $(".worktrees-row-path", row).text(worktree.path);
+            $(".worktrees-row-branch", row).text(worktree.detached ? "(detached)" : (worktree.branch || ""));
+            $(".worktrees-remove", row).prop("disabled", worktree.path == webui.repoPath);
+            $(".worktrees-remove", row).click(function() {
+                if (!window.confirm("Remove worktree at '" + worktree.path + "'?")) {
+                    return;
+                }
+                webui.apiPost("/api/worktrees/remove", {path: worktree.path, force: true}, function(data) {
+                    self.render(data.worktrees || []);
+                }, function(xhr) {
+                    webui.showError(webui.parseApiError(xhr, "Unable to remove worktree"));
+                });
+            });
+            list.append(row);
+        });
+    }
+
+    self.onAdd = function() {
+        var path = $(".worktrees-add-path", self.element).val();
+        var branch = $(".worktrees-add-branch", self.element).val();
+        var createBranch = $(".worktrees-add-create", self.element).is(":checked");
+        if (!path || !branch) {
+            return;
+        }
+        webui.apiPost("/api/worktrees/add", {
+            path: path,
+            branch: branch,
+            create_branch: createBranch,
+            start_point: webui.historyRef || "HEAD",
+        }, function(data) {
+            $(".worktrees-add-path, .worktrees-add-branch", self.element).val("");
+            self.render(data.worktrees || []);
+        }, function(xhr) {
+            webui.showError(webui.parseApiError(xhr, "Unable to add worktree"));
+        });
+    }
+
+    self.show = function() {
+        self.refresh();
+        $(self.element).modal("show");
+    }
+
+    self.element = $(   '<div class="modal fade" id="worktrees-modal" tabindex="-1" role="dialog">' +
+                            '<div class="modal-dialog" role="document">' +
+                                '<div class="modal-content">' +
+                                    '<div class="modal-header">' +
+                                        '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
+                                        '<div class="repo-picker-eyebrow">Worktrees</div>' +
+                                        '<h4 class="modal-title">Manage Worktrees</h4>' +
+                                    '</div>' +
+                                    '<div class="modal-body">' +
+                                        '<div class="worktrees-list"></div>' +
+                                        '<div class="worktrees-add">' +
+                                            '<input type="text" class="form-control input-sm worktrees-add-path" placeholder="new worktree path">' +
+                                            '<input type="text" class="form-control input-sm worktrees-add-branch" placeholder="branch name">' +
+                                            '<label class="worktrees-add-create-label"><input type="checkbox" class="worktrees-add-create" checked> new branch</label>' +
+                                            '<button type="button" class="btn btn-primary btn-sm worktrees-add-button">Add</button>' +
+                                        '</div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>')[0];
+    $(".worktrees-add-button", self.element).click(self.onAdd);
+    $("body").append(self.element);
+};
+
+/*
+ * == StashesView ================================================================
+ */
+webui.StashesView = function(mainView) {
+
+    var self = this;
+
+    self.refresh = function() {
+        webui.apiGet("/api/stashes", function(data) {
+            self.render(data.stashes || []);
+        });
+    }
+
+    self.render = function(stashes) {
+        var list = $(".stashes-list", self.element);
+        list.empty();
+        if (stashes.length == 0) {
+            list.append('<div class="toolbar-menu-empty">No stashes.</div>');
+        }
+        stashes.forEach(function(stash) {
+            var row = $(  '<div class="stashes-row">' +
+                                '<div class="stashes-row-message"></div>' +
+                                '<div class="stashes-row-meta"></div>' +
+                                '<div class="stashes-row-actions">' +
+                                    '<button type="button" class="btn btn-default btn-xs stashes-pop">Pop</button>' +
+                                    '<button type="button" class="btn btn-default btn-xs stashes-apply">Apply</button>' +
+                                    '<button type="button" class="btn btn-danger btn-xs stashes-drop">Drop</button>' +
+                                '</div>' +
+                            '</div>');
+            $(".stashes-row-message", row).text(stash.message);
+            $(".stashes-row-meta", row).text(stash.ref + " • " + stash.author + " • " + stash.date);
+            $(".stashes-pop", row).click(function() { self.apply(stash.ref, true); });
+            $(".stashes-apply", row).click(function() { self.apply(stash.ref, false); });
+            $(".stashes-drop", row).click(function() {
+                if (!window.confirm("Drop stash '" + stash.message + "'?")) {
+                    return;
+                }
+                webui.apiPost("/api/stashes/drop", {ref: stash.ref}, function(data) {
+                    self.render(data.stashes || []);
+                }, function(xhr) {
+                    webui.showError(webui.parseApiError(xhr, "Unable to drop stash"));
+                });
+            });
+            list.append(row);
+        });
+    }
+
+    self.apply = function(ref, pop) {
+        webui.apiPost("/api/stashes/apply", {ref: ref, pop: pop}, function(data) {
+            webui.showResult(pop ? "Stash popped" : "Stash applied", data.message || "");
+            $(self.element).modal("hide");
+            if (mainView.workspaceView) {
+                mainView.workspaceView.update("stage");
+            }
+        }, function(xhr) {
+            webui.showError(webui.parseApiError(xhr, "Unable to apply stash"));
+        });
+    }
+
+    self.show = function() {
+        self.refresh();
+        $(self.element).modal("show");
+    }
+
+    self.element = $(   '<div class="modal fade" id="stashes-modal" tabindex="-1" role="dialog">' +
+                            '<div class="modal-dialog" role="document">' +
+                                '<div class="modal-content">' +
+                                    '<div class="modal-header">' +
+                                        '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
+                                        '<div class="repo-picker-eyebrow">Stashes</div>' +
+                                        '<h4 class="modal-title">Stashes</h4>' +
+                                    '</div>' +
+                                    '<div class="modal-body">' +
+                                        '<div class="stashes-list"></div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>')[0];
+    $("body").append(self.element);
+};
+
+/*
+ * == ReflogView ================================================================
+ */
+webui.ReflogView = function(mainView) {
+
+    var self = this;
+
+    self.refresh = function() {
+        webui.apiGet("/api/reflog", function(data) {
+            self.render(data.entries || []);
+        });
+    }
+
+    self.render = function(entries) {
+        var list = $(".reflog-list", self.element);
+        list.empty();
+        if (entries.length == 0) {
+            list.append('<div class="toolbar-menu-empty">No reflog entries.</div>');
+        }
+        entries.forEach(function(entry) {
+            var row = $(  '<div class="reflog-row">' +
+                                '<div class="reflog-row-selector"></div>' +
+                                '<div class="reflog-row-action"></div>' +
+                                '<div class="reflog-row-date"></div>' +
+                                '<button type="button" class="btn btn-default btn-xs reflog-reset">Reset here</button>' +
+                            '</div>');
+            $(".reflog-row-selector", row).text(entry.selector);
+            $(".reflog-row-action", row).text(entry.action);
+            $(".reflog-row-date", row).text(entry.date);
+            $(".reflog-reset", row).click(function() {
+                if (!window.confirm("Hard reset the current branch to " + entry.selector + " (" + entry.action + ")? This cannot be undone.")) {
+                    return;
+                }
+                webui.git("reset --hard " + entry.commit, function() {
+                    webui.showResult("Reset complete", "Reset to " + entry.selector);
+                    $(self.element).modal("hide");
+                    webui.reloadWithPostAction("history");
+                });
+            });
+            list.append(row);
+        });
+    }
+
+    self.show = function() {
+        self.refresh();
+        $(self.element).modal("show");
+    }
+
+    self.element = $(   '<div class="modal fade" id="reflog-modal" tabindex="-1" role="dialog">' +
+                            '<div class="modal-dialog modal-lg" role="document">' +
+                                '<div class="modal-content">' +
+                                    '<div class="modal-header">' +
+                                        '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
+                                        '<div class="repo-picker-eyebrow">Reflog</div>' +
+                                        '<h4 class="modal-title">HEAD Reflog</h4>' +
+                                    '</div>' +
+                                    '<div class="modal-body">' +
+                                        '<div class="reflog-list"></div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>')[0];
+    $("body").append(self.element);
+};
+
+/*
+ * == SubmodulesView =============================================================
+ */
+webui.SubmodulesView = function(mainView) {
+
+    var self = this;
+
+    self.refresh = function() {
+        webui.apiGet("/api/submodules", function(data) {
+            self.render(data.submodules || []);
+        });
+    }
+
+    self.render = function(submodules) {
+        var list = $(".submodules-list", self.element);
+        list.empty();
+        if (submodules.length == 0) {
+            list.append('<div class="toolbar-menu-empty">No submodules in this repository.</div>');
+        }
+        submodules.forEach(function(submodule) {
+            var row = $(  '<div class="submodules-row">' +
+                                '<div class="submodules-row-path"></div>' +
+                                '<div class="submodules-row-status"></div>' +
+                            '</div>');
+            $(".submodules-row-path", row).text(submodule.path);
+            $(".submodules-row-status", row).text(submodule.status.replace("_", " ") + (submodule.describe ? " (" + submodule.describe + ")" : ""));
+            list.append(row);
+        });
+    }
+
+    self.onUpdateAll = function() {
+        webui.apiPost("/api/submodules/update", {init: true}, function(data) {
+            webui.showResult("Submodules updated", "Ran submodule update --init --recursive");
+            self.render(data.submodules || []);
+        }, function(xhr) {
+            webui.showError(webui.parseApiError(xhr, "Unable to update submodules"));
+        });
+    }
+
+    self.show = function() {
+        self.refresh();
+        $(self.element).modal("show");
+    }
+
+    self.element = $(   '<div class="modal fade" id="submodules-modal" tabindex="-1" role="dialog">' +
+                            '<div class="modal-dialog" role="document">' +
+                                '<div class="modal-content">' +
+                                    '<div class="modal-header">' +
+                                        '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
+                                        '<div class="repo-picker-eyebrow">Submodules</div>' +
+                                        '<h4 class="modal-title">Submodules</h4>' +
+                                    '</div>' +
+                                    '<div class="modal-body">' +
+                                        '<div class="submodules-list"></div>' +
+                                        '<button type="button" class="btn btn-primary btn-sm submodules-update-all">Update All (init + recursive)</button>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>')[0];
+    $(".submodules-update-all", self.element).click(self.onUpdateAll);
+    $("body").append(self.element);
+};
+
+/*
+ * == InteractiveRebaseView =======================================================
+ * A scoped interactive rebase editor: reorder is implicit in the list order,
+ * plus per-commit Pick/Squash/Drop. Reword is intentionally not supported -
+ * it would need a second pause/resume round trip with the rebase process.
+ */
+webui.InteractiveRebaseView = function(mainView) {
+
+    var self = this;
+
+    self.show = function(base) {
+        self.base = base;
+        webui.git("log --format=%H%x09%s --date-order " + base + "..HEAD --", function(data) {
+            var commits = webui.splitLines(data).filter(function(line) { return line.length > 0; }).map(function(line) {
+                var parts = line.split("\t");
+                return { commit: parts[0], message: parts[1] || "" };
+            });
+            commits.reverse(); // oldest first, matching rebase todo order
+            self.render(commits);
+            $(self.element).modal("show");
+        });
+    }
+
+    self.render = function(commits) {
+        $(".interactive-rebase-base", self.element).text(self.base);
+        var list = $(".interactive-rebase-list", self.element);
+        list.empty();
+        if (commits.length == 0) {
+            list.append('<div class="toolbar-menu-empty">HEAD is already up to date with ' + webui.escapeHtml(self.base) + '.</div>');
+            return;
+        }
+        commits.forEach(function(commit) {
+            var row = $(  '<div class="interactive-rebase-row">' +
+                                '<select class="form-control input-sm interactive-rebase-action">' +
+                                    '<option value="pick">Pick</option>' +
+                                    '<option value="squash">Squash</option>' +
+                                    '<option value="drop">Drop</option>' +
+                                '</select>' +
+                                '<span class="interactive-rebase-hash"></span>' +
+                                '<span class="interactive-rebase-message"></span>' +
+                            '</div>');
+            row[0].commitSha = commit.commit;
+            $(".interactive-rebase-hash", row).text(commit.commit.substr(0, 7));
+            $(".interactive-rebase-message", row).text(commit.message);
+            list.append(row);
+        });
+    }
+
+    self.onRun = function() {
+        var actions = [];
+        $(".interactive-rebase-row", self.element).each(function() {
+            actions.push({ commit: this.commitSha, action: $(".interactive-rebase-action", this).val() });
+        });
+        if (actions.length == 0) {
+            return;
+        }
+        if (!window.confirm("Rewrite " + actions.length + " commit(s) onto " + self.base + "? This rewrites history.")) {
+            return;
+        }
+        webui.apiPost("/api/rebase/plan", {base: self.base, actions: actions}, function(data) {
+            webui.showResult("Rebase completed", data.message || "");
+            $(self.element).modal("hide");
+            webui.reloadWithPostAction("history");
+        }, function(xhr) {
+            webui.showError(webui.parseApiError(xhr, "Rebase failed"));
+        });
+    }
+
+    self.element = $(   '<div class="modal fade" id="interactive-rebase-modal" tabindex="-1" role="dialog">' +
+                            '<div class="modal-dialog modal-lg" role="document">' +
+                                '<div class="modal-content">' +
+                                    '<div class="modal-header">' +
+                                        '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
+                                        '<div class="repo-picker-eyebrow">Interactive Rebase</div>' +
+                                        '<h4 class="modal-title">Rebase HEAD onto <span class="interactive-rebase-base"></span></h4>' +
+                                    '</div>' +
+                                    '<div class="modal-body">' +
+                                        '<p class="repo-picker-hint">Commits are listed oldest first, applied in this order. Reordering rows is not supported yet; use Drop to remove a commit and Squash to fold it into the one above.</p>' +
+                                        '<div class="interactive-rebase-list"></div>' +
+                                        '<button type="button" class="btn btn-primary btn-sm interactive-rebase-run">Rebase</button>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>')[0];
+    $(".interactive-rebase-run", self.element).click(self.onRun);
+    $("body").append(self.element);
+};
+
 webui.NoRepoView = function(mainView) {
 
     var self = this;
@@ -1378,6 +1782,12 @@ webui.RefActionMenu = function(mainView) {
             self.addAction("Delete local branch", function() {
                 mainView.repoChrome.removeBranch(refInfo.gitRef);
             }, webui.viewonly || !branch || !branch.can_delete, "danger");
+        }
+
+        if (refInfo.kind == "local" || refInfo.kind == "remote") {
+            self.addAction("Interactive Rebase onto here&hellip;", function() {
+                mainView.interactiveRebaseView.show(refInfo.gitRef);
+            }, webui.viewonly);
         }
 
         self.addAction("Copy ref name", function() {
@@ -2431,9 +2841,14 @@ webui.TreeView = function(commitView) {
         self.name = line.substr(start);
     }
 
-    self.update = function(treeRef) {
+    self.update = function(treeRef, commitRef) {
         self.stack = [ { name: webui.repo, object: treeRef } ];
+        self.commitRef = commitRef;
         self.showTree();
+    }
+
+    self.getCurrentPath = function() {
+        return self.stack.slice(1).map(function(entry) { return entry.name; }).join("/");
     }
 
     self.createBreadcrumb = function() {
@@ -2527,9 +2942,41 @@ webui.TreeView = function(commitView) {
     self.showBlob = function(blobRef) {
         self.createBreadcrumb();
         $(self.element.lastElementChild).remove();
-        $(  '<div id="tree-view-blob-content">' +
-                '<iframe src="/git/cat-file/' + self.stack[self.stack.length - 1].object + '"></iframe>' +
-            '</div>').appendTo(self.element);
+        var container = $(  '<div id="tree-view-blob-content">' +
+                                '<div class="tree-blob-toolbar"><button type="button" class="btn btn-default btn-xs tree-blame-toggle">Blame</button></div>' +
+                                '<iframe src="/git/cat-file/' + self.stack[self.stack.length - 1].object + '"></iframe>' +
+                            '</div>');
+        container.appendTo(self.element);
+        $(".tree-blame-toggle", container).click(self.toggleBlame);
+    }
+
+    self.toggleBlame = function() {
+        var existing = $("#tree-view-blame-content", self.element);
+        if (existing.length > 0) {
+            existing.remove();
+            $("#tree-view-blob-content iframe", self.element).show();
+            return;
+        }
+        var path = self.getCurrentPath();
+        webui.apiGet(
+            "/api/blame?path=" + encodeURIComponent(path) + "&rev=" + encodeURIComponent(self.commitRef || "HEAD"),
+            function(data) {
+                $("#tree-view-blob-content iframe", self.element).hide();
+                var blameContent = $('<div id="tree-view-blame-content"></div>');
+                (data.lines || []).forEach(function(line) {
+                    var row = $('<div class="blame-line"><span class="blame-line-meta"></span><span class="blame-line-text"></span></div>');
+                    $(".blame-line-meta", row)
+                        .text((line.commit || "").substr(0, 7) + " " + (line.author || ""))
+                        .attr("title", line.summary || "");
+                    $(".blame-line-text", row).text(line.text);
+                    blameContent.append(row);
+                });
+                $("#tree-view-blob-content", self.element).append(blameContent);
+            },
+            function(xhr) {
+                webui.showError(webui.parseApiError(xhr, "Unable to blame this file"));
+            }
+        );
     }
 
     self.element = $('<div id="tree-view">')[0];
@@ -2709,7 +3156,7 @@ webui.CommitView = function(historyView) {
         self.showDiff();
         buttonBox.select(0);
         diffView.update("show", [entry.commit]);
-        treeView.update(entry.tree);
+        treeView.update(entry.tree, entry.commit);
     };
 
     self.showDiff = function() {
@@ -2863,6 +3310,88 @@ webui.UncommittedSummaryView = function(mainView) {
 };
 
 /*
+ * == ConflictBannerView ======================================================
+ * Shown above the diff/file lists whenever a merge or rebase is in progress
+ * with unresolved conflicts, with Accept Ours/Theirs per file and Abort.
+ */
+webui.ConflictBannerView = function(workspaceView) {
+
+    var self = this;
+
+    self.update = function() {
+        webui.apiGet("/api/conflicts", function(data) {
+            self.render(data);
+        });
+    }
+
+    self.render = function(data) {
+        self.lastStatus = data;
+        if (!data.merging && !data.rebasing && data.conflicted_files.length == 0) {
+            $(self.element).hide();
+            return;
+        }
+        $(self.element).show();
+        var kind = data.rebasing ? "Rebase" : "Merge";
+        $(".conflict-banner-title", self.element).text(kind + " in progress" + (data.conflicted_files.length > 0 ? " — " + data.conflicted_files.length + " conflicted file" + (data.conflicted_files.length == 1 ? "" : "s") : ""));
+
+        var list = $(".conflict-banner-files", self.element);
+        list.empty();
+        data.conflicted_files.forEach(function(path) {
+            var row = $(  '<div class="conflict-banner-file">' +
+                                '<span class="conflict-banner-file-path"></span>' +
+                                '<button type="button" class="btn btn-default btn-xs conflict-ours">Accept Ours</button>' +
+                                '<button type="button" class="btn btn-default btn-xs conflict-theirs">Accept Theirs</button>' +
+                            '</div>');
+            $(".conflict-banner-file-path", row).text(path);
+            $(".conflict-ours", row).click(function() { self.resolve(path, "ours"); });
+            $(".conflict-theirs", row).click(function() { self.resolve(path, "theirs"); });
+            list.append(row);
+        });
+
+        $(".conflict-continue", self.element).toggle(!!data.rebasing);
+    }
+
+    self.resolve = function(path, resolution) {
+        webui.apiPost("/api/conflicts/resolve", {path: path, resolution: resolution}, function(data) {
+            self.render(data);
+            workspaceView.update("stage");
+        }, function(xhr) {
+            webui.showError(webui.parseApiError(xhr, "Unable to resolve conflict"));
+        });
+    }
+
+    self.onAbort = function() {
+        if (!window.confirm("Abort the in-progress merge/rebase?")) {
+            return;
+        }
+        var cmd = self.lastStatus && self.lastStatus.rebasing ? "rebase --abort" : "merge --abort";
+        webui.git(cmd, function() {
+            self.update();
+            workspaceView.update("stage");
+        });
+    }
+
+    self.onContinue = function() {
+        webui.git("rebase --continue", function() {
+            self.update();
+            workspaceView.update("stage");
+        });
+    }
+
+    self.element = $(   '<div class="conflict-banner">' +
+                            '<div class="conflict-banner-header">' +
+                                '<span class="conflict-banner-title"></span>' +
+                                '<button type="button" class="btn btn-default btn-xs conflict-continue">Continue</button>' +
+                                '<button type="button" class="btn btn-danger btn-xs conflict-abort">Abort</button>' +
+                            '</div>' +
+                            '<div class="conflict-banner-files"></div>' +
+                        '</div>')[0];
+    $(".conflict-abort", self.element).click(self.onAbort);
+    $(".conflict-continue", self.element).click(self.onContinue);
+    $(self.element).hide();
+};
+
+/*
  * == WorkspaceView ===========================================================
  */
 webui.WorkspaceView = function(mainView) {
@@ -2878,6 +3407,7 @@ webui.WorkspaceView = function(mainView) {
         self.workingCopyView.update();
         self.stagingAreaView.update();
         self.commitMessageView.update();
+        self.conflictBanner.update();
         if (self.workingCopyView.getSelectedItemsCount() + self.stagingAreaView.getSelectedItemsCount() == 0) {
             self.diffView.update(undefined, undefined, undefined, mode);
         }
@@ -2933,6 +3463,8 @@ webui.WorkspaceView = function(mainView) {
                                     '<div class="workspace-dropdown-menu toolbar-menu" data-dropdown="stash">' +
                                         '<button type="button" class="toolbar-menu-item" data-action="stash-all">Stash All Changes</button>' +
                                         '<button type="button" class="toolbar-menu-item" data-action="stash-selected">Stash Selected Changes</button>' +
+                                        '<div class="toolbar-menu-divider"></div>' +
+                                        '<button type="button" class="toolbar-menu-item" data-action="view-stashes">View Stashes&hellip;</button>' +
                                     '</div>' +
                                 '</div>' +
                                 '<div class="workspace-dropdown">' +
@@ -2943,6 +3475,7 @@ webui.WorkspaceView = function(mainView) {
                                     '</div>' +
                                 '</div>' +
                             '</div>' +
+                            '<div class="conflict-banner"></div>' +
                             '<div id="workspace-diff-view"></div>' +
                             '<div id="workspace-editor"></div>' +
                         '</div>')[0];
@@ -2958,6 +3491,7 @@ webui.WorkspaceView = function(mainView) {
     $("[data-action='stash-selected']", self.element).click(function() { self.closeDropdowns(); self.stashChanges(true); });
     $("[data-action='discard-all']", self.element).click(function() { self.closeDropdowns(); self.discardChanges(false); });
     $("[data-action='discard-selected']", self.element).click(function() { self.closeDropdowns(); self.discardChanges(true); });
+    $("[data-action='view-stashes']", self.element).click(function() { self.closeDropdowns(); mainView.stashesView.show(); });
     $(document).on("click", self.closeDropdowns);
     $(document).on("keydown", function(event) {
         if (event.key == "Escape") {
@@ -2965,6 +3499,8 @@ webui.WorkspaceView = function(mainView) {
         }
     });
 
+    self.conflictBanner = new webui.ConflictBannerView(self);
+    $(".conflict-banner", self.element).replaceWith(self.conflictBanner.element);
     var workspaceDiffView = $("#workspace-diff-view", self.element)[0];
     self.diffView = new webui.DiffView(true, true, self);
     workspaceDiffView.appendChild(self.diffView.element);
@@ -3005,6 +3541,20 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
                     $(".changed-file-path", item).text(line);
                     var statusClass = status == "?" ? "untracked" : status;
                     $(".changed-file-status", item).text(status).addClass("uncommitted-status-" + statusClass);
+                    if (status == "?") {
+                        var ignoreBtn = $('<button type="button" class="btn btn-link btn-xs changed-file-ignore" title="Add to .gitignore">ignore</button>');
+                        var ignoreModel = item.model;
+                        ignoreBtn.click(function(event) {
+                            event.stopPropagation();
+                            webui.apiPost("/api/gitignore/add", {pattern: ignoreModel}, function(data) {
+                                webui.showResult("Updated .gitignore", data.message);
+                                workspaceView.update("stage");
+                            }, function(xhr) {
+                                webui.showError(webui.parseApiError(xhr, "Unable to update .gitignore"));
+                            });
+                        });
+                        ignoreBtn.appendTo(item);
+                    }
                     $(item).click(self.select);
                     $(item).dblclick(self.process);
                 }
@@ -3382,6 +3932,11 @@ function MainUi() {
         self.commitActionMenu = new webui.CommitActionMenu(self);
         self.searchOverlay = new webui.SearchOverlay(self);
         self.configureRemotesView = new webui.ConfigureRemotesView();
+        self.worktreesView = new webui.WorktreesView(self);
+        self.stashesView = new webui.StashesView(self);
+        self.reflogView = new webui.ReflogView(self);
+        self.submodulesView = new webui.SubmodulesView(self);
+        self.interactiveRebaseView = new webui.InteractiveRebaseView(self);
 
         self.repoChrome = new webui.Toolbar(self);
         body.appendChild(self.repoChrome.element);

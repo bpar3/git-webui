@@ -21,11 +21,13 @@ import json
 import os
 import platform
 import posixpath
+import re
 import shlex
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import webbrowser
 
 if sys.version > '3':
@@ -235,6 +237,50 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 return
             commit = self.path[len("/api/commits/"):-len("/is-ancestor")]
             self.send_json(200, {"is_ancestor": is_ancestor_of_head(WebUiRequestHandler.REPO_ROOT, commit)})
+        elif self.path == "/api/worktrees":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            result = list_worktrees(WebUiRequestHandler.REPO_ROOT)
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/stashes":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            result = list_stashes(WebUiRequestHandler.REPO_ROOT)
+            self.send_json(result["status"], result["payload"])
+        elif self.path.startswith("/api/reflog"):
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            parsed_path = urlparse(self.path)
+            ref = parse_qs(parsed_path.query).get("ref", [None])[0]
+            result = list_reflog(WebUiRequestHandler.REPO_ROOT, ref)
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/submodules":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            result = list_submodules(WebUiRequestHandler.REPO_ROOT)
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/conflicts":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            result = get_conflict_status(WebUiRequestHandler.REPO_ROOT)
+            self.send_json(result["status"], result["payload"])
+        elif self.path.startswith("/api/blame"):
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            parsed_path = urlparse(self.path)
+            query = parse_qs(parsed_path.query)
+            result = get_blame(
+                WebUiRequestHandler.REPO_ROOT,
+                query.get("path", [None])[0],
+                query.get("rev", [None])[0],
+            )
+            self.send_json(result["status"], result["payload"])
         elif self.path.startswith("/git/cat-file/"):
             if not self.ensure_repo_selected():
                 return
@@ -405,6 +451,68 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 self.send_json(200, self.get_repo_context())
             else:
                 self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/worktrees/add":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            payload = self.read_json_body()
+            result = add_worktree(
+                WebUiRequestHandler.REPO_ROOT,
+                payload.get("path"),
+                payload.get("branch"),
+                payload.get("create_branch", False),
+                payload.get("start_point"),
+            )
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/worktrees/remove":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            payload = self.read_json_body()
+            result = remove_worktree(WebUiRequestHandler.REPO_ROOT, payload.get("path"), payload.get("force", False))
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/stashes/apply":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            payload = self.read_json_body()
+            result = apply_stash(WebUiRequestHandler.REPO_ROOT, payload.get("ref"), payload.get("pop", False))
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/stashes/drop":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            payload = self.read_json_body()
+            result = drop_stash(WebUiRequestHandler.REPO_ROOT, payload.get("ref"))
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/submodules/update":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            payload = self.read_json_body()
+            result = update_submodules(WebUiRequestHandler.REPO_ROOT, payload.get("init", True))
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/gitignore/add":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            payload = self.read_json_body()
+            result = add_to_gitignore(WebUiRequestHandler.REPO_ROOT, payload.get("pattern"))
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/conflicts/resolve":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            payload = self.read_json_body()
+            result = resolve_conflict(WebUiRequestHandler.REPO_ROOT, payload.get("path"), payload.get("resolution"))
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/rebase/plan":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            payload = self.read_json_body()
+            result = run_interactive_rebase_plan(WebUiRequestHandler.REPO_ROOT, payload.get("base"), payload.get("actions"))
+            self.send_json(result["status"], result["payload"])
         elif self.path == "/git":
             if not self.ensure_repo_selected():
                 return
@@ -1147,6 +1255,335 @@ def create_repo(destination_parent, directory_name):
     if result["returncode"] != 0:
         return {"status": 400, "payload": {"error": result["stderr"] or result["stdout"] or "git init failed."}}
     return {"status": 200, "payload": {"path": os.path.realpath(target)}}
+
+
+def list_worktrees(repo_root):
+    result = run_git_capture(repo_root, ["worktree", "list", "--porcelain"])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to list worktrees."}}
+    worktrees = []
+    current = None
+    for line in result["stdout"].splitlines():
+        if not line.strip():
+            if current:
+                worktrees.append(current)
+                current = None
+            continue
+        if line.startswith("worktree "):
+            current = {
+                "path": line[len("worktree "):],
+                "head": None,
+                "branch": None,
+                "detached": False,
+                "locked": False,
+                "prunable": False,
+            }
+        elif current is None:
+            continue
+        elif line.startswith("HEAD "):
+            current["head"] = line[len("HEAD "):]
+        elif line.startswith("branch "):
+            current["branch"] = short_ref_name(line[len("branch "):])
+        elif line == "detached":
+            current["detached"] = True
+        elif line.startswith("locked"):
+            current["locked"] = True
+        elif line.startswith("prunable"):
+            current["prunable"] = True
+    if current:
+        worktrees.append(current)
+    return {"status": 200, "payload": {"worktrees": worktrees}}
+
+
+def short_ref_name(ref_name):
+    if not ref_name:
+        return ref_name
+    for prefix in ("refs/heads/", "refs/remotes/", "refs/tags/"):
+        if ref_name.startswith(prefix):
+            return ref_name[len(prefix):]
+    return ref_name
+
+
+def add_worktree(repo_root, path, branch, create_branch, start_point):
+    if not path or not path.strip():
+        return {"status": 400, "payload": {"error": "A worktree path is required."}}
+    target = os.path.realpath(os.path.expanduser(path.strip()))
+    args = ["worktree", "add"]
+    if create_branch:
+        if not branch or not branch.strip():
+            return {"status": 400, "payload": {"error": "A new branch name is required."}}
+        args += ["-b", branch.strip(), target]
+        if start_point and start_point.strip():
+            args.append(start_point.strip())
+    else:
+        args.append(target)
+        if branch and branch.strip():
+            args.append(branch.strip())
+    result = run_git_capture(repo_root, args)
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or result["stdout"] or "Unable to add worktree."}}
+    return list_worktrees(repo_root)
+
+
+def remove_worktree(repo_root, path, force):
+    if not path or not path.strip():
+        return {"status": 400, "payload": {"error": "A worktree path is required."}}
+    args = ["worktree", "remove"]
+    if force:
+        args.append("--force")
+    args.append(path.strip())
+    result = run_git_capture(repo_root, args)
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or result["stdout"] or "Unable to remove worktree."}}
+    return list_worktrees(repo_root)
+
+
+def list_stashes(repo_root):
+    result = run_git_capture(repo_root, ["stash", "list", "--pretty=format:%gd\t%an\t%ar\t%s"])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to list stashes."}}
+    stashes = []
+    for line in result["stdout"].splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        while len(parts) < 4:
+            parts.append("")
+        stashes.append({"ref": parts[0], "author": parts[1], "date": parts[2], "message": parts[3]})
+    return {"status": 200, "payload": {"stashes": stashes}}
+
+
+def apply_stash(repo_root, ref, pop):
+    if not ref or not ref.strip():
+        return {"status": 400, "payload": {"error": "A stash reference is required."}}
+    result = run_git_capture(repo_root, ["stash", "pop" if pop else "apply", ref.strip()])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or result["stdout"] or "Unable to apply stash."}}
+    return {"status": 200, "payload": {"message": result["stdout"] or "Stash applied."}}
+
+
+def drop_stash(repo_root, ref):
+    if not ref or not ref.strip():
+        return {"status": 400, "payload": {"error": "A stash reference is required."}}
+    result = run_git_capture(repo_root, ["stash", "drop", ref.strip()])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to drop stash."}}
+    return list_stashes(repo_root)
+
+
+def list_reflog(repo_root, ref=None, limit=200):
+    result = run_git_capture(
+        repo_root,
+        ["reflog", "show", "--date=relative", "--format=%H\t%gd\t%gs\t%ad", "-n", str(limit), ref or "HEAD"],
+    )
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to read reflog."}}
+    entries = []
+    for line in result["stdout"].splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        while len(parts) < 4:
+            parts.append("")
+        entries.append({"commit": parts[0], "selector": parts[1], "action": parts[2], "date": parts[3]})
+    return {"status": 200, "payload": {"entries": entries}}
+
+
+SUBMODULE_STATUS_WORDS = {"-": "not_initialized", "+": "modified", "U": "conflict"}
+
+
+def list_submodules(repo_root):
+    result = run_git_capture(repo_root, ["submodule", "status", "--recursive"])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to list submodules."}}
+    submodules = []
+    for line in result["stdout"].splitlines():
+        if not line.strip():
+            continue
+        state = line[0]
+        rest = line[1:].strip()
+        parts = rest.split(" ", 1)
+        commit = parts[0] if len(parts) > 0 else ""
+        remainder = parts[1] if len(parts) > 1 else ""
+        describe = ""
+        if " (" in remainder and remainder.endswith(")"):
+            path, _, describe = remainder.partition(" (")
+            describe = describe[:-1]
+        else:
+            path = remainder
+        submodules.append({
+            "path": path.strip(),
+            "commit": commit,
+            "status": SUBMODULE_STATUS_WORDS.get(state, "clean"),
+            "describe": describe,
+        })
+    return {"status": 200, "payload": {"submodules": submodules}}
+
+
+def update_submodules(repo_root, init):
+    args = ["submodule", "update", "--recursive"]
+    if init:
+        args.append("--init")
+    result = run_git_capture(repo_root, args)
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or result["stdout"] or "Unable to update submodules."}}
+    return list_submodules(repo_root)
+
+
+def add_to_gitignore(repo_root, pattern):
+    if not pattern or not pattern.strip():
+        return {"status": 400, "payload": {"error": "A pattern is required."}}
+    pattern = pattern.strip()
+    gitignore_path = os.path.join(repo_root, ".gitignore")
+    existing = ""
+    if os.path.isfile(gitignore_path):
+        with open(gitignore_path, "r") as f:
+            existing = f.read()
+    if pattern in existing.splitlines():
+        return {"status": 200, "payload": {"message": pattern + " is already ignored.", "added": False}}
+    with open(gitignore_path, "a") as f:
+        if existing and not existing.endswith("\n"):
+            f.write("\n")
+        f.write(pattern + "\n")
+    return {"status": 200, "payload": {"message": "Added " + pattern + " to .gitignore", "added": True}}
+
+
+BLAME_COMMIT_HEADER_RE = re.compile(r"^([0-9a-f]{40}) (\d+) (\d+)(?: (\d+))?$")
+
+
+def get_blame(repo_root, path, rev=None):
+    if not path:
+        return {"status": 400, "payload": {"error": "A file path is required."}}
+    args = ["blame", "--porcelain"]
+    if rev and rev.strip():
+        args.append(rev.strip())
+    args += ["--", path]
+    result = run_git_capture(repo_root, args)
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to blame this file."}}
+
+    lines = []
+    commits = {}
+    current_commit = None
+    current_line_no = None
+    for raw_line in result["stdout"].split("\n"):
+        if raw_line.startswith("\t"):
+            lines.append({"commit": current_commit, "line_no": current_line_no, "text": raw_line[1:]})
+            continue
+        header_match = BLAME_COMMIT_HEADER_RE.match(raw_line)
+        if header_match:
+            current_commit = header_match.group(1)
+            current_line_no = int(header_match.group(3))
+            commits.setdefault(current_commit, {})
+            continue
+        if current_commit is not None:
+            if raw_line.startswith("author "):
+                commits[current_commit]["author"] = raw_line[len("author "):]
+            elif raw_line.startswith("author-time "):
+                commits[current_commit]["author_time"] = raw_line[len("author-time "):]
+            elif raw_line.startswith("summary "):
+                commits[current_commit]["summary"] = raw_line[len("summary "):]
+
+    for line in lines:
+        info = commits.get(line["commit"], {})
+        line["author"] = info.get("author", "")
+        line["summary"] = info.get("summary", "")
+        line["author_time"] = info.get("author_time", "")
+    return {"status": 200, "payload": {"lines": lines}}
+
+
+UNMERGED_STATUS_CODES = ("UU", "AA", "DD", "AU", "UA", "DU", "UD")
+
+
+def get_conflict_status(repo_root):
+    git_dir_result = run_git_capture(repo_root, ["rev-parse", "--git-dir"])
+    git_dir = (
+        os.path.join(repo_root, git_dir_result["stdout"].strip())
+        if git_dir_result["returncode"] == 0
+        else os.path.join(repo_root, ".git")
+    )
+    merging = os.path.isfile(os.path.join(git_dir, "MERGE_HEAD"))
+    rebasing = os.path.isdir(os.path.join(git_dir, "rebase-merge")) or os.path.isdir(os.path.join(git_dir, "rebase-apply"))
+    result = run_git_capture(repo_root, ["status", "--porcelain"])
+    conflicted = []
+    if result["returncode"] == 0:
+        for line in result["stdout"].splitlines():
+            if len(line) < 3:
+                continue
+            if line[0:2] in UNMERGED_STATUS_CODES:
+                conflicted.append(line[3:])
+    return {
+        "status": 200,
+        "payload": {
+            "merging": merging,
+            "rebasing": rebasing,
+            "conflicted_files": conflicted,
+        },
+    }
+
+
+def resolve_conflict(repo_root, path, resolution):
+    if not path:
+        return {"status": 400, "payload": {"error": "A file path is required."}}
+    if resolution not in ("ours", "theirs"):
+        return {"status": 400, "payload": {"error": "resolution must be 'ours' or 'theirs'."}}
+    checkout_result = run_git_capture(repo_root, ["checkout", "--" + resolution, "--", path])
+    if checkout_result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": checkout_result["stderr"] or "Unable to resolve conflict."}}
+    add_result = run_git_capture(repo_root, ["add", "--", path])
+    if add_result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": add_result["stderr"] or "Unable to stage resolved file."}}
+    return get_conflict_status(repo_root)
+
+
+def run_interactive_rebase_plan(repo_root, base, actions):
+    if not base or not base.strip():
+        return {"status": 400, "payload": {"error": "A base commit or branch is required."}}
+    if not actions:
+        return {"status": 400, "payload": {"error": "At least one commit action is required."}}
+    lines = []
+    for action in actions:
+        verb = action.get("action", "pick")
+        if verb not in ("pick", "squash", "drop"):
+            return {"status": 400, "payload": {"error": "Unsupported rebase action: " + str(verb)}}
+        commit = action.get("commit")
+        if not commit:
+            return {"status": 400, "payload": {"error": "Each action requires a commit."}}
+        if verb == "drop":
+            continue
+        lines.append(verb + " " + commit)
+    if not lines:
+        return {"status": 400, "payload": {"error": "The rebase plan cannot drop every commit."}}
+    todo_content = "\n".join(lines) + "\n"
+
+    fd, todo_path = tempfile.mkstemp(prefix="git-webui-rebase-todo-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(todo_content)
+        env = dict(os.environ)
+        env["GIT_SEQUENCE_EDITOR"] = "cp " + shlex.quote(todo_path)
+        env["GIT_EDITOR"] = "true"
+        process = subprocess.Popen(
+            ["git", "-c", "color.ui=false", "rebase", "-i", base.strip()],
+            cwd=repo_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        stdout, stderr = process.communicate()
+        if process.returncode != 0:
+            return {
+                "status": 409,
+                "payload": {
+                    "error": decode_output(stderr) or decode_output(stdout) or "Rebase failed. It may need manual conflict resolution.",
+                },
+            }
+        return {"status": 200, "payload": {"message": decode_output(stdout) or "Rebase completed."}}
+    finally:
+        try:
+            os.remove(todo_path)
+        except OSError:
+            pass
 
 
 def get_repo_summary(repo_root, active=False):
