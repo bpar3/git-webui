@@ -137,12 +137,41 @@ body {
 #app-titlebar {
     .display-flex();
     .align-items(center);
-    justify-content: center;
     padding: 4px 12px;
     background: @gf-titlebar-bg;
     color: @gf-titlebar-text;
     font-size: 12px;
     .no-select();
+
+    .app-titlebar-path {
+        .flex(1);
+        text-align: center;
+    }
+
+    .app-titlebar-remote-access {
+        flex: 0 0 auto;
+        font-size: 10px;
+        color: #7fd88f;
+        cursor: default;
+    }
+}
+
+.toolbar-menu-remote-access {
+    padding: 4px 14px 8px 14px;
+    font-size: 11px;
+    color: @gf-text-muted;
+    line-height: 1.5;
+
+    code {
+        display: block;
+        margin-top: 4px;
+        padding: 4px 6px;
+        background: @gf-row-hover;
+        border-radius: 4px;
+        font-size: 10px;
+        white-space: nowrap;
+        overflow-x: auto;
+    }
 }
 
 #app-toolbar {
@@ -392,14 +421,14 @@ body {
 #branch-compare-modal {
 
     .modal-content {
-        background: #fcfbf7;
+        background: @gf-panel-bg;
     }
 
     .branch-compare-summary,
     .branch-compare-diff {
         white-space: pre-wrap;
         word-break: break-word;
-        background: #f4f1ea;
+        background: @gf-row-hover;
         border: 1px solid rgba(34, 34, 34, 0.08);
         border-radius: 10px;
         padding: 12px;
@@ -473,7 +502,7 @@ body {
 #repo-picker-modal {
 
     .modal-content {
-        background: #fcfbf7;
+        background: @gf-panel-bg;
     }
 
     .repo-picker-toolbar {
@@ -516,7 +545,7 @@ body {
 
     .repo-picker-entry {
         padding: 0;
-        color: #1f2328;
+        color: @gf-text;
         font-weight: bold;
         text-align: left;
     }
@@ -726,7 +755,7 @@ body {
         width: 15em;
         padding: 12px;
         border-right: 1px solid @separator-line;
-        background: #f8f5ee;
+        background: @gf-toolbar-bg;
     }
 
     .history-view-title {

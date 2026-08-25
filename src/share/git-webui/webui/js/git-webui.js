@@ -807,11 +807,22 @@ webui.Toolbar = function(mainView) {
         var menu = $(".toolbar-menu[data-menu='app']", self.element);
         menu.empty();
         menu.append('<button type="button" class="toolbar-menu-item" data-action="open-local">Open Local Repo&hellip;<span class="toolbar-menu-shortcut">Ctrl+O</span></button>');
+        menu.append('<button type="button" class="toolbar-menu-item" data-action="open-workspace">Open Repo Folder&hellip;</button>');
         menu.append('<button type="button" class="toolbar-menu-item" data-action="clone-repo">Clone Repo&hellip;<span class="toolbar-menu-shortcut">Ctrl+N</span></button>');
         menu.append('<button type="button" class="toolbar-menu-item" data-action="create-repo">Create Repo&hellip;<span class="toolbar-menu-shortcut">Ctrl+Shift+N</span></button>');
         menu.append('<div class="toolbar-menu-divider"></div>');
         menu.append('<div class="toolbar-menu-heading">View</div>');
         menu.append('<button type="button" class="toolbar-menu-item' + ($("body").hasClass("dark-mode") ? " checked" : "") + '" data-action="toggle-theme">Dark Theme</button>');
+        if (!webui.viewonly) {
+            menu.append('<div class="toolbar-menu-divider"></div>');
+            menu.append('<div class="toolbar-menu-heading">Remote Access</div>');
+            menu.append(
+                '<div class="toolbar-menu-remote-access">' +
+                    'Others on this network can clone or pull from this repo:' +
+                    '<code>git clone http://' + webui.escapeHtml(webui.hostname) + ':' + webui.escapeHtml(document.location.port) + '/ ' + webui.escapeHtml(webui.repo) + '</code>' +
+                '</div>'
+            );
+        }
         menu.append('<div class="toolbar-menu-divider"></div>');
         menu.append('<button type="button" class="toolbar-menu-item" data-toggle="modal" data-target="#help-modal">Help / About</button>');
     }
@@ -820,6 +831,8 @@ webui.Toolbar = function(mainView) {
         var action = event.currentTarget.getAttribute("data-action");
         if (action == "open-local") {
             self.openPicker();
+        } else if (action == "open-workspace") {
+            self.openWorkspacePicker();
         } else if (action == "clone-repo") {
             self.cloneRepo();
         } else if (action == "create-repo") {
@@ -855,8 +868,31 @@ webui.Toolbar = function(mainView) {
             });
         }
         menu.append(list);
+
+        if (webui.workspacePath) {
+            menu.append('<div class="toolbar-menu-divider"></div>');
+            menu.append('<div class="toolbar-menu-heading">Folder of Repos: ' + webui.escapeHtml(webui.workspacePath) + '</div>');
+            if (webui.workspaceRepos.length == 0) {
+                menu.append('<div class="toolbar-menu-empty">No git repos found in this folder.</div>');
+            } else {
+                webui.workspaceRepos.forEach(function(repo) {
+                    var item = $('<button type="button" class="toolbar-menu-item toolbar-repo-item"></button>');
+                    if (repo.active) {
+                        item.addClass("checked");
+                    }
+                    item.append('<span class="repo-chip-name">' + webui.escapeHtml(repo.name) + ' <span class="ref-chip-extra">[' + webui.escapeHtml(repo.branch) + ']</span></span>');
+                    item.append('<span class="repo-chip-path">' + webui.escapeHtml(webui.formatRepoCounts(repo)) + '</span>');
+                    item.click(function() {
+                        mainView.repoPicker.selectRepo(repo.path);
+                    });
+                    menu.append(item);
+                });
+            }
+        }
+
         menu.append('<div class="toolbar-menu-divider"></div>');
         menu.append('<button type="button" class="toolbar-menu-item" data-action="open-local">Open Local Repo&hellip;</button>');
+        menu.append('<button type="button" class="toolbar-menu-item" data-action="open-workspace">Open Repo Folder&hellip;</button>');
         menu.append('<button type="button" class="toolbar-menu-item" data-action="clone-repo">Clone Repo&hellip;</button>');
         menu.append('<button type="button" class="toolbar-menu-item" data-action="create-repo">Create Repo&hellip;</button>');
         $(".toolbar-menu-item[data-action]", menu).click(self.onAppMenuAction);
@@ -1011,7 +1047,9 @@ webui.Toolbar = function(mainView) {
     }
 
     self.element = $(   '<div id="app-chrome">' +
-                            '<div id="app-titlebar"></div>' +
+                            '<div id="app-titlebar"><span class="app-titlebar-path"></span>' +
+                                (webui.viewonly ? '' : '<span class="app-titlebar-remote-access" title="Other machines on this network can clone or pull from this repo over HTTP">&#9679; remote access on :' + webui.escapeHtml(document.location.port) + '</span>') +
+                            '</div>' +
                             '<div id="app-toolbar">' +
                                 '<button type="button" class="icon-btn" id="app-menu-button" title="Menu" aria-label="Menu">&#9776;</button>' +
                                 '<div class="toolbar-menu" data-menu="app"></div>' +
@@ -1081,7 +1119,7 @@ webui.Toolbar = function(mainView) {
                                 '</div>' +
                             '</div>')[0];
 
-    $("#app-titlebar", self.element).text("git-webui" + (webui.repoPath ? " - " + webui.repoPath : ""));
+    $(".app-titlebar-path", self.element).text("git-webui" + (webui.repoPath ? " - " + webui.repoPath : ""));
 
     $("#app-menu-button", self.element).click(function(event) {
         event.stopPropagation();
@@ -3187,32 +3225,6 @@ webui.CommitMessageView = function(workspaceView) {
     });
 };
 
-webui.RemoteView = function(mainView) {
-
-    var self = this;
-
-    self.show = function() {
-        mainView.switchTo(self.element);
-    };
-
-    self.update = function() {
-        self.show();
-    };
-
-    self.element = $(   '<div class="jumbotron">' +
-                            '<h1>Remote access</h1>' +
-                            '<p>Git webui allows other people to clone and pull from your repository.</p>' +
-                            '<div class="git-access">' +
-                                '<p>Other people can clone your repository:</p>' +
-                                '<pre class="git-clone"></pre>' +
-                                '<p>Or to pull from your repository:</p>' +
-                                '<pre class="git-pull"></pre>' +
-                            '</div>' +
-                        '</div>')[0];
-    $(".git-clone", self.element).text("git clone http://" + webui.hostname + ":" + document.location.port + "/ " + webui.repo);
-    $(".git-pull", self.element).text("git pull http://" + webui.hostname + ":" + document.location.port + "/");
-};
-
 /*
  * == BranchesView =============================================================
  * A dedicated Local / Remote branch list, similar to GitFiend's Branches tab.
@@ -3381,7 +3393,6 @@ function MainUi() {
 
         if (context.has_repo) {
             self.historyView = new webui.HistoryView(self);
-            self.remoteView = new webui.RemoteView(self);
             self.branchesView = new webui.BranchesView(self);
             if (!webui.viewonly) {
                 self.workspaceView = new webui.WorkspaceView(self);
