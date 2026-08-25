@@ -2845,10 +2845,88 @@ webui.WorkspaceView = function(mainView) {
         }
     };
 
+    self.onFilterInput = function(event) {
+        var query = event.currentTarget.value.toLowerCase();
+        self.workingCopyView.applyFilter(query);
+        self.stagingAreaView.applyFilter(query);
+    }
+
+    self.closeDropdowns = function() {
+        $(".workspace-dropdown-menu", self.element).removeClass("open").hide();
+    }
+
+    self.toggleDropdown = function(name) {
+        var menu = $(".workspace-dropdown-menu[data-dropdown='" + name + "']", self.element);
+        var willOpen = !menu.hasClass("open");
+        self.closeDropdowns();
+        if (willOpen) {
+            menu.addClass("open").show();
+        }
+    }
+
+    self.stashChanges = function(selectedOnly) {
+        var files = selectedOnly ? self.workingCopyView.getFileList() + self.stagingAreaView.getFileList() : "";
+        var cmd = selectedOnly && files.trim().length > 0 ? "stash push -- " + files : "stash push";
+        webui.git(cmd, function(data) {
+            webui.showResult("Stash created", data || "Changes stashed");
+            self.update("stage");
+        });
+    }
+
+    self.discardChanges = function(selectedOnly) {
+        if (!window.confirm(selectedOnly ? "Discard selected changes?" : "Discard all changes?")) {
+            return;
+        }
+        if (selectedOnly) {
+            self.workingCopyView.cancel();
+            self.stagingAreaView.cancel();
+        } else {
+            webui.git("checkout -- .", function() {
+                self.update("stage");
+            });
+        }
+    }
+
     self.element = $(   '<div id="workspace-view">' +
+                            '<div class="workspace-toolbar">' +
+                                '<input type="text" class="form-control input-sm workspace-filter" placeholder="Filter">' +
+                                '<div class="workspace-dropdown">' +
+                                    '<button type="button" class="btn btn-default btn-sm workspace-dropdown-btn" data-dropdown="stash">Stash &#9662;</button>' +
+                                    '<div class="workspace-dropdown-menu toolbar-menu" data-dropdown="stash">' +
+                                        '<button type="button" class="toolbar-menu-item" data-action="stash-all">Stash All Changes</button>' +
+                                        '<button type="button" class="toolbar-menu-item" data-action="stash-selected">Stash Selected Changes</button>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<div class="workspace-dropdown">' +
+                                    '<button type="button" class="btn btn-default btn-sm workspace-dropdown-btn" data-dropdown="discard">Discard &#9662;</button>' +
+                                    '<div class="workspace-dropdown-menu toolbar-menu" data-dropdown="discard">' +
+                                        '<button type="button" class="toolbar-menu-item" data-action="discard-all">Discard All Changes</button>' +
+                                        '<button type="button" class="toolbar-menu-item" data-action="discard-selected">Discard Selected Changes</button>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
                             '<div id="workspace-diff-view"></div>' +
                             '<div id="workspace-editor"></div>' +
                         '</div>')[0];
+    $(".workspace-filter", self.element).on("input", self.onFilterInput);
+    $(".workspace-dropdown-btn", self.element).click(function(event) {
+        event.stopPropagation();
+        self.toggleDropdown(event.currentTarget.getAttribute("data-dropdown"));
+    });
+    $(".workspace-dropdown-menu", self.element).click(function(event) {
+        event.stopPropagation();
+    });
+    $("[data-action='stash-all']", self.element).click(function() { self.closeDropdowns(); self.stashChanges(false); });
+    $("[data-action='stash-selected']", self.element).click(function() { self.closeDropdowns(); self.stashChanges(true); });
+    $("[data-action='discard-all']", self.element).click(function() { self.closeDropdowns(); self.discardChanges(false); });
+    $("[data-action='discard-selected']", self.element).click(function() { self.closeDropdowns(); self.discardChanges(true); });
+    $(document).on("click", self.closeDropdowns);
+    $(document).on("keydown", function(event) {
+        if (event.key == "Escape") {
+            self.closeDropdowns();
+        }
+    });
+
     var workspaceDiffView = $("#workspace-diff-view", self.element)[0];
     self.diffView = new webui.DiffView(true, true, self);
     workspaceDiffView.appendChild(self.diffView.element);
@@ -2877,7 +2955,7 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
                 var status = line[col];
                 if (col == 0 && status != " " && status != "?" || col == 1 && status != " ") {
                     ++self.filesCount;
-                    var item = $('<a class="list-group-item">').appendTo(fileList)[0];
+                    var item = $('<a class="list-group-item"><span class="changed-file-check"></span><span class="changed-file-path"></span><span class="changed-file-status"></span></a>').appendTo(fileList)[0];
                     item.status = status;
                     line = line.substr(3);
                     var splitted = line.split(" -> ");
@@ -2886,7 +2964,9 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
                     } else {
                         item.model = line
                     }
-                    item.appendChild(document.createTextNode(line));
+                    $(".changed-file-path", item).text(line);
+                    var statusClass = status == "?" ? "untracked" : status;
+                    $(".changed-file-status", item).text(status).addClass("uncommitted-status-" + statusClass);
                     $(item).click(self.select);
                     $(item).dblclick(self.process);
                 }
@@ -3005,6 +3085,13 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
         return $(".active", fileList).length;
     }
 
+    self.applyFilter = function(query) {
+        for (var i = 0; i < fileList.childElementCount; ++i) {
+            var child = fileList.children[i];
+            $(child).toggle(!query || child.model.toLowerCase().indexOf(query) != -1);
+        }
+    }
+
     self.element = $(   '<div id="' + type + '-view" class="panel panel-default">' +
                             '<div class="panel-heading">' +
                                 '<h5>'+ label + '</h5>' +
@@ -3068,6 +3155,14 @@ webui.CommitMessageView = function(workspaceView) {
     }
 
     self.update = function() {
+        if (webui.gitUserName) {
+            $(".commit-message-commit", self.element).text("Commit as " + webui.gitUserName);
+            return;
+        }
+        webui.git("config user.name", function(data) {
+            webui.gitUserName = data.trim() || "you";
+            $(".commit-message-commit", self.element).text("Commit as " + webui.gitUserName);
+        });
     }
 
     self.element = $(   '<div id="commit-message-view" class="panel panel-default">' +
@@ -3075,15 +3170,21 @@ webui.CommitMessageView = function(workspaceView) {
                                 '<h5>Message</h5>' +
                                 '<div class="btn-group btn-group-sm">' +
                                     '<button type="button" class="btn btn-default commit-message-amend" data-toggle="button">Amend</button>' +
-                                    '<button type="button" class="btn btn-default commit-message-commit">Commit</button>' +
                                 '</div>' +
                             '</div>' +
-                            '<textarea></textarea>' +
+                            '<textarea placeholder="Message (Ctrl + Enter to commit)"></textarea>' +
+                            '<button type="button" class="btn btn-primary commit-message-commit">Commit</button>' +
                         '</div>')[0];
     var textArea = $("textarea", self.element)[0];
     var amend = $(".commit-message-amend", self.element);
     amend.click(self.onAmend);
     $(".commit-message-commit", self.element).click(self.onCommit);
+    $(textArea).on("keydown", function(event) {
+        if ((event.ctrlKey || event.metaKey) && event.key == "Enter") {
+            event.preventDefault();
+            self.onCommit();
+        }
+    });
 };
 
 webui.RemoteView = function(mainView) {
