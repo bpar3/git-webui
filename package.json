@@ -7,7 +7,8 @@
     "build": "node tools/run-grunt.js default",
     "serve": "node tools/run-grunt.js serve",
     "release": "node tools/run-grunt.js release",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "test:py": "pytest tests/python"
   },
   "repository": {
     "type": "git",
@@ -26,6 +27,9 @@
     "grunt-contrib-copy": "^0.5.0",
     "grunt-contrib-less": "^0.11.3",
     "grunt-contrib-watch": "^0.6.1",
-    "grunt-shell": "^0.7.0"
+    "grunt-shell": "^0.7.0",
+    "jest": "^29.7.0",
+    "jquery": "^3.7.1",
+    "jsdom": "^24.1.3"
   }
 }
