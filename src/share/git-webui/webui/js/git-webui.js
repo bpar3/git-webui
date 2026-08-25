@@ -762,9 +762,32 @@ webui.RepoChrome = function(mainView) {
     self.populateWorkspaceSwitcher = function() {
         var select = $(".repo-chrome-workspace-switcher", self.element);
         select.empty();
+        if (!webui.workspacePath) {
+            $("<option>")
+                .text("No workspace folder selected")
+                .prop("disabled", true)
+                .prop("selected", true)
+                .appendTo(select);
+            select.prop("disabled", true);
+            return;
+        }
+
         if (webui.workspaceRepos.length == 0) {
             $("<option>")
-                .text("No workspace repos")
+                .text("No git repos found in workspace")
+                .prop("disabled", true)
+                .prop("selected", true)
+                .appendTo(select);
+            select.prop("disabled", true);
+            return;
+        }
+
+        var hasActiveRepo = webui.workspaceRepos.some(function(repo) {
+            return repo.active;
+        });
+        if (!hasActiveRepo) {
+            $("<option>")
+                .text("Current repo is outside this workspace")
                 .prop("disabled", true)
                 .prop("selected", true)
                 .appendTo(select);
