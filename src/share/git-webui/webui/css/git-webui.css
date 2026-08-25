@@ -1252,6 +1252,38 @@ body.dark-mode #sidebar section.active h4 {
   background-color: #3e3e42;
   color: #fff;
 }
+@media (min-width: 769px) and (max-width: 1100px) {
+  #repo-chrome {
+    padding: 10px 12px 12px 12px;
+  }
+  #repo-chrome .repo-chrome-header {
+    gap: 12px;
+  }
+  #repo-chrome .repo-chrome-actions,
+  #repo-chrome .repo-chrome-drawers {
+    gap: 6px;
+  }
+  #repo-chrome .repo-chrome-grid {
+    grid-template-columns: minmax(16em, 0.82fr) minmax(0, 1.18fr);
+    gap: 10px;
+    margin-top: 10px;
+  }
+  #repo-chrome .repo-workspace-shell,
+  #repo-chrome .repo-branch-shell {
+    margin-top: 0;
+    padding: 10px;
+  }
+  #repo-chrome .repo-workspace-list {
+    max-height: 7.5em;
+  }
+  #repo-chrome .repo-branch-list {
+    max-height: 11.5em;
+  }
+  #repo-chrome .repo-branch-card-actions .btn {
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+}
 @media (max-width: 768px) {
   #repo-chrome {
     padding: 8px 10px 10px 10px;
