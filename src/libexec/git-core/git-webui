@@ -225,6 +225,11 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             if not self.ensure_repo_selected():
                 return
             self.send_json(200, {"branches": get_branch_entries(WebUiRequestHandler.REPO_ROOT)})
+        elif self.path == "/api/remotes":
+            if not self.ensure_repo_selected():
+                return
+            result = list_remotes(WebUiRequestHandler.REPO_ROOT)
+            self.send_json(result["status"], result["payload"])
         elif self.path.startswith("/git/cat-file/"):
             if not self.ensure_repo_selected():
                 return
@@ -355,6 +360,46 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 True,
             )
             self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/remotes/add":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected():
+                return
+            payload = self.read_json_body()
+            result = add_remote(WebUiRequestHandler.REPO_ROOT, payload.get("name"), payload.get("url"))
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/remotes/remove":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected():
+                return
+            payload = self.read_json_body()
+            result = remove_remote(WebUiRequestHandler.REPO_ROOT, payload.get("name"))
+            self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/repos/clone":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            payload = self.read_json_body()
+            result = clone_repo(payload.get("url"), payload.get("destination"), payload.get("directory_name"))
+            if result["status"] == 200:
+                WebUiRequestHandler.set_repo_root(result["payload"]["path"])
+                self.send_json(200, self.get_repo_context())
+            else:
+                self.send_json(result["status"], result["payload"])
+        elif self.path == "/api/repos/create":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            payload = self.read_json_body()
+            result = create_repo(payload.get("destination"), payload.get("directory_name"))
+            if result["status"] == 200:
+                WebUiRequestHandler.set_repo_root(result["payload"]["path"])
+                self.send_json(200, self.get_repo_context())
+            else:
+                self.send_json(result["status"], result["payload"])
         elif self.path == "/git":
             if not self.ensure_repo_selected():
                 return
@@ -1005,6 +1050,87 @@ def merge_branch(repo_root, source_ref, target_ref, squash):
             "branches": get_branch_entries(repo_root),
         },
     }
+
+
+def list_remotes(repo_root):
+    result = run_git_capture(repo_root, ["remote", "-v"])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to list remotes."}}
+    remotes = {}
+    order = []
+    for line in result["stdout"].splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        name, url = parts[0], parts[1]
+        kind = parts[2].strip("()") if len(parts) > 2 else "fetch"
+        if name not in remotes:
+            remotes[name] = {"name": name, "fetch_url": None, "push_url": None}
+            order.append(name)
+        if kind == "push":
+            remotes[name]["push_url"] = url
+        else:
+            remotes[name]["fetch_url"] = url
+    return {"status": 200, "payload": {"remotes": [remotes[name] for name in order]}}
+
+
+def add_remote(repo_root, name, url):
+    if not name or not name.strip():
+        return {"status": 400, "payload": {"error": "Remote name is required."}}
+    if not url or not url.strip():
+        return {"status": 400, "payload": {"error": "Remote URL is required."}}
+    result = run_git_capture(repo_root, ["remote", "add", name.strip(), url.strip()])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to add remote."}}
+    return list_remotes(repo_root)
+
+
+def remove_remote(repo_root, name):
+    if not name or not name.strip():
+        return {"status": 400, "payload": {"error": "Remote name is required."}}
+    result = run_git_capture(repo_root, ["remote", "remove", name.strip()])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to remove remote."}}
+    return list_remotes(repo_root)
+
+
+def clone_repo(url, destination_parent, directory_name=None):
+    if not url or not url.strip():
+        return {"status": 400, "payload": {"error": "A repository URL is required."}}
+    url = url.strip()
+    parent = os.path.realpath(os.path.expanduser(destination_parent or "~"))
+    if not os.path.isdir(parent):
+        return {"status": 400, "payload": {"error": "Destination folder does not exist."}}
+    name = (directory_name or "").strip()
+    if not name:
+        name = os.path.basename(url.rstrip("/"))
+        if name.endswith(".git"):
+            name = name[:-4]
+    if not name:
+        return {"status": 400, "payload": {"error": "Unable to determine a destination folder name."}}
+    target = os.path.join(parent, name)
+    if os.path.exists(target):
+        return {"status": 400, "payload": {"error": target + " already exists."}}
+    result = run_command_capture(["git", "clone", url, target])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or result["stdout"] or "Clone failed."}}
+    return {"status": 200, "payload": {"path": os.path.realpath(target)}}
+
+
+def create_repo(destination_parent, directory_name):
+    if not directory_name or not directory_name.strip():
+        return {"status": 400, "payload": {"error": "A folder name is required."}}
+    parent = os.path.realpath(os.path.expanduser(destination_parent or "~"))
+    if not os.path.isdir(parent):
+        return {"status": 400, "payload": {"error": "Destination folder does not exist."}}
+    target = os.path.join(parent, directory_name.strip())
+    if os.path.exists(target):
+        return {"status": 400, "payload": {"error": target + " already exists."}}
+    os.makedirs(target)
+    result = run_command_capture(["git", "init", target])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or result["stdout"] or "git init failed."}}
+    return {"status": 200, "payload": {"path": os.path.realpath(target)}}
 
 
 def get_repo_summary(repo_root, active=False):

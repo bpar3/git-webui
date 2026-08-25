@@ -26,6 +26,36 @@
 @separator-line:     @list-group-border;
 @log-view-opacity:   0.9;
 
+// GitFiend-style light theme tokens. The titlebar stays dark (matching a
+// desktop app's OS chrome); everything below it is light.
+@gf-font-family:      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+@gf-font-size:         12.5px;
+@gf-titlebar-bg:       #1e1e1e;
+@gf-titlebar-text:     #e8e8e8;
+@gf-toolbar-bg:        #ffffff;
+@gf-toolbar-border:    #e4e4e4;
+@gf-panel-bg:          #ffffff;
+@gf-page-bg:           #ffffff;
+@gf-border:            #e6e6e6;
+@gf-border-strong:     #d8d8d8;
+@gf-text:              #24292e;
+@gf-text-muted:        #6a737d;
+@gf-text-faint:        #8a8a8a;
+@gf-accent:            #2f7dd1;
+@gf-accent-bg:         #eef5fc;
+@gf-row-hover:         #f6f8fa;
+@gf-row-height:         30px;
+@gf-chip-green-bg:     #e2f6e2;
+@gf-chip-green-text:   #2f7d3a;
+@gf-chip-green-border: #bfe6bf;
+@gf-chip-purple-bg:    #f1e6fb;
+@gf-chip-purple-text:  #7a3fa0;
+@gf-chip-purple-border:#ddc4ef;
+@gf-chip-yellow-bg:    #fbf3d6;
+@gf-chip-yellow-text:  #8a6d1d;
+@gf-chip-yellow-border:#f0e0a6;
+@gf-danger:            #d1453b;
+
 .no-select() {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
@@ -66,7 +96,10 @@ body {
     .display-flex();
     .flex-direction(column);
     margin: 0;
-    font: 10pt sans-serif;
+    font-family: @gf-font-family;
+    font-size: @gf-font-size;
+    color: @gf-text;
+    background: @gf-page-bg;
 }
 
 #error-modal {
@@ -92,213 +125,269 @@ body {
     }
 }
 
-.repo-chrome-eyebrow,
-.repo-chrome-recent-title,
 .repo-picker-eyebrow,
 .no-repo-kicker {
     font-size: 11px;
     font-weight: bold;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: #8fd3ff;
+    color: @gf-accent;
 }
 
-#repo-chrome {
-    padding: 10px 14px 12px 14px;
-    color: #f7f4ec;
-    background: linear-gradient(135deg, #1f2328 0%, #2d333b 55%, #14181d 100%);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+#app-titlebar {
+    .display-flex();
+    .align-items(center);
+    justify-content: center;
+    padding: 4px 12px;
+    background: @gf-titlebar-bg;
+    color: @gf-titlebar-text;
+    font-size: 12px;
+    .no-select();
+}
 
-    .repo-chrome-header {
+#app-toolbar {
+    .display-flex();
+    .align-items(center);
+    gap: 4px;
+    padding: 6px 12px;
+    background: @gf-toolbar-bg;
+    border-bottom: 1px solid @gf-toolbar-border;
+    position: relative;
+    z-index: 20;
+    .no-select();
+
+    .icon-btn {
         .display-flex();
         .align-items(center);
-        gap: 16px;
-        flex-wrap: wrap;
-        justify-content: space-between;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: @gf-text-muted;
+        border-radius: 4px;
+        cursor: pointer;
+
+        &:hover,
+        &:focus {
+            background: @gf-row-hover;
+            color: @gf-text;
+        }
     }
 
-    .repo-chrome-copy {
-        min-width: 0;
+    .toolbar-divider {
+        width: 1px;
+        align-self: stretch;
+        margin: 2px 6px;
+        background: @gf-toolbar-border;
+    }
+
+    .toolbar-spacer {
         flex: 1 1 auto;
+        min-width: 8px;
+    }
+}
+
+.toolbar-label {
+    .display-flex();
+    .flex-direction(column);
+    justify-content: center;
+    padding: 2px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    max-width: 14em;
+    border: 1px solid transparent;
+
+    &:hover,
+    &:focus,
+    &.open {
+        background: @gf-row-hover;
+        border-color: @gf-toolbar-border;
     }
 
-    .repo-chrome-name {
-        font-size: 20px;
-        line-height: 1.1;
-        margin-top: 2px;
+    .toolbar-label-value {
+        font-size: 13px;
         font-weight: bold;
+        color: @gf-text;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
-    .repo-chrome-path {
-        margin-top: 2px;
-        color: rgba(247, 244, 236, 0.72);
-        word-break: break-all;
-        font-size: 12px;
+    .toolbar-label-caption {
+        font-size: 10px;
+        color: @gf-text-faint;
+    }
+}
+
+.toolbar-tabs {
+    .display-flex();
+    gap: 2px;
+    margin-left: 8px;
+}
+
+.toolbar-tab {
+    .display-flex();
+    .flex-direction(column);
+    .align-items(center);
+    gap: 2px;
+    padding: 3px 14px;
+    border: 0;
+    background: transparent;
+    border-radius: 4px;
+    color: @gf-text-muted;
+    font-size: 11px;
+    position: relative;
+
+    &:hover,
+    &:focus {
+        background: @gf-row-hover;
+        color: @gf-text;
     }
 
-    .repo-chrome-status {
-        .display-flex();
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 8px;
+    &.active {
+        background: @gf-accent-bg;
+        color: @gf-accent;
     }
 
-    .repo-chrome-status-item {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        min-width: 0;
-        padding: 4px 8px;
+    .toolbar-tab-icon {
+        font-size: 15px;
+        line-height: 1;
+    }
+
+    .toolbar-tab-badge {
+        position: absolute;
+        top: -2px;
+        right: 4px;
+        background: @gf-accent;
+        color: #fff;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(143, 211, 255, 0.16);
+        font-size: 9px;
+        padding: 0 4px;
+        min-width: 14px;
+        text-align: center;
+    }
+}
+
+.toolbar-remote-actions {
+    .display-flex();
+    gap: 2px;
+}
+
+.toolbar-remote-btn {
+    .display-flex();
+    .flex-direction(column);
+    .align-items(center);
+    gap: 2px;
+    padding: 3px 12px;
+    border: 0;
+    background: transparent;
+    border-radius: 4px;
+    color: @gf-text-muted;
+    font-size: 11px;
+
+    &:hover,
+    &:focus {
+        background: @gf-row-hover;
+        color: @gf-text;
     }
 
-    .repo-chrome-status-label {
+    .toolbar-remote-btn-icon {
+        font-size: 15px;
+        line-height: 1;
+    }
+}
+
+// Dropdown / flyout menus shared by the app menu, repo picker dropdown and
+// toolbar context menus.
+.toolbar-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 14em;
+    background: @gf-panel-bg;
+    border: 1px solid @gf-border-strong;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+    padding: 4px 0;
+    z-index: 1000;
+    display: none;
+
+    &.open {
+        display: block;
+    }
+
+    .toolbar-menu-item {
+        .display-flex();
+        .align-items(center);
+        justify-content: space-between;
+        gap: 16px;
+        width: 100%;
+        padding: 6px 14px;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        font-size: 12.5px;
+        color: @gf-text;
+
+        &:hover,
+        &:focus {
+            background: @gf-accent-bg;
+            color: @gf-accent;
+        }
+
+        &[disabled] {
+            color: @gf-text-faint;
+            cursor: default;
+
+            &:hover, &:focus {
+                background: transparent;
+                color: @gf-text-faint;
+            }
+        }
+
+        &.checked::before {
+            content: "\2713";
+            margin-right: 6px;
+        }
+    }
+
+    .toolbar-menu-shortcut {
+        color: @gf-text-faint;
+        font-size: 11px;
+    }
+
+    .toolbar-menu-divider {
+        height: 1px;
+        margin: 4px 0;
+        background: @gf-border;
+    }
+
+    .toolbar-menu-heading {
+        padding: 4px 14px;
         font-size: 10px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: rgba(143, 211, 255, 0.92);
+        color: @gf-text-faint;
     }
 
-    .repo-chrome-status-value {
-        min-width: 0;
-        max-width: 22em;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+    .toolbar-menu-empty {
+        padding: 6px 14px;
+        color: @gf-text-faint;
         font-size: 12px;
-    }
-
-    .repo-chrome-actions,
-    .repo-chrome-drawers {
-        .display-flex();
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-
-    .repo-chrome-drawers {
-        margin-top: 10px;
-    }
-
-    .repo-chrome-drawer-button {
-        border-radius: 999px;
-        border-color: rgba(143, 211, 255, 0.22);
-        background: rgba(255, 255, 255, 0.04);
-        color: #f7f4ec;
-
-        &:hover,
-        &:focus,
-        &.active {
-            background: rgba(143, 211, 255, 0.18);
-            color: #ffffff;
-        }
-
-        .badge {
-            margin-left: 4px;
-            background: rgba(7, 16, 22, 0.55);
-        }
-    }
-
-    .repo-chrome-drawer-section {
-        display: none;
-        margin-top: 10px;
-        padding-top: 10px;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .repo-chrome-recent-list {
-        .display-flex();
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 8px;
-    }
-
-    .repo-chip {
-        max-width: 24em;
-        text-align: left;
-        border-radius: 10px;
-        padding: 6px 10px;
-        border: 1px solid rgba(143, 211, 255, 0.25);
-        background: rgba(255, 255, 255, 0.04);
-        color: #f7f4ec;
-
-        &:hover,
-        &:focus,
-        &.active {
-            background: rgba(143, 211, 255, 0.18);
-            color: #ffffff;
-        }
-
-        .repo-chip-name,
-        .repo-chip-path {
-            display: block;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .repo-chip-name {
-            font-weight: bold;
-            font-size: 12px;
-        }
-
-        .repo-chip-path {
-            margin-top: 2px;
-            font-size: 10px;
-            opacity: 0.72;
-        }
-    }
-
-    .repo-chrome-empty {
-        color: rgba(247, 244, 236, 0.6);
-    }
-
-    .repo-chrome-compactbar {
-        display: grid;
-        grid-template-columns: minmax(18em, 1fr) minmax(0, 1.4fr);
-        gap: 12px;
-        margin-top: 12px;
-    }
-
-    .repo-chrome-switcher {
-        padding: 12px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(143, 211, 255, 0.18);
-    }
-
-    .repo-chrome-history-switcher {
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        gap: 8px;
-    }
-
-    .repo-chrome-history-hint {
-        color: rgba(247, 244, 236, 0.82);
-        font-size: 12px;
-        line-height: 1.4;
-    }
-
-    @media (max-width: 1180px) {
-        .repo-chrome-compactbar {
-            grid-template-columns: minmax(0, 1fr);
-        }
-    }
-
-    .repo-chrome-workspace-path {
-        color: rgba(247, 244, 236, 0.72);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .repo-chrome-workspace-switcher {
-        width: 100%;
-        margin-top: 8px;
     }
 }
+
+.toolbar-submenu-wrap {
+    position: relative;
+
+    > .toolbar-menu {
+        top: -4px;
+        left: 100%;
+    }
+}
+
 
 #branch-compare-modal {
 
@@ -322,6 +411,42 @@ body {
         max-height: 28em;
         overflow-y: auto;
         margin-bottom: 0;
+    }
+}
+
+#configure-remotes-modal {
+    .configure-remotes-list {
+        margin-bottom: 12px;
+    }
+
+    .configure-remotes-row {
+        .display-flex();
+        .align-items(center);
+        gap: 10px;
+        padding: 6px 0;
+        border-bottom: 1px solid @gf-border;
+    }
+
+    .configure-remotes-name {
+        font-weight: bold;
+        flex: 0 0 6em;
+    }
+
+    .configure-remotes-url {
+        .flex(1);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: @gf-text-muted;
+    }
+
+    .configure-remotes-add {
+        .display-flex();
+        gap: 8px;
+
+        input {
+            .flex(1);
+        }
     }
 }
 
@@ -422,65 +547,68 @@ body {
     }
 }
 
-#sidebar {
-    .display-flex();
-    .flex-direction(column);
-    width: 11em;
-    background: #20262d;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+// Recent-repo / recent-workspace chip list shown inside the Repo dropdown.
+.toolbar-repo-dropdown {
+    width: 26em;
+    max-width: 90vw;
 
-    #sidebar-logo {
-        display: block;
-        margin: 10px auto;
-        height: 1.9em;
-        text-align: center;
-    }
-
-    #sidebar-content {
-        .flex(1);
-        overflow-x: hidden;
+    .toolbar-repo-list {
+        max-height: 20em;
         overflow-y: auto;
-        cursor: default;
-        border-top: 1px solid rgba(255, 255, 255, 0.06);
-        color: @gray-lighter;
-        padding: 12px 10px;
     }
 
-    .sidebar-nav {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
+    .toolbar-repo-item {
+        .display-flex();
+        .flex-direction(column);
 
-    .sidebar-nav-button {
-        width: 100%;
-        text-align: left;
-        border-radius: 10px;
-        border-color: rgba(143, 211, 255, 0.14);
-        background: rgba(255, 255, 255, 0.04);
-        color: #f7f4ec;
+        .repo-chip-name {
+            font-weight: bold;
+        }
 
-        &:hover,
-        &:focus,
-        &.active {
-            background: rgba(143, 211, 255, 0.22);
-            color: #ffffff;
+        .repo-chip-path {
+            font-size: 10px;
+            color: @gf-text-faint;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 22em;
         }
     }
+}
 
-    .sidebar-hint {
-        margin-top: 12px;
-        font-size: 11px;
-        line-height: 1.45;
-        color: rgba(247, 244, 236, 0.68);
+// Pastel ref chips (branch / tag labels), reused by the toolbar branch
+// label, the ref sidebar and the commit graph decorations.
+.ref-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: bold;
+    border: 1px solid transparent;
+    .no-select();
+
+    &.ref-chip-local {
+        background: @gf-chip-green-bg;
+        color: @gf-chip-green-text;
+        border-color: @gf-chip-green-border;
     }
 
-    .sidebar-theme-wrap {
-        margin-top: 12px;
+    &.ref-chip-remote {
+        background: @gf-chip-purple-bg;
+        color: @gf-chip-purple-text;
+        border-color: @gf-chip-purple-border;
+    }
 
-        #theme-toggle {
-            width: 100%;
-        }
+    &.ref-chip-tag {
+        background: @gf-chip-yellow-bg;
+        color: @gf-chip-yellow-text;
+        border-color: @gf-chip-yellow-border;
+    }
+
+    .ref-chip-extra {
+        opacity: 0.7;
     }
 }
 
@@ -966,11 +1094,6 @@ body {
             }
         }
 
-        #remote-actions-view {
-            .flex(1);
-            max-height: 50px;
-        }
-
         .panel {
             .flex(1);
             .display-flex();
@@ -1085,167 +1208,48 @@ body.dark-mode {
         background-color: rgba(153, 51, 204, 0.6);
     }
 
-    #sidebar {
+    #app-titlebar {
+        background-color: #111111;
+    }
+    #app-toolbar {
         background-color: #252526;
-        border-right: 1px solid #3e3e42;
+        border-bottom: 1px solid #3e3e42;
     }
-    #sidebar section h4 {
+    .toolbar-label-value {
+        color: #f0f0f0;
+    }
+    .toolbar-menu {
+        background-color: #252526;
+        border-color: #3e3e42;
+    }
+    .toolbar-menu-item {
         color: #c8c8c8;
-    }
-    #sidebar section.active h4 {
-        background-color: #3e3e42;
-        color: #fff;
-    }
-}
 
-@media (min-width: 769px) and (max-width: 1280px) {
-    #repo-chrome {
-        padding: 10px 12px 12px 12px;
-
-        .repo-chrome-header {
-            gap: 12px;
-        }
-
-        .repo-chrome-actions,
-        .repo-chrome-drawers {
-            gap: 6px;
-        }
-
-        .repo-chrome-compactbar {
-            grid-template-columns: minmax(15em, 0.9fr) minmax(0, 1.1fr);
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .repo-chrome-switcher {
-            padding: 10px;
+        &:hover, &:focus {
+            background-color: #3e3e42;
+            color: #fff;
         }
     }
 }
 
 @media (max-width: 768px) {
-    #repo-chrome {
-        padding: 8px 10px 10px 10px;
+    #app-toolbar {
+        flex-wrap: wrap;
+        row-gap: 4px;
+    }
 
-        .repo-chrome-header {
-            gap: 10px;
-        }
+    .toolbar-tabs {
+        order: 10;
+        flex: 1 1 100%;
+        margin-left: 0;
+    }
 
-        .repo-chrome-name {
-            font-size: 18px;
-        }
-
-        .repo-chrome-path {
-            font-size: 11px;
-        }
-
-        .repo-chrome-status {
-            gap: 6px;
-        }
-
-        .repo-chrome-status-item {
-            width: 100%;
-            justify-content: space-between;
-        }
-
-        .repo-chrome-status-value {
-            max-width: 14em;
-        }
-
-        .repo-chrome-actions,
-        .repo-chrome-drawers {
-            width: 100%;
-        }
-
-        .repo-chrome-actions .btn,
-        .repo-chrome-drawers .btn {
-            flex: 1 1 0;
-        }
-
-        .repo-chrome-drawer-section {
-            padding-top: 8px;
-        }
-
-        .repo-chip {
-            max-width: 100%;
-            width: 100%;
-        }
-
-        .repo-chrome-compactbar {
-            grid-template-columns: minmax(0, 1fr);
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .repo-chrome-switcher {
-            padding: 10px;
-        }
-
-        .repo-chrome-workspace-path {
-            max-width: none;
-            width: 100%;
-        }
+    .toolbar-tab {
+        flex: 1 1 0;
     }
 
     #global-container {
         .flex-direction(column);
-    }
-
-    #sidebar {
-        order: -1;
-        display: block;
-        width: 100%;
-        height: auto;
-        position: relative;
-        z-index: 1;
-        border-right: 0;
-        border-bottom: 1px solid darken(@gray-dark, 10%);
-
-        > a {
-            display: none;
-        }
-
-        #sidebar-logo {
-            display: none;
-        }
-
-        #sidebar-content {
-            flex: 0 0 auto !important;
-            -webkit-flex: 0 0 auto !important;
-            .display-flex();
-            .align-items(stretch);
-            flex-wrap: wrap;
-            width: 100%;
-            overflow-x: hidden;
-            overflow-y: hidden;
-            border-top: 0;
-            white-space: normal;
-            padding: 8px 10px;
-
-            .sidebar-nav {
-                flex-direction: row;
-                flex: 1 1 100%;
-            }
-
-            .sidebar-nav-button {
-                flex: 1 1 0;
-                text-align: center;
-            }
-
-            .sidebar-hint {
-                display: none !important;
-            }
-
-            .sidebar-theme-wrap {
-                flex: 1 1 100%;
-                margin-left: 0;
-                margin-top: 8px;
-
-                button {
-                    width: 100%;
-                }
-            }
-        }
     }
 
     #main-view,

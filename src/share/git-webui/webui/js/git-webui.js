@@ -559,10 +559,24 @@ webui.RepoPicker = function() {
     });
 };
 
-webui.RepoChrome = function(mainView) {
+webui.PULL_STRATEGY_KEY = "git-webui-pull-strategy";
+webui.AUTO_FETCH_KEY = "git-webui-auto-fetch";
+
+webui.getPullStrategy = function() {
+    return localStorage.getItem(webui.PULL_STRATEGY_KEY) || "ff";
+}
+
+webui.isAutoFetchEnabled = function() {
+    return localStorage.getItem(webui.AUTO_FETCH_KEY) == "1";
+}
+
+webui.Toolbar = function(mainView) {
 
     var self = this;
     self.expandedDrawer = null;
+    self.openMenuName = null;
+
+    // -- data / branch helpers (unchanged behavior from the former RepoChrome) --
 
     self.currentBranch = function() {
         for (var i = 0; i < webui.branches.length; ++i) {
@@ -581,27 +595,6 @@ webui.RepoChrome = function(mainView) {
         return current.display_name || current.local_name || current.remote_name || "Detached";
     }
 
-    self.updateStatusMeta = function() {
-        $(".repo-chrome-branch-value", self.element).text(self.branchSummary());
-        $(".repo-chrome-workspace-value", self.element).text(webui.workspacePath || "No workspace folder");
-        $(".repo-chrome-recents-value", self.element).text(webui.recentRepos.length + " repos / " + webui.recentWorkspaces.length + " folders");
-    }
-
-    self.setDrawerState = function(drawerName) {
-        self.expandedDrawer = drawerName;
-        var sections = ["repos", "workspaces"];
-        sections.forEach(function(name) {
-            var isOpen = name == drawerName;
-            $(".repo-chrome-drawer-button[data-drawer='" + name + "']", self.element).toggleClass("active", isOpen);
-            $(".repo-chrome-drawer-section[data-drawer='" + name + "']", self.element).toggle(isOpen);
-        });
-    }
-
-    self.toggleDrawer = function(event) {
-        var drawerName = event.currentTarget.getAttribute("data-drawer");
-        self.setDrawerState(self.expandedDrawer == drawerName ? null : drawerName);
-    }
-
     self.loadBranches = function() {
         if (!webui.repoPath) {
             webui.branches = [];
@@ -615,6 +608,11 @@ webui.RepoChrome = function(mainView) {
                 mainView.historyView.refreshToolbar();
             }
         });
+    }
+
+    self.updateStatusMeta = function() {
+        $(".toolbar-repo-value", self.element).text(webui.repo || "No Repository");
+        $(".toolbar-branch-value", self.element).text(self.branchSummary());
     }
 
     self.openPicker = function() {
@@ -632,25 +630,9 @@ webui.RepoChrome = function(mainView) {
         }
     }
 
-    self.selectRecentWorkspace = function(event) {
-        var path = event.currentTarget.getAttribute("data-path");
-        if (path) {
-            mainView.repoPicker.selectWorkspace(path);
-        }
-    }
-
-    self.selectWorkspaceRepo = function(event) {
-        var path = event.currentTarget.value || event.currentTarget.getAttribute("data-path");
-        if (path) {
-            mainView.repoPicker.selectRepo(path);
-        }
-    }
-
     self.focusHistoryRef = function(refName) {
         webui.historyRef = refName || null;
-        if (mainView.sideBarView) {
-            mainView.sideBarView.activateSection("history");
-        }
+        self.activateSection("history");
         if (mainView.historyView) {
             mainView.historyView.update(webui.historyRef);
         }
@@ -729,176 +711,295 @@ webui.RepoChrome = function(mainView) {
         }, webui.reloadApp);
     }
 
-    self.viewBranch = function(event) {
-        var refName = event.currentTarget.getAttribute("data-ref");
-        if (refName) {
-            self.focusHistoryRef(refName);
+    // -- section / tab switching (replaces the former SideBarView) --
+
+    self.activateSection = function(sectionName) {
+        $(".toolbar-tab", self.element).removeClass("active");
+        $(".toolbar-tab[data-section='" + sectionName + "']", self.element).addClass("active");
+    }
+
+    self.showWorkspace = function() {
+        self.activateSection("workspace");
+        mainView.workspaceView.update("stage");
+    }
+
+    self.showHistory = function() {
+        self.activateSection("history");
+        mainView.historyView.update(webui.historyRef);
+    }
+
+    // -- hamburger app menu --
+
+    self.closeMenus = function() {
+        $(".toolbar-menu", self.element).removeClass("open").hide();
+        self.openMenuName = null;
+    }
+
+    self.toggleMenu = function(name, anchor) {
+        var menu = $(".toolbar-menu[data-menu='" + name + "']", self.element);
+        var willOpen = self.openMenuName != name;
+        self.closeMenus();
+        if (willOpen) {
+            self.openMenuName = name;
+            menu.addClass("open").show();
+            var rect = anchor.getBoundingClientRect();
+            menu.css({ top: (rect.bottom + 4) + "px", left: rect.left + "px", position: "fixed" });
         }
     }
 
-    self.checkoutBranch = function(event) {
-        self.checkoutRef(
-            event.currentTarget.getAttribute("data-local") || null,
-            event.currentTarget.getAttribute("data-remote") || null
-        );
+    self.renderAppMenu = function() {
+        var menu = $(".toolbar-menu[data-menu='app']", self.element);
+        menu.empty();
+        menu.append('<button type="button" class="toolbar-menu-item" data-action="open-local">Open Local Repo&hellip;<span class="toolbar-menu-shortcut">Ctrl+O</span></button>');
+        menu.append('<button type="button" class="toolbar-menu-item" data-action="clone-repo">Clone Repo&hellip;<span class="toolbar-menu-shortcut">Ctrl+N</span></button>');
+        menu.append('<button type="button" class="toolbar-menu-item" data-action="create-repo">Create Repo&hellip;<span class="toolbar-menu-shortcut">Ctrl+Shift+N</span></button>');
+        menu.append('<div class="toolbar-menu-divider"></div>');
+        menu.append('<div class="toolbar-menu-heading">View</div>');
+        menu.append('<button type="button" class="toolbar-menu-item' + ($("body").hasClass("dark-mode") ? " checked" : "") + '" data-action="toggle-theme">Dark Theme</button>');
+        menu.append('<div class="toolbar-menu-divider"></div>');
+        menu.append('<button type="button" class="toolbar-menu-item" data-toggle="modal" data-target="#help-modal">Help / About</button>');
     }
 
-    self.compareBranch = function(event) {
-        self.compareRef(event.currentTarget.getAttribute("data-ref") || null);
-    }
-
-    self.mergeBranch = function(event) {
-        self.mergeRef(event.currentTarget.getAttribute("data-ref") || null, false);
-    }
-
-    self.squashBranch = function(event) {
-        self.mergeRef(event.currentTarget.getAttribute("data-ref") || null, true);
-    }
-
-    self.deleteBranch = function(event) {
-        self.removeBranch(event.currentTarget.getAttribute("data-local"));
-    }
-
-    self.populateWorkspaceSwitcher = function() {
-        var select = $(".repo-chrome-workspace-switcher", self.element);
-        select.empty();
-        if (!webui.workspacePath) {
-            $("<option>")
-                .text("No workspace folder selected")
-                .prop("disabled", true)
-                .prop("selected", true)
-                .appendTo(select);
-            select.prop("disabled", true);
-            return;
+    self.onAppMenuAction = function(event) {
+        var action = event.currentTarget.getAttribute("data-action");
+        if (action == "open-local") {
+            self.openPicker();
+        } else if (action == "clone-repo") {
+            self.cloneRepo();
+        } else if (action == "create-repo") {
+            self.createRepoFlow();
+        } else if (action == "toggle-theme") {
+            self.toggleTheme();
         }
-
-        if (webui.workspaceRepos.length == 0) {
-            $("<option>")
-                .text("No git repos found in workspace")
-                .prop("disabled", true)
-                .prop("selected", true)
-                .appendTo(select);
-            select.prop("disabled", true);
-            return;
-        }
-
-        var hasActiveRepo = webui.workspaceRepos.some(function(repo) {
-            return repo.active;
-        });
-        if (!hasActiveRepo) {
-            $("<option>")
-                .text("Current repo is outside this workspace")
-                .prop("disabled", true)
-                .prop("selected", true)
-                .appendTo(select);
-            select.prop("disabled", true);
-            return;
-        }
-
-        webui.workspaceRepos.forEach(function(repo) {
-            var label = repo.name + "  [" + repo.branch + "]  " + webui.formatRepoCounts(repo);
-            $("<option>")
-                .val(repo.path)
-                .text(label)
-                .prop("selected", repo.active)
-                .appendTo(select);
-        });
-        select.prop("disabled", false);
     }
 
-    self.update = function() {
-        $(".repo-chrome-name", self.element).text(webui.repo || "No Repository Selected");
-        $(".repo-chrome-path", self.element).text(webui.repoPath || "Choose a repository from recent history or browse the local filesystem.");
-        $(".repo-chrome-browse", self.element).prop("disabled", webui.viewonly);
-        $(".repo-chrome-open-workspace", self.element).prop("disabled", webui.viewonly);
-        $(".repo-chrome-workspace-path", self.element).text(webui.workspacePath || "No folder-of-repos selected yet.");
+    self.toggleTheme = function() {
+        $("body").toggleClass("dark-mode");
+        localStorage.setItem("theme", $("body").hasClass("dark-mode") ? "dark" : "light");
+    }
 
-        var recentWorkspaceList = $(".repo-chrome-workspace-recents", self.element);
-        recentWorkspaceList.empty();
-        if (webui.recentWorkspaces.length == 0) {
-            $('<span class="repo-chrome-empty">No recent repo folders yet.</span>').appendTo(recentWorkspaceList);
-        } else {
-            webui.recentWorkspaces.forEach(function(workspace) {
-                var button = $('<button type="button" class="btn btn-default repo-chip repo-workspace-chip">')[0];
-                button.setAttribute("data-path", workspace.path);
-                $(button).append('<span class="repo-chip-name">' + webui.escapeHtml(workspace.name) + '</span>');
-                $(button).append('<span class="repo-chip-path">' + webui.escapeHtml(workspace.path) + '</span>');
-                if (workspace.active) {
-                    $(button).addClass("active");
-                }
-                $(button).click(self.selectRecentWorkspace);
-                recentWorkspaceList.append(button);
-            });
-        }
+    // -- repo dropdown --
 
-        var recentList = $(".repo-chrome-repo-recents", self.element);
-        recentList.empty();
+    self.renderRepoMenu = function() {
+        var menu = $(".toolbar-menu[data-menu='repo']", self.element);
+        menu.empty();
+        var list = $('<div class="toolbar-repo-list"></div>');
         if (webui.recentRepos.length == 0) {
-            $('<span class="repo-chrome-empty">No recent repositories yet.</span>').appendTo(recentList);
+            list.append('<div class="toolbar-menu-empty">No recent repositories yet.</div>');
         } else {
             webui.recentRepos.forEach(function(repo) {
-                var button = $('<button type="button" class="btn btn-default repo-chip">')[0];
-                button.setAttribute("data-path", repo.path);
-                $(button).append('<span class="repo-chip-name">' + webui.escapeHtml(repo.name) + '</span>');
-                $(button).append('<span class="repo-chip-path">' + webui.escapeHtml(repo.path) + '</span>');
+                var item = $('<button type="button" class="toolbar-menu-item toolbar-repo-item" data-path="' + webui.escapeHtml(repo.path) + '"></button>');
                 if (repo.active) {
-                    $(button).addClass("active");
+                    item.addClass("checked");
                 }
-                $(button).click(self.selectRecentRepo);
-                recentList.append(button);
+                item.append('<span class="repo-chip-name">' + webui.escapeHtml(repo.name) + '</span>');
+                item.append('<span class="repo-chip-path">' + webui.escapeHtml(repo.path) + '</span>');
+                item.click(self.selectRecentRepo);
+                list.append(item);
             });
         }
+        menu.append(list);
+        menu.append('<div class="toolbar-menu-divider"></div>');
+        menu.append('<button type="button" class="toolbar-menu-item" data-action="open-local">Open Local Repo&hellip;</button>');
+        menu.append('<button type="button" class="toolbar-menu-item" data-action="clone-repo">Clone Repo&hellip;</button>');
+        menu.append('<button type="button" class="toolbar-menu-item" data-action="create-repo">Create Repo&hellip;</button>');
+        $(".toolbar-menu-item[data-action]", menu).click(self.onAppMenuAction);
+    }
 
-        $(".repo-chrome-drawer-button[data-drawer='repos'] .repo-chrome-drawer-count", self.element).text(webui.recentRepos.length);
-        $(".repo-chrome-drawer-button[data-drawer='workspaces'] .repo-chrome-drawer-count", self.element).text(webui.recentWorkspaces.length);
+    self.cloneRepo = function() {
+        var url = window.prompt("Repository URL to clone");
+        if (!url) {
+            return;
+        }
+        webui.apiPost("/api/fs/pick-directory", {
+            path: webui.workspacePath || webui.repoPath || null,
+            title: "Choose destination folder",
+        }, function(data) {
+            if (data.unsupported) {
+                webui.showWarning(data.error || "Native folder picker unavailable.");
+                return;
+            }
+            if (data.cancelled) {
+                return;
+            }
+            webui.apiPost("/api/repos/clone", {url: url, destination: data.path}, function() {
+                webui.reloadApp();
+            }, function(xhr) {
+                webui.showError(webui.parseApiError(xhr, "Clone failed"));
+            });
+        });
+    }
+
+    self.createRepoFlow = function() {
+        var name = window.prompt("New repository folder name");
+        if (!name) {
+            return;
+        }
+        webui.apiPost("/api/fs/pick-directory", {
+            path: webui.workspacePath || webui.repoPath || null,
+            title: "Choose parent folder",
+        }, function(data) {
+            if (data.unsupported) {
+                webui.showWarning(data.error || "Native folder picker unavailable.");
+                return;
+            }
+            if (data.cancelled) {
+                return;
+            }
+            webui.apiPost("/api/repos/create", {destination: data.path, directory_name: name}, function() {
+                webui.reloadApp();
+            }, function(xhr) {
+                webui.showError(webui.parseApiError(xhr, "Create repo failed"));
+            });
+        });
+    }
+
+    // -- Pull / Push / Fetch : left click executes, right click opens options --
+
+    self.onPull = function(event) {
+        event.preventDefault();
+        var strategy = webui.getPullStrategy();
+        var args = strategy == "rebase" ? "pull --rebase" : "pull";
+        webui.git(args, function(data) {
+            webui.showResult("Pull completed", data);
+            self.loadBranches();
+            if (mainView.workspaceView) {
+                mainView.workspaceView.update("stage");
+            }
+        });
+    }
+
+    self.onPush = function(event) {
+        event.preventDefault();
+        webui.git("push", function(data) {
+            webui.showResult("Push completed", data);
+            self.loadBranches();
+        });
+    }
+
+    self.onForcePush = function() {
+        if (!window.confirm("Force push may overwrite remote history. Continue?")) {
+            return;
+        }
+        webui.git("push --force", function(data) {
+            webui.showResult("Force push completed", data);
+            self.loadBranches();
+        });
+    }
+
+    self.onFetch = function(event) {
+        if (event) {
+            event.preventDefault();
+        }
+        webui.git("fetch", function(data) {
+            webui.showResult("Fetch completed", data);
+            self.loadBranches();
+        });
+    }
+
+    self.toggleAutoFetch = function() {
+        var enabled = !webui.isAutoFetchEnabled();
+        localStorage.setItem(webui.AUTO_FETCH_KEY, enabled ? "1" : "0");
+        self.applyAutoFetch();
+    }
+
+    self.applyAutoFetch = function() {
+        if (self.autoFetchTimer) {
+            clearInterval(self.autoFetchTimer);
+            self.autoFetchTimer = null;
+        }
+        if (webui.isAutoFetchEnabled()) {
+            self.autoFetchTimer = setInterval(self.onFetch, 5 * 60 * 1000);
+        }
+    }
+
+    self.setPullStrategy = function(strategy) {
+        localStorage.setItem(webui.PULL_STRATEGY_KEY, strategy);
+    }
+
+    self.renderRemoteMenu = function(kind) {
+        var menu = $(".toolbar-menu[data-menu='" + kind + "']", self.element);
+        menu.empty();
+        if (kind == "pull") {
+            var strategy = webui.getPullStrategy();
+            var ffItem = $('<button type="button" class="toolbar-menu-item' + (strategy != "rebase" ? " checked" : "") + '">Fast Forward When Possible</button>');
+            ffItem.click(function() { self.setPullStrategy("ff"); });
+            var rebaseItem = $('<button type="button" class="toolbar-menu-item' + (strategy == "rebase" ? " checked" : "") + '">Rebase</button>');
+            rebaseItem.click(function() { self.setPullStrategy("rebase"); });
+            menu.append(ffItem).append(rebaseItem).append('<div class="toolbar-menu-divider"></div>');
+        } else if (kind == "push") {
+            var forceItem = $('<button type="button" class="toolbar-menu-item">Force Push</button>');
+            forceItem.click(self.onForcePush);
+            menu.append(forceItem).append('<div class="toolbar-menu-divider"></div>');
+        } else if (kind == "fetch") {
+            var autoItem = $('<button type="button" class="toolbar-menu-item' + (webui.isAutoFetchEnabled() ? " checked" : "") + '">Auto fetch</button>');
+            autoItem.click(self.toggleAutoFetch);
+            menu.append(autoItem).append('<div class="toolbar-menu-divider"></div>');
+        }
+        var configureItem = $('<button type="button" class="toolbar-menu-item">Configure Remotes</button>');
+        configureItem.click(function() { mainView.configureRemotesView.show(); });
+        menu.append(configureItem);
+    }
+
+    self.onRemoteContextMenu = function(kind, event) {
+        event.preventDefault();
+        self.renderRemoteMenu(kind);
+        self.toggleMenu(kind, event.currentTarget);
+    }
+
+    // -- rendering --
+
+    self.update = function() {
         self.updateStatusMeta();
-        self.setDrawerState(self.expandedDrawer);
-
-        self.populateWorkspaceSwitcher();
         self.loadBranches();
     }
 
-    self.element = $(   '<div id="repo-chrome">' +
-                            '<div class="repo-chrome-header">' +
-                                '<div class="repo-chrome-copy">' +
-                                    '<div class="repo-chrome-eyebrow">Repository Control</div>' +
-                                    '<div class="repo-chrome-name"></div>' +
-                                    '<div class="repo-chrome-path"></div>' +
-                                    '<div class="repo-chrome-status">' +
-                                        '<span class="repo-chrome-status-item"><span class="repo-chrome-status-label">Branch</span><span class="repo-chrome-status-value repo-chrome-branch-value"></span></span>' +
-                                        '<span class="repo-chrome-status-item"><span class="repo-chrome-status-label">Workspace</span><span class="repo-chrome-status-value repo-chrome-workspace-value"></span></span>' +
-                                        '<span class="repo-chrome-status-item"><span class="repo-chrome-status-label">Recent</span><span class="repo-chrome-status-value repo-chrome-recents-value"></span></span>' +
-                                    '</div>' +
+    self.element = $(   '<div id="app-chrome">' +
+                            '<div id="app-titlebar"></div>' +
+                            '<div id="app-toolbar">' +
+                                '<button type="button" class="icon-btn" id="app-menu-button" title="Menu" aria-label="Menu">&#9776;</button>' +
+                                '<div class="toolbar-menu" data-menu="app"></div>' +
+
+                                '<div class="toolbar-label" id="toolbar-repo-label">' +
+                                    '<div class="toolbar-label-value toolbar-repo-value"></div>' +
+                                    '<div class="toolbar-label-caption">Repo</div>' +
                                 '</div>' +
-                                '<div class="repo-chrome-actions">' +
-                                    '<button type="button" class="btn btn-primary btn-sm repo-chrome-browse">Browse Repo</button>' +
-                                    '<button type="button" class="btn btn-default btn-sm repo-chrome-open-workspace">Open Repo Folder</button>' +
+                                '<div class="toolbar-menu" data-menu="repo"></div>' +
+
+                                '<div class="toolbar-label" id="toolbar-branch-label">' +
+                                    '<div class="toolbar-label-value toolbar-branch-value"></div>' +
+                                    '<div class="toolbar-label-caption">Branch</div>' +
+                                '</div>' +
+
+                                '<div class="toolbar-tabs">' +
+                                    '<button type="button" class="toolbar-tab" data-section="workspace">' +
+                                        '<span class="toolbar-tab-icon">&#9776;</span>' +
+                                        '<span class="toolbar-tab-text">Changes</span>' +
+                                    '</button>' +
+                                    '<button type="button" class="toolbar-tab" data-section="history">' +
+                                        '<span class="toolbar-tab-icon">&#9776;</span>' +
+                                        '<span class="toolbar-tab-text">Commits</span>' +
+                                    '</button>' +
+                                '</div>' +
+
+                                '<div class="toolbar-spacer"></div>' +
+
+                                '<div class="toolbar-remote-actions">' +
+                                    '<button type="button" class="toolbar-remote-btn" id="toolbar-pull" title="Left-click to pull, right-click for options">' +
+                                        '<span class="toolbar-remote-btn-icon">&#8595;</span><span>Pull</span>' +
+                                    '</button>' +
+                                    '<div class="toolbar-menu" data-menu="pull"></div>' +
+                                    '<button type="button" class="toolbar-remote-btn" id="toolbar-push" title="Left-click to push, right-click for options">' +
+                                        '<span class="toolbar-remote-btn-icon">&#8593;</span><span>Push</span>' +
+                                    '</button>' +
+                                    '<div class="toolbar-menu" data-menu="push"></div>' +
+                                    '<button type="button" class="toolbar-remote-btn" id="toolbar-fetch" title="Left-click to fetch, right-click for options">' +
+                                        '<span class="toolbar-remote-btn-icon">&#8635;</span><span>Fetch</span>' +
+                                    '</button>' +
+                                    '<div class="toolbar-menu" data-menu="fetch"></div>' +
                                 '</div>' +
                             '</div>' +
-                            '<div class="repo-chrome-drawers">' +
-                                '<button type="button" class="btn btn-default btn-sm repo-chrome-drawer-button" data-drawer="repos">Recent Repositories <span class="badge repo-chrome-drawer-count"></span></button>' +
-                                '<button type="button" class="btn btn-default btn-sm repo-chrome-drawer-button" data-drawer="workspaces">Recent Repo Folders <span class="badge repo-chrome-drawer-count"></span></button>' +
-                            '</div>' +
-                            '<div class="repo-chrome-drawer-section" data-drawer="workspaces">' +
-                                '<div class="repo-chrome-recent-title">Recent Repo Folders</div>' +
-                                '<div class="repo-chrome-recent-list repo-chrome-workspace-recents"></div>' +
-                            '</div>' +
-                             '<div class="repo-chrome-drawer-section" data-drawer="repos">' +
-                                 '<div class="repo-chrome-recent-title">Recent Repositories</div>' +
-                                 '<div class="repo-chrome-recent-list repo-chrome-repo-recents"></div>' +
-                             '</div>' +
-                             '<div class="repo-chrome-compactbar">' +
-                                 '<div class="repo-chrome-switcher">' +
-                                     '<div class="repo-chrome-recent-title">Workspace Repo</div>' +
-                                     '<select class="form-control input-sm repo-chrome-workspace-switcher"></select>' +
-                                 '</div>' +
-                                 '<div class="repo-chrome-switcher repo-chrome-history-switcher">' +
-                                     '<div class="repo-chrome-recent-title">History</div>' +
-                                     '<div class="repo-chrome-history-hint">Merged local and remote refs. Click a ref label in the graph for actions.</div>' +
-                                     '<div class="repo-chrome-workspace-path"></div>' +
-                                 '</div>' +
-                             '</div>' +
-                         '</div>')[0];
+                        '</div>')[0];
 
     self.compareModal = $(   '<div class="modal fade" id="branch-compare-modal" tabindex="-1" role="dialog">' +
                                 '<div class="modal-dialog modal-lg" role="document">' +
@@ -916,12 +1017,125 @@ webui.RepoChrome = function(mainView) {
                                 '</div>' +
                             '</div>')[0];
 
-    $(".repo-chrome-browse", self.element).click(self.openPicker);
-    $(".repo-chrome-open-workspace", self.element).click(self.openWorkspacePicker);
-    $(".repo-chrome-drawer-button", self.element).click(self.toggleDrawer);
-    $(".repo-chrome-workspace-switcher", self.element).change(self.selectWorkspaceRepo);
+    $("#app-titlebar", self.element).text("git-webui" + (webui.repoPath ? " - " + webui.repoPath : ""));
+
+    $("#app-menu-button", self.element).click(function(event) {
+        event.stopPropagation();
+        self.renderAppMenu();
+        self.toggleMenu("app", event.currentTarget);
+    });
+    $("#toolbar-repo-label", self.element).click(function(event) {
+        event.stopPropagation();
+        self.renderRepoMenu();
+        self.toggleMenu("repo", event.currentTarget);
+    });
+
+    $(".toolbar-menu", self.element).click(function(event) {
+        event.stopPropagation();
+    });
+    $(document).on("click", self.closeMenus);
+
+    $("#toolbar-pull", self.element).click(self.onPull);
+    $("#toolbar-pull", self.element).on("contextmenu", function(event) { self.onRemoteContextMenu("pull", event); });
+    $("#toolbar-push", self.element).click(self.onPush);
+    $("#toolbar-push", self.element).on("contextmenu", function(event) { self.onRemoteContextMenu("push", event); });
+    $("#toolbar-fetch", self.element).click(self.onFetch);
+    $("#toolbar-fetch", self.element).on("contextmenu", function(event) { self.onRemoteContextMenu("fetch", event); });
+
+    if (webui.viewonly) {
+        $("#toolbar-push, #toolbar-pull, #app-menu-button", self.element).prop("disabled", true);
+    } else {
+        $(".toolbar-tab[data-section='workspace']", self.element).click(self.showWorkspace);
+    }
+    $(".toolbar-tab[data-section='history']", self.element).click(self.showHistory);
+
+    if (localStorage.getItem("theme") === "dark") {
+        $("body").addClass("dark-mode");
+    }
+    self.applyAutoFetch();
+
     $("body").append(self.compareModal);
-    self.setDrawerState(null);
+    self.activateSection("history");
+};
+
+webui.ConfigureRemotesView = function() {
+
+    var self = this;
+
+    self.refresh = function() {
+        webui.apiGet("/api/remotes", function(data) {
+            self.render(data.remotes || []);
+        });
+    }
+
+    self.render = function(remotes) {
+        var list = $(".configure-remotes-list", self.element);
+        list.empty();
+        if (remotes.length == 0) {
+            list.append('<div class="toolbar-menu-empty">No remotes configured.</div>');
+        }
+        remotes.forEach(function(remote) {
+            var row = $(  '<div class="configure-remotes-row">' +
+                                '<div class="configure-remotes-name"></div>' +
+                                '<div class="configure-remotes-url"></div>' +
+                                '<button type="button" class="btn btn-danger btn-xs configure-remotes-remove">Remove</button>' +
+                            '</div>');
+            $(".configure-remotes-name", row).text(remote.name);
+            $(".configure-remotes-url", row).text(remote.fetch_url || "");
+            $(".configure-remotes-remove", row).click(function() {
+                if (!window.confirm("Remove remote '" + remote.name + "'?")) {
+                    return;
+                }
+                webui.apiPost("/api/remotes/remove", {name: remote.name}, function(data) {
+                    self.render(data.remotes || []);
+                }, function(xhr) {
+                    webui.showError(webui.parseApiError(xhr, "Unable to remove remote"));
+                });
+            });
+            list.append(row);
+        });
+    }
+
+    self.onAdd = function() {
+        var name = $(".configure-remotes-add-name", self.element).val();
+        var url = $(".configure-remotes-add-url", self.element).val();
+        if (!name || !url) {
+            return;
+        }
+        webui.apiPost("/api/remotes/add", {name: name, url: url}, function(data) {
+            $(".configure-remotes-add-name, .configure-remotes-add-url", self.element).val("");
+            self.render(data.remotes || []);
+        }, function(xhr) {
+            webui.showError(webui.parseApiError(xhr, "Unable to add remote"));
+        });
+    }
+
+    self.show = function() {
+        self.refresh();
+        $(self.element).modal("show");
+    }
+
+    self.element = $(   '<div class="modal fade" id="configure-remotes-modal" tabindex="-1" role="dialog">' +
+                            '<div class="modal-dialog" role="document">' +
+                                '<div class="modal-content">' +
+                                    '<div class="modal-header">' +
+                                        '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
+                                        '<div class="repo-picker-eyebrow">Remotes</div>' +
+                                        '<h4 class="modal-title">Configure Remotes</h4>' +
+                                    '</div>' +
+                                    '<div class="modal-body">' +
+                                        '<div class="configure-remotes-list"></div>' +
+                                        '<div class="configure-remotes-add">' +
+                                            '<input type="text" class="form-control input-sm configure-remotes-add-name" placeholder="name (e.g. origin)">' +
+                                            '<input type="text" class="form-control input-sm configure-remotes-add-url" placeholder="url">' +
+                                            '<button type="button" class="btn btn-primary btn-sm configure-remotes-add-button">Add</button>' +
+                                        '</div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>')[0];
+    $(".configure-remotes-add-button", self.element).click(self.onAdd);
+    $("body").append(self.element);
 };
 
 webui.NoRepoView = function(mainView) {
@@ -973,79 +1187,8 @@ webui.TabBox = function(buttons) {
 };
 
 /*
- * == SideBarView =============================================================
+ * == RefActionMenu ============================================================
  */
-webui.SideBarView = function(mainView) {
-
-    var self = this;
-
-    self.activateSection = function(sectionName) {
-        $(".sidebar-nav-button", self.element).removeClass("active");
-        $(".sidebar-nav-button[data-section='" + sectionName + "']", self.element).addClass("active");
-    }
-
-    self.selectRef = function(refName) {
-        webui.historyRef = refName || null;
-        self.activateSection("history");
-        self.mainView.historyView.update(refName);
-    };
-
-    self.showWorkspace = function() {
-        self.activateSection("workspace");
-        self.mainView.workspaceView.update("stage");
-    }
-
-    self.showHistory = function() {
-        self.activateSection("history");
-        self.mainView.historyView.update(webui.historyRef);
-    }
-
-    self.showRemote = function() {
-        self.activateSection("remote");
-        self.mainView.remoteView.update();
-    }
-
-    self.mainView = mainView;
-    self.element = $(   '<div id="sidebar">' +
-                            '<a href="#" data-toggle="modal" data-target="#help-modal"><img id="sidebar-logo" src="/img/git-logo.png"></a>' +
-                            '<div id="sidebar-content">' +
-                                '<div class="sidebar-nav">' +
-                                    '<button type="button" class="btn btn-default sidebar-nav-button" data-section="history">History</button>' +
-                                    (webui.viewonly ? '' : '<button type="button" class="btn btn-default sidebar-nav-button" data-section="workspace">Workspace</button>') +
-                                    '<button type="button" class="btn btn-default sidebar-nav-button" data-section="remote">Remote</button>' +
-                                '</div>' +
-                                '<div class="sidebar-hint">All refs are now in the commit graph. Use the labels on commits for branch and tag actions.</div>' +
-                                '<div class="sidebar-theme-wrap">' +
-                                    '<button class="btn btn-sm btn-default" id="theme-toggle">Toggle Dark Mode</button>' +
-                                '</div>' +
-                            '</div>' +
-                        '</div>')[0];
-                        
-    $("#theme-toggle", self.element).click(function() {
-        $("body").toggleClass("dark-mode");
-        var isDarkMode = $("body").hasClass("dark-mode");
-        if (isDarkMode) {
-            localStorage.setItem("theme", "dark");
-        } else {
-            localStorage.setItem("theme", "light");
-        }
-    });
-    
-    if (localStorage.getItem("theme") === "dark") {
-        $("body").addClass("dark-mode");
-    }
-
-    if (webui.viewonly) {
-        $(".sidebar-nav-button[data-section='workspace']", self.element).remove();
-    } else {
-        $(".sidebar-nav-button[data-section='workspace']", self.element).click(self.showWorkspace);
-    }
-
-    $(".sidebar-nav-button[data-section='history']", self.element).click(self.showHistory);
-    $(".sidebar-nav-button[data-section='remote']", self.element).click(self.showRemote);
-    self.activateSection("history");
-};
-
 webui.RefActionMenu = function(mainView) {
 
     var self = this;
@@ -2340,7 +2483,6 @@ webui.WorkspaceView = function(mainView) {
         self.workingCopyView.update();
         self.stagingAreaView.update();
         self.commitMessageView.update();
-        self.remoteActionsView.update();
         if (self.workingCopyView.getSelectedItemsCount() + self.stagingAreaView.getSelectedItemsCount() == 0) {
             self.diffView.update(undefined, undefined, undefined, mode);
         }
@@ -2358,8 +2500,6 @@ webui.WorkspaceView = function(mainView) {
     workspaceEditor.appendChild(self.workingCopyView.element);
     self.commitMessageView = new webui.CommitMessageView(self);
     workspaceEditor.appendChild(self.commitMessageView.element);
-    self.remoteActionsView = new webui.RemoteActionsView(self);
-    workspaceEditor.appendChild(self.remoteActionsView.element);
     self.stagingAreaView = new webui.ChangedFilesView(self, "staging-area", "Staging Area");
     workspaceEditor.appendChild(self.stagingAreaView.element);
 };
@@ -2589,52 +2729,6 @@ webui.CommitMessageView = function(workspaceView) {
     $(".commit-message-commit", self.element).click(self.onCommit);
 };
 
-/*
- * == RemoteActionsView =======================================================
- */
-webui.RemoteActionsView = function(workspaceView) {
-
-    var self = this;
-
-    self.onPush = function() {
-        webui.git("push", function(data) {
-            webui.showResult("Push completed", data);
-            workspaceView.update("stage");
-        });
-    }
-
-    self.onPull = function() {
-        webui.git("pull", function(data) {
-            webui.showResult("Pull completed", data);
-            workspaceView.update("stage");
-        });
-    }
-
-    self.onFetch = function() {
-        webui.git("fetch", function(data) {
-            webui.showResult("Fetch completed", data);
-            workspaceView.update("stage");
-        });
-    }
-
-    self.update = function() {
-    }
-
-    self.element = $(   '<div id="remote-actions-view" class="panel panel-default">' +
-                            '<div class="panel-heading">' +
-                                '<h5>Remote Actions</h5>' +
-                                '<div class="btn-group btn-group-sm">' +
-                                    '<button type="button" class="btn btn-default remote-action-fetch">Fetch</button>' +
-                                    '<button type="button" class="btn btn-default remote-action-pull">Pull</button>' +
-                                    '<button type="button" class="btn btn-default remote-action-push">Push</button>' +
-                                '</div>' +
-                            '</div>' +
-                        '</div>')[0];
-    $(".remote-action-fetch", self.element).click(self.onFetch);
-    $(".remote-action-pull", self.element).click(self.onPull);
-    $(".remote-action-push", self.element).click(self.onPush);
-};
-
 webui.RemoteView = function(mainView) {
 
     var self = this;
@@ -2698,8 +2792,9 @@ function MainUi() {
         self.repoPicker = new webui.RepoPicker();
         body.appendChild(self.repoPicker.element);
         self.refActionMenu = new webui.RefActionMenu(self);
+        self.configureRemotesView = new webui.ConfigureRemotesView();
 
-        self.repoChrome = new webui.RepoChrome(self);
+        self.repoChrome = new webui.Toolbar(self);
         body.appendChild(self.repoChrome.element);
         self.repoChrome.update();
 
@@ -2708,9 +2803,6 @@ function MainUi() {
         globalContainer.appendChild(self.mainView);
 
         if (context.has_repo) {
-            self.sideBarView = new webui.SideBarView(self);
-            globalContainer.insertBefore(self.sideBarView.element, self.mainView);
-
             self.historyView = new webui.HistoryView(self);
             self.remoteView = new webui.RemoteView(self);
             if (!webui.viewonly) {
@@ -2718,10 +2810,10 @@ function MainUi() {
             }
             if (postAction == "workspace" && self.workspaceView) {
                 self.workspaceView.update("stage");
-                self.sideBarView.activateSection("workspace");
+                self.repoChrome.activateSection("workspace");
             } else if (postAction == "history") {
                 self.historyView.update(webui.historyRef);
-                self.sideBarView.activateSection("history");
+                self.repoChrome.activateSection("history");
             } else {
                 self.historyView.update(webui.historyRef);
             }

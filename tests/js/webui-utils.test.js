@@ -116,6 +116,35 @@ describe("webui.parseDecoratedRefs", () => {
     });
 });
 
+describe("webui pull strategy / auto-fetch preferences", () => {
+    let webui;
+
+    beforeEach(() => {
+        webui = loadWebui();
+        webui.__testLocalStorage.clear();
+    });
+
+    test("getPullStrategy defaults to fast-forward", () => {
+        expect(webui.getPullStrategy()).toBe("ff");
+    });
+
+    test("getPullStrategy reflects a stored rebase preference", () => {
+        webui.__testLocalStorage.setItem(webui.PULL_STRATEGY_KEY, "rebase");
+        expect(webui.getPullStrategy()).toBe("rebase");
+    });
+
+    test("isAutoFetchEnabled defaults to false", () => {
+        expect(webui.isAutoFetchEnabled()).toBe(false);
+    });
+
+    test("isAutoFetchEnabled is true only when explicitly enabled", () => {
+        webui.__testLocalStorage.setItem(webui.AUTO_FETCH_KEY, "1");
+        expect(webui.isAutoFetchEnabled()).toBe(true);
+        webui.__testLocalStorage.setItem(webui.AUTO_FETCH_KEY, "0");
+        expect(webui.isAutoFetchEnabled()).toBe(false);
+    });
+});
+
 describe("webui.getCurrentBranch / findBranchByRef", () => {
     let webui;
 

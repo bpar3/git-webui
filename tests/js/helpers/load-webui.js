@@ -29,10 +29,14 @@ function loadWebui() {
         $,
         jQuery: $,
         sessionStorage: win.sessionStorage,
+        localStorage: win.localStorage,
         console,
     };
     vm.createContext(sandbox);
     vm.runInContext(source, sandbox, { filename: SOURCE_PATH });
+    // Test-only handle so specs can assert on/reset storage without
+    // depending on Jest's own (unrelated) global localStorage.
+    sandbox.webui.__testLocalStorage = win.localStorage;
     return sandbox.webui;
 }
 
