@@ -1112,8 +1112,25 @@ webui.RefActionMenu = function(mainView) {
         $(self.element).show().addClass("open");
 
         var rect = anchor.getBoundingClientRect();
-        var top = rect.bottom + window.scrollY + 8;
-        var left = rect.left + window.scrollX;
+        var top = rect.bottom + 8;
+        var left = rect.left;
+        var padding = 12;
+        var menuWidth = self.element.offsetWidth;
+        var menuHeight = self.element.offsetHeight;
+
+        if (left + menuWidth > window.innerWidth - padding) {
+            left = window.innerWidth - menuWidth - padding;
+        }
+        if (left < padding) {
+            left = padding;
+        }
+        if (top + menuHeight > window.innerHeight - padding) {
+            top = rect.top - menuHeight - 8;
+        }
+        if (top < padding) {
+            top = padding;
+        }
+
         self.element.style.top = top + "px";
         self.element.style.left = left + "px";
     }
@@ -1133,6 +1150,9 @@ webui.RefActionMenu = function(mainView) {
         if (event.key == "Escape") {
             self.hide();
         }
+    });
+    $(window).on("resize scroll", function() {
+        self.hide();
     });
     $(self.element).on("click", function(event) {
         event.stopPropagation();

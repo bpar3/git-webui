@@ -627,7 +627,7 @@ body {
 
 .ref-action-menu {
     display: none;
-    position: absolute;
+    position: fixed;
     z-index: 1000;
     min-width: 15em;
     max-width: 20em;
@@ -1214,8 +1214,9 @@ body.dark-mode {
             -webkit-flex: 0 0 auto !important;
             .display-flex();
             .align-items(stretch);
+            flex-wrap: wrap;
             width: 100%;
-            overflow-x: auto;
+            overflow-x: hidden;
             overflow-y: hidden;
             border-top: 0;
             white-space: normal;
@@ -1223,7 +1224,7 @@ body.dark-mode {
 
             .sidebar-nav {
                 flex-direction: row;
-                flex: 1 1 auto;
+                flex: 1 1 100%;
             }
 
             .sidebar-nav-button {
@@ -1232,14 +1233,16 @@ body.dark-mode {
             }
 
             .sidebar-hint {
-                display: none;
+                display: none !important;
             }
 
             .sidebar-theme-wrap {
-                margin-left: auto;
+                flex: 1 1 100%;
+                margin-left: 0;
+                margin-top: 8px;
 
                 button {
-                    width: auto;
+                    width: 100%;
                 }
             }
         }
