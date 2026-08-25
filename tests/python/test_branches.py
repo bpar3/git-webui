@@ -102,6 +102,27 @@ def test_compare_branches_requires_source(backend, git_repo):
     assert response["status"] == 400
 
 
+def test_is_ancestor_of_head_true_for_head_itself(backend, git_repo):
+    head = backend.get_current_branch_name(str(git_repo))
+    sha = backend.run_git_capture(str(git_repo), ["rev-parse", "HEAD"])["stdout"].strip()
+    assert backend.is_ancestor_of_head(str(git_repo), sha) is True
+
+
+def test_is_ancestor_of_head_false_for_divergent_commit(backend, git_repo):
+    backend.create_branch(str(git_repo), "feature", "master", True)
+    (git_repo / "feature.txt").write_text("new file\n")
+    backend.run_git_capture(str(git_repo), ["add", "feature.txt"])
+    backend.run_git_capture(str(git_repo), ["commit", "-m", "Add feature file"])
+    feature_sha = backend.run_git_capture(str(git_repo), ["rev-parse", "HEAD"])["stdout"].strip()
+    backend.run_git_capture(str(git_repo), ["checkout", "master"])
+
+    assert backend.is_ancestor_of_head(str(git_repo), feature_sha) is False
+
+
+def test_is_ancestor_of_head_false_for_empty_commit(backend, git_repo):
+    assert backend.is_ancestor_of_head(str(git_repo), "") is False
+
+
 def test_merge_branch_fast_forwards(backend, git_repo):
     backend.create_branch(str(git_repo), "feature", "master", True)
     (git_repo / "feature.txt").write_text("new file\n")

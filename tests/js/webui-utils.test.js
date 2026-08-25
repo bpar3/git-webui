@@ -145,6 +145,41 @@ describe("webui pull strategy / auto-fetch preferences", () => {
     });
 });
 
+describe("webui avatar helpers", () => {
+    let webui;
+
+    beforeEach(() => {
+        webui = loadWebui();
+    });
+
+    test("getInitials uses first and last name initials", () => {
+        expect(webui.getInitials("Binu Parayil")).toBe("BP");
+        expect(webui.getInitials("Éric ALBER")).toBe("ÉA");
+    });
+
+    test("getInitials falls back for single-word or empty names", () => {
+        expect(webui.getInitials("Madonna")).toBe("MA");
+        expect(webui.getInitials("")).toBe("?");
+        expect(webui.getInitials(null)).toBe("?");
+        expect(webui.getInitials("   ")).toBe("?");
+    });
+
+    test("colorForAuthor is deterministic for the same name", () => {
+        expect(webui.colorForAuthor("Binu Parayil")).toBe(webui.colorForAuthor("Binu Parayil"));
+    });
+
+    test("colorForAuthor always returns one of webui.COLORS", () => {
+        expect(webui.COLORS).toContain(webui.colorForAuthor("Binu Parayil"));
+        expect(webui.COLORS).toContain(webui.colorForAuthor(""));
+    });
+
+    test("colorForAuthor differs for at least some different names", () => {
+        var colors = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank"].map(webui.colorForAuthor);
+        var distinct = colors.filter(function(color, index) { return colors.indexOf(color) == index; });
+        expect(distinct.length).toBeGreaterThan(1);
+    });
+});
+
 describe("webui.setRefChipFilter", () => {
     let webui;
     let $;

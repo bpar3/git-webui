@@ -230,6 +230,11 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 return
             result = list_remotes(WebUiRequestHandler.REPO_ROOT)
             self.send_json(result["status"], result["payload"])
+        elif self.path.startswith("/api/commits/") and self.path.endswith("/is-ancestor"):
+            if not self.ensure_repo_selected():
+                return
+            commit = self.path[len("/api/commits/"):-len("/is-ancestor")]
+            self.send_json(200, {"is_ancestor": is_ancestor_of_head(WebUiRequestHandler.REPO_ROOT, commit)})
         elif self.path.startswith("/git/cat-file/"):
             if not self.ensure_repo_selected():
                 return
@@ -640,6 +645,13 @@ def get_current_branch_name(repo_root):
     if result["returncode"] == 0:
         return result["stdout"].strip()
     return None
+
+
+def is_ancestor_of_head(repo_root, commit):
+    if not commit:
+        return False
+    result = run_git_capture(repo_root, ["merge-base", "--is-ancestor", commit, "HEAD"])
+    return result["returncode"] == 0
 
 
 def normalize_directory_path(path):

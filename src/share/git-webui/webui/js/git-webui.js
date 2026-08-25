@@ -261,6 +261,37 @@ webui.parseDecoratedRefs = function(refs, commitHash) {
     return items;
 }
 
+webui.getInitials = function(name) {
+    if (!name) {
+        return "?";
+    }
+    var parts = name.trim().split(/\s+/).filter(function(part) { return part.length > 0; });
+    if (parts.length == 0) {
+        return "?";
+    }
+    if (parts.length == 1) {
+        return parts[0].substr(0, 2).toUpperCase();
+    }
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+webui.hashString = function(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; ++i) {
+        hash = (hash * 31 + str.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash);
+}
+
+webui.colorForAuthor = function(name) {
+    if (!name) {
+        return webui.COLORS[0];
+    }
+    return webui.COLORS[webui.hashString(name) % webui.COLORS.length];
+}
+
+webui.historyAuthorFilter = null;
+
 webui.refChipFilterName = null;
 
 webui.setRefChipFilter = function(displayName) {
@@ -1009,6 +1040,10 @@ webui.Toolbar = function(mainView) {
                                         '<span class="toolbar-tab-icon">&#8942;</span>' +
                                         '<span class="toolbar-tab-text">Branches</span>' +
                                     '</button>' +
+                                    '<button type="button" class="toolbar-tab" id="toolbar-search-button">' +
+                                        '<span class="toolbar-tab-icon">&#128269;</span>' +
+                                        '<span class="toolbar-tab-text">Search</span>' +
+                                    '</button>' +
                                 '</div>' +
 
                                 '<div class="toolbar-spacer"></div>' +
@@ -1078,6 +1113,9 @@ webui.Toolbar = function(mainView) {
     }
     $(".toolbar-tab[data-section='history']", self.element).click(self.showHistory);
     $(".toolbar-tab[data-section='branches']", self.element).click(self.showBranches);
+    $("#toolbar-search-button", self.element).click(function() {
+        mainView.searchOverlay.show();
+    });
 
     if (localStorage.getItem("theme") === "dark") {
         $("body").addClass("dark-mode");
@@ -1371,6 +1409,187 @@ webui.RefActionMenu = function(mainView) {
 };
 
 /*
+ * == CommitActionMenu =========================================================
+ * The hover "⋮ show commit menu" popup for a single commit row.
+ */
+webui.CommitActionMenu = function(mainView) {
+
+    var self = this;
+
+    self.hide = function() {
+        $(self.element).removeClass("open").hide();
+        self.entry = null;
+    }
+
+    self.addAction = function(label, callback, disabled, extraClass) {
+        var button = $('<button type="button" class="btn btn-link ref-action-menu-item">' + label + '</button>');
+        if (extraClass) {
+            button.addClass(extraClass);
+        }
+        button.prop("disabled", !!disabled);
+        button.click(function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            self.hide();
+            if (!disabled) {
+                callback();
+            }
+        });
+        self.list.append(button);
+    }
+
+    self.render = function(entry) {
+        $(".ref-action-menu-title", self.element).text(entry.abbrevMessage());
+        $(".ref-action-menu-subtitle", self.element).text(entry.commit.substr(0, 12));
+        self.list.empty();
+
+        self.addAction("Create Branch Here…", function() {
+            mainView.repoChrome.createBranchAtRef(entry.commit, entry.commit.substr(0, 8) + "-branch");
+        }, webui.viewonly);
+        self.addAction("Create Tag Here…", function() {
+            mainView.repoChrome.createTagAtRef(entry.commit, entry.commit.substr(0, 8) + "-tag");
+        }, webui.viewonly);
+        self.addAction("Show all commits by " + entry.author.name, function() {
+            mainView.historyView.showCommitsByAuthor(entry.author.name);
+        }, false);
+
+        webui.apiGet("/api/commits/" + entry.commit + "/is-ancestor", function(data) {
+            if (data.is_ancestor) {
+                self.addAction("Revert Changes in this Commit…", function() {
+                    if (!window.confirm("Revert commit " + entry.commit.substr(0, 8) + "?")) {
+                        return;
+                    }
+                    webui.git("revert --no-edit " + entry.commit, function() {
+                        webui.showResult("Revert completed", "Reverted " + entry.commit.substr(0, 8));
+                        mainView.historyView.update(webui.historyRef);
+                    });
+                }, webui.viewonly, "danger");
+            } else {
+                self.addAction("Cherry-pick Changes in this Commit…", function() {
+                    webui.git("cherry-pick " + entry.commit, function() {
+                        webui.showResult("Cherry-pick completed", "Cherry-picked " + entry.commit.substr(0, 8));
+                        mainView.historyView.update(webui.historyRef);
+                    });
+                }, webui.viewonly);
+            }
+        });
+
+        self.addAction("Copy commit hash", function() {
+            webui.copyToClipboard(entry.commit, "Commit hash");
+        }, !entry.commit);
+    }
+
+    self.show = function(anchor, entry) {
+        self.entry = entry;
+        self.render(entry);
+        $(self.element).show().addClass("open");
+
+        var rect = anchor.getBoundingClientRect();
+        var top = rect.bottom + 8;
+        var left = rect.left;
+        var padding = 12;
+        var menuWidth = self.element.offsetWidth;
+        var menuHeight = self.element.offsetHeight;
+
+        if (left + menuWidth > window.innerWidth - padding) {
+            left = window.innerWidth - menuWidth - padding;
+        }
+        if (left < padding) {
+            left = padding;
+        }
+        if (top + menuHeight > window.innerHeight - padding) {
+            top = rect.top - menuHeight - 8;
+        }
+        if (top < padding) {
+            top = padding;
+        }
+
+        self.element.style.top = top + "px";
+        self.element.style.left = left + "px";
+    }
+
+    self.element = $(   '<div class="ref-action-menu">' +
+                            '<div class="ref-action-menu-header">' +
+                                '<div class="ref-action-menu-title"></div>' +
+                                '<div class="ref-action-menu-subtitle"></div>' +
+                            '</div>' +
+                            '<div class="ref-action-menu-list"></div>' +
+                        '</div>')[0];
+    self.list = $(".ref-action-menu-list", self.element);
+    $(document).on("click", function() {
+        self.hide();
+    });
+    $(document).on("keydown", function(event) {
+        if (event.key == "Escape") {
+            self.hide();
+        }
+    });
+    $(window).on("resize scroll", function() {
+        self.hide();
+    });
+    $(self.element).on("click", function(event) {
+        event.stopPropagation();
+    });
+    $("body").append(self.element);
+    self.hide();
+};
+
+/*
+ * == SearchOverlay =============================================================
+ * The Ctrl+F "Search commits, branches or users" overlay.
+ */
+webui.SearchOverlay = function(mainView) {
+
+    var self = this;
+
+    self.hide = function() {
+        $(self.element).removeClass("open").hide();
+        $(".search-overlay-input", self.element).val("");
+        self.applyFilter("");
+    }
+
+    self.show = function() {
+        $(self.element).show().addClass("open");
+        $(".search-overlay-input", self.element).val("").focus();
+    }
+
+    self.applyFilter = function(query) {
+        query = (query || "").toLowerCase();
+        $(".log-entry", document).each(function() {
+            var haystack = $(this).text().toLowerCase() + " " + ($(".log-entry-avatar", this).attr("title") || "").toLowerCase();
+            $(this).toggle(!query || haystack.indexOf(query) != -1);
+        });
+        $(".branches-row", document).each(function() {
+            $(this).toggle(!query || $(this).text().toLowerCase().indexOf(query) != -1);
+        });
+    }
+
+    self.onInput = function(event) {
+        self.applyFilter(event.currentTarget.value);
+    }
+
+    self.element = $(   '<div class="search-overlay">' +
+                            '<input type="text" class="search-overlay-input" placeholder="Search commits, branches or users">' +
+                        '</div>')[0];
+    $(".search-overlay-input", self.element).on("input", self.onInput);
+    $(self.element).click(function(event) {
+        if (event.target == self.element) {
+            self.hide();
+        }
+    });
+    $(document).on("keydown", function(event) {
+        if (event.key == "Escape") {
+            self.hide();
+        } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() == "f" && !webui.viewonly) {
+            event.preventDefault();
+            self.show();
+        }
+    });
+    $("body").append(self.element);
+    self.hide();
+};
+
+/*
  * == LogView =================================================================
  */
 webui.LogView = function(historyView) {
@@ -1394,7 +1613,8 @@ webui.LogView = function(historyView) {
         }
         var startAt = content.childElementCount;
         var refSpec = self.ref ? self.ref : "--all";
-        webui.git("log --date-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + " --", function(data) {
+        var authorSpec = webui.historyAuthorFilter ? " --author=" + JSON.stringify(webui.historyAuthorFilter) : "";
+        webui.git("log --date-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
             var start = 0;
             var count = 0;
             self.nextSkip = undefined;
@@ -1518,6 +1738,14 @@ webui.LogView = function(historyView) {
             svgCircle.setAttribute("cx", (index + 1) * xOffset);
             svgCircle.setAttribute("cy", currentY);
             svgCircle.setAttribute("r", 4);
+            var nodeStream = streams[index];
+            var nodeColor = nodeStream && nodeStream.path.style.stroke;
+            if (entry.parents.length > 1 && nodeColor) {
+                // Hollow ring for merge commits, matching GitFiend's graph style.
+                svgCircle.setAttribute("style", "fill:#fff;stroke:" + nodeColor + ";stroke-width:2");
+            } else if (nodeColor) {
+                svgCircle.setAttribute("style", "fill:" + nodeColor);
+            }
             svg.appendChild(svgCircle);
 
             entry.element.webuiLeft = Math.max(entry.element.webuiLeft, streams.length);
@@ -1571,15 +1799,20 @@ webui.LogView = function(historyView) {
         self.createElement = function() {
             self.element = $('<a class="log-entry list-group-item">' +
                                 '<header>' +
-                                    '<h6></h6>' +
+                                    '<span class="log-entry-avatar" style="background:' + webui.colorForAuthor(self.author.name) + '" title="' + webui.escapeHtml(self.author.name) + ' &lt;' + webui.escapeHtml(self.author.email) + '&gt;">' + webui.escapeHtml(webui.getInitials(self.author.name)) + '</span>' +
                                     '<div class="log-entry-refs"></div>' +
-                                    '<span class="log-entry-date">' + self.author.date.toLocaleString() + '&nbsp;</span> ' +
-                                    '<span class="badge">' + self.abbrevCommitHash() + '</span>' +
+                                    '<p class="list-group-item-text"></p>' +
+                                    '<button type="button" class="log-entry-menu-btn" title="Show commit menu">&#8942;</button>' +
+                                    '<span class="log-entry-date">' + self.author.date.toLocaleString() + '</span>' +
+                                    '<span class="badge log-entry-hash">' + self.abbrevCommitHash() + '</span>' +
                                 '</header>' +
-                                '<p class="list-group-item-text"></p>' +
                              '</a>')[0];
-            $('<a target="_blank" href="mailto:' + self.author.email + '">' + self.author.name + '</a>').appendTo($("h6", self.element));
             $(".list-group-item-text", self.element)[0].appendChild(document.createTextNode(self.abbrevMessage()));
+            $(".log-entry-menu-btn", self.element).click(function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                historyView.mainView.commitActionMenu.show(event.currentTarget, self);
+            });
             if (self.decoratedRefs.length > 0) {
                 var refBox = $(".log-entry-refs", self.element);
                 self.decoratedRefs.forEach(function(refInfo) {
@@ -2479,16 +2712,20 @@ webui.HistoryView = function(mainView) {
         var currentBranch = webui.getCurrentBranch();
         var title = webui.historyRef ? "History: " + webui.historyRef : "History: All refs";
         var subtitle = webui.historyRef ? "Focused graph view" : "Merged local branches, remotes, and tags";
+        if (webui.historyAuthorFilter) {
+            subtitle = "Commits by " + webui.historyAuthorFilter;
+        }
         if (currentBranch && currentBranch.local_name) {
             subtitle += " • current: " + currentBranch.local_name;
         }
         $(".history-view-title", self.element).text(title);
         $(".history-view-subtitle", self.element).text(subtitle);
-        $(".history-view-reset", self.element).prop("disabled", !webui.historyRef);
+        $(".history-view-reset", self.element).prop("disabled", !webui.historyRef && !webui.historyAuthorFilter);
     }
 
     self.resetFilter = function() {
         webui.historyRef = null;
+        webui.historyAuthorFilter = null;
         if (mainView.repoChrome) {
             mainView.repoChrome.focusHistoryRef(null);
         } else {
@@ -2496,21 +2733,95 @@ webui.HistoryView = function(mainView) {
         }
     }
 
+    self.showCommitsByAuthor = function(authorName) {
+        webui.historyAuthorFilter = authorName;
+        self.update(webui.historyRef);
+    }
+
     self.update = function(ref) {
         webui.historyRef = ref || null;
         self.show();
         self.refreshToolbar();
         self.logView.update(ref);
+        if (!webui.viewonly) {
+            self.uncommittedSummary.update();
+        }
     };
 
-    self.element = $('<div id="history-view"><div class="history-view-sidebar"><div class="history-view-toolbar"><div class="history-view-title"></div><div class="history-view-subtitle"></div><button type="button" class="btn btn-default btn-xs history-view-reset">All refs</button></div></div></div>')[0];
+    self.element = $('<div id="history-view"><div class="history-view-sidebar"><div class="history-view-toolbar"><div class="history-view-title"></div><div class="history-view-subtitle"></div><button type="button" class="btn btn-default btn-xs history-view-reset">All refs</button></div></div><div class="history-view-main"></div></div>')[0];
     $(".history-view-reset", self.element).click(self.resetFilter);
+    var historyMain = $(".history-view-main", self.element)[0];
+    self.uncommittedSummary = new webui.UncommittedSummaryView(mainView);
+    historyMain.appendChild(self.uncommittedSummary.element);
     self.logView = new webui.LogView(self);
-    self.element.appendChild(self.logView.element);
+    historyMain.appendChild(self.logView.element);
     self.commitView = new webui.CommitView(self);
     self.element.appendChild(self.commitView.element);
     self.mainView = mainView;
     self.refreshToolbar();
+};
+
+/*
+ * == UncommittedSummaryView ===================================================
+ * The "N changed files" card pinned above the commit list, matching
+ * GitFiend's Commits tab.
+ */
+webui.UncommittedSummaryView = function(mainView) {
+
+    var self = this;
+    self.expanded = false;
+    self.files = [];
+
+    self.toggleExpand = function() {
+        self.expanded = !self.expanded;
+        self.render();
+    }
+
+    self.render = function() {
+        if (self.files.length == 0) {
+            $(self.element).hide();
+            return;
+        }
+        $(self.element).show();
+        $(".uncommitted-summary-count", self.element).text(self.files.length + " changed file" + (self.files.length == 1 ? "" : "s"));
+        var fileList = $(".uncommitted-summary-files", self.element);
+        fileList.empty();
+        fileList.toggle(self.expanded);
+        self.files.forEach(function(file) {
+            var row = $('<div class="uncommitted-summary-file"><span class="uncommitted-summary-file-path"></span><span class="uncommitted-summary-file-status"></span></div>');
+            $(".uncommitted-summary-file-path", row).text(file.path);
+            var statusClass = file.status == "?" ? "untracked" : file.status;
+            $(".uncommitted-summary-file-status", row).text(file.status).addClass("uncommitted-status-" + statusClass);
+            fileList.append(row);
+        });
+    }
+
+    self.update = function() {
+        webui.git("status --porcelain", function(data) {
+            self.files = [];
+            webui.splitLines(data).forEach(function(line) {
+                if (!line) {
+                    return;
+                }
+                var indexStatus = line[0];
+                var workTreeStatus = line[1];
+                var status = indexStatus != " " && indexStatus != "?" ? indexStatus : workTreeStatus;
+                self.files.push({ path: line.substr(3), status: status });
+            });
+            self.render();
+        });
+    }
+
+    self.element = $(   '<div class="uncommitted-summary">' +
+                            '<div class="uncommitted-summary-header">' +
+                                '<span class="uncommitted-summary-dot"></span>' +
+                                '<span class="uncommitted-summary-count"></span>' +
+                                '<span class="uncommitted-summary-spacer"></span>' +
+                            '</div>' +
+                            '<div class="uncommitted-summary-files"></div>' +
+                        '</div>')[0];
+    $(".uncommitted-summary-header", self.element).click(self.toggleExpand);
+    $(self.element).hide();
 };
 
 /*
@@ -2955,6 +3266,8 @@ function MainUi() {
         self.repoPicker = new webui.RepoPicker();
         body.appendChild(self.repoPicker.element);
         self.refActionMenu = new webui.RefActionMenu(self);
+        self.commitActionMenu = new webui.CommitActionMenu(self);
+        self.searchOverlay = new webui.SearchOverlay(self);
         self.configureRemotesView = new webui.ConfigureRemotesView();
 
         self.repoChrome = new webui.Toolbar(self);
