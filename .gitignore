@@ -7,3 +7,8 @@ package-lock.json
 .playwright-mcp/
 __pycache__/
 *.pyc
+dist-pyinstaller/
+build/
+packaging/tauri/src-tauri/target/
+packaging/tauri/src-tauri/binaries/*
+!packaging/tauri/src-tauri/binaries/.gitkeep

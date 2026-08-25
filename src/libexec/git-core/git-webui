@@ -80,9 +80,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
 
     @classmethod
     def initialize(cls, repo_root):
-        web_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[0]))))
-        web_root = os.path.join(web_root, "share", "git-webui", "webui")
-        WebUiRequestHandler.WEB_ROOT = web_root
+        WebUiRequestHandler.WEB_ROOT = resolve_web_root()
         WebUiRequestHandler.APP_STATE_PATH = os.path.join(get_app_state_dir(), "state.json")
         WebUiRequestHandler.load_state()
         for restored_repo in list(WebUiRequestHandler.OPEN_REPOS):
@@ -731,6 +729,25 @@ def get_app_state_dir():
     if IS_WINDOWS:
         return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "git-webui")
     return os.path.join(os.path.expanduser("~"), ".config", "git-webui")
+
+
+def resolve_web_root():
+    """Locate the share/git-webui/webui static asset directory.
+
+    Normal (unfrozen) layout: this script lives at
+    <root>/libexec/git-core/git-webui, so the assets are three
+    directories up, under share/git-webui/webui.
+
+    PyInstaller onefile layout: there is no "three directories up" -
+    everything is extracted to a temp dir (sys._MEIPASS) at startup.
+    packaging/git-webui.spec bundles the same share/git-webui/webui
+    tree into that temp dir, so it's found the same way, just rooted
+    differently. See packaging/README.md.
+    """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, "share", "git-webui", "webui")
+    web_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[0]))))
+    return os.path.join(web_root, "share", "git-webui", "webui")
 
 
 def decode_output(data):
