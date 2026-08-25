@@ -261,6 +261,16 @@ webui.parseDecoratedRefs = function(refs, commitHash) {
     return items;
 }
 
+webui.refChipFilterName = null;
+
+webui.setRefChipFilter = function(displayName) {
+    webui.refChipFilterName = displayName || null;
+    $(".log-entry-ref").each(function() {
+        var name = $(this).attr("data-ref-name");
+        $(this).toggle(!webui.refChipFilterName || name == webui.refChipFilterName);
+    });
+}
+
 webui.getCurrentBranch = function() {
     return webui.branches.filter(function(branch) {
         return branch.current;
@@ -711,6 +721,16 @@ webui.Toolbar = function(mainView) {
         }, webui.reloadApp);
     }
 
+    self.createTagAtRef = function(startPoint, suggestedName) {
+        var tagName = window.prompt("New tag name", suggestedName || "");
+        if (!tagName) {
+            return;
+        }
+        webui.git("tag " + tagName + (startPoint ? " " + startPoint : ""), function() {
+            webui.showResult("Tag created", "Created tag " + tagName);
+        });
+    }
+
     // -- section / tab switching (replaces the former SideBarView) --
 
     self.activateSection = function(sectionName) {
@@ -726,6 +746,11 @@ webui.Toolbar = function(mainView) {
     self.showHistory = function() {
         self.activateSection("history");
         mainView.historyView.update(webui.historyRef);
+    }
+
+    self.showBranches = function() {
+        self.activateSection("branches");
+        mainView.branchesView.update();
     }
 
     // -- hamburger app menu --
@@ -980,6 +1005,10 @@ webui.Toolbar = function(mainView) {
                                         '<span class="toolbar-tab-icon">&#9776;</span>' +
                                         '<span class="toolbar-tab-text">Commits</span>' +
                                     '</button>' +
+                                    '<button type="button" class="toolbar-tab" data-section="branches">' +
+                                        '<span class="toolbar-tab-icon">&#8942;</span>' +
+                                        '<span class="toolbar-tab-text">Branches</span>' +
+                                    '</button>' +
                                 '</div>' +
 
                                 '<div class="toolbar-spacer"></div>' +
@@ -1048,6 +1077,7 @@ webui.Toolbar = function(mainView) {
         $(".toolbar-tab[data-section='workspace']", self.element).click(self.showWorkspace);
     }
     $(".toolbar-tab[data-section='history']", self.element).click(self.showHistory);
+    $(".toolbar-tab[data-section='branches']", self.element).click(self.showBranches);
 
     if (localStorage.getItem("theme") === "dark") {
         $("body").addClass("dark-mode");
@@ -1242,9 +1272,19 @@ webui.RefActionMenu = function(mainView) {
             }, webui.viewonly);
         }
 
-        self.addAction("Create branch from here", function() {
+        self.addAction("Create branch here", function() {
             mainView.repoChrome.createBranchAtRef(refInfo.gitRef || entry.commit, refInfo.displayName + "-copy");
         }, webui.viewonly);
+        self.addAction("Create tag here", function() {
+            mainView.repoChrome.createTagAtRef(refInfo.gitRef || entry.commit, refInfo.displayName + "-tag");
+        }, webui.viewonly);
+
+        self.addAction("Hide other branches", function() {
+            webui.setRefChipFilter(refInfo.displayName);
+        }, !refInfo.displayName);
+        self.addAction("Show All Branches", function() {
+            webui.setRefChipFilter(null);
+        }, !webui.refChipFilterName);
 
         if (refInfo.kind == "local" || refInfo.kind == "remote") {
             self.addAction("Compare to current branch", function() {
@@ -1270,6 +1310,9 @@ webui.RefActionMenu = function(mainView) {
         self.addAction("Copy commit hash", function() {
             webui.copyToClipboard(entry.commit, "Commit hash");
         }, !entry.commit);
+        self.addAction("Configure Remotes", function() {
+            mainView.configureRemotesView.show();
+        }, webui.viewonly);
     }
 
     self.show = function(anchor, refInfo, entry) {
@@ -1540,20 +1583,23 @@ webui.LogView = function(historyView) {
             if (self.decoratedRefs.length > 0) {
                 var refBox = $(".log-entry-refs", self.element);
                 self.decoratedRefs.forEach(function(refInfo) {
-                    var refType = "warning";
+                    var chipClass = "ref-chip-local";
                     if (refInfo.kind == "remote") {
-                        refType = "danger";
-                    } else if (refInfo.kind == "local") {
-                        refType = "success";
+                        chipClass = "ref-chip-remote";
                     } else if (refInfo.kind == "tag") {
-                        refType = "info";
+                        chipClass = "ref-chip-tag";
+                    } else if (refInfo.kind == "head") {
+                        chipClass = "ref-chip-local";
                     }
-                    var label = $('<button type="button" class="label label-' + refType + ' log-entry-ref">' + refInfo.displayName + '</button>');
+                    var label = $('<button type="button" class="ref-chip ' + chipClass + ' log-entry-ref" data-ref-name="' + webui.escapeHtml(refInfo.displayName) + '">' + webui.escapeHtml(refInfo.displayName) + '</button>');
                     label.click(function(event) {
                         event.preventDefault();
                         event.stopPropagation();
                         historyView.mainView.refActionMenu.show(label[0], refInfo, self);
                     });
+                    if (webui.refChipFilterName && refInfo.displayName != webui.refChipFilterName) {
+                        label.hide();
+                    }
                     refBox.append(label);
                 });
             }
@@ -2756,6 +2802,123 @@ webui.RemoteView = function(mainView) {
 };
 
 /*
+ * == BranchesView =============================================================
+ * A dedicated Local / Remote branch list, similar to GitFiend's Branches tab.
+ */
+webui.BranchesView = function(mainView) {
+
+    var self = this;
+    self.branches = [];
+    self.filterText = "";
+
+    self.show = function() {
+        mainView.switchTo(self.element);
+    }
+
+    self.buildRefInfo = function(branch) {
+        if (branch.local_name) {
+            return {
+                kind: "local",
+                fullName: "refs/heads/" + branch.local_name,
+                displayName: branch.local_name,
+                gitRef: branch.local_name,
+                commit: branch.commit,
+            };
+        }
+        return {
+            kind: "remote",
+            fullName: "refs/remotes/" + branch.remote_name,
+            displayName: branch.remote_name,
+            gitRef: branch.remote_name,
+            commit: branch.commit,
+        };
+    }
+
+    self.onRowClick = function(event) {
+        var row = event.currentTarget;
+        var branch = self.branches[parseInt(row.getAttribute("data-index"), 10)];
+        var refInfo = self.buildRefInfo(branch);
+        mainView.refActionMenu.show(row, refInfo, { commit: branch.commit || "" });
+    }
+
+    self.matchesFilter = function(branch) {
+        if (!self.filterText) {
+            return true;
+        }
+        var haystack = (branch.display_name || "") + " " + (branch.local_name || "") + " " + (branch.remote_name || "");
+        return haystack.toLowerCase().indexOf(self.filterText) != -1;
+    }
+
+    self.render = function() {
+        var list = $(".branches-list", self.element);
+        list.empty();
+
+        self.branches.forEach(function(branch, index) {
+            if (!self.matchesFilter(branch)) {
+                return;
+            }
+            var barClass = "branches-row-bar-remote";
+            if (branch.current) {
+                barClass = "branches-row-bar-current";
+            } else if (branch.local_name) {
+                barClass = "branches-row-bar-local";
+            }
+
+            var leftLabel = "";
+            if (branch.current) {
+                leftLabel = "Current Branch";
+            } else if (branch.ahead > 0 || branch.behind > 0) {
+                leftLabel = branch.ahead + " Ahead, " + branch.behind + " Behind";
+            }
+
+            var row = $(  '<div class="branches-row" data-index="' + index + '">' +
+                                '<div class="branches-row-label"></div>' +
+                                '<div class="branches-row-bar ' + barClass + '">' +
+                                    '<span class="branches-row-local"></span>' +
+                                    '<span class="branches-row-remote"></span>' +
+                                '</div>' +
+                                '<div class="branches-row-date"></div>' +
+                            '</div>');
+            $(".branches-row-label", row).text(leftLabel);
+            $(".branches-row-local", row).text((branch.current ? "✓ " : "") + (branch.local_name || ""));
+            $(".branches-row-remote", row).text(branch.remote_name || "");
+            $(".branches-row-date", row).text(branch.last_updated || "");
+            row.click(self.onRowClick);
+            list.append(row);
+        });
+
+        if (list.children().length == 0) {
+            list.append('<div class="branches-empty">No branches match this filter.</div>');
+        }
+    }
+
+    self.update = function() {
+        self.show();
+        webui.apiGet("/api/branches", function(data) {
+            self.branches = data.branches || [];
+            self.render();
+        });
+    }
+
+    self.onFilterInput = function(event) {
+        self.filterText = event.currentTarget.value.toLowerCase();
+        self.render();
+    }
+
+    self.element = $(   '<div id="branches-view">' +
+                            '<div class="branches-toolbar">' +
+                                '<input type="text" class="form-control input-sm branches-filter" placeholder="Find a branch">' +
+                            '</div>' +
+                            '<div class="branches-header">' +
+                                '<div class="branches-header-local">Local</div>' +
+                                '<div class="branches-header-remote">Remote</div>' +
+                            '</div>' +
+                            '<div class="branches-list"></div>' +
+                        '</div>')[0];
+    $(".branches-filter", self.element).on("input", self.onFilterInput);
+};
+
+/*
  *  == Initialization =========================================================
  */
 function MainUi() {
@@ -2805,6 +2968,7 @@ function MainUi() {
         if (context.has_repo) {
             self.historyView = new webui.HistoryView(self);
             self.remoteView = new webui.RemoteView(self);
+            self.branchesView = new webui.BranchesView(self);
             if (!webui.viewonly) {
                 self.workspaceView = new webui.WorkspaceView(self);
             }

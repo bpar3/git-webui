@@ -145,6 +145,46 @@ describe("webui pull strategy / auto-fetch preferences", () => {
     });
 });
 
+describe("webui.setRefChipFilter", () => {
+    let webui;
+    let $;
+
+    beforeEach(() => {
+        webui = loadWebui();
+        $ = webui.__testJQuery;
+        $(webui.__testDocument.body).empty().append(
+            '<button class="log-entry-ref" data-ref-name="devel">devel</button>' +
+            '<button class="log-entry-ref" data-ref-name="master">master</button>' +
+            '<button class="log-entry-ref" data-ref-name="devel">devel</button>'
+        );
+    });
+
+    test("defaults to showing every ref chip", () => {
+        expect(webui.refChipFilterName).toBeNull();
+        $(".log-entry-ref").each(function() {
+            expect($(this).css("display")).not.toBe("none");
+        });
+    });
+
+    test("hides chips that don't match the selected ref name", () => {
+        webui.setRefChipFilter("devel");
+        expect(webui.refChipFilterName).toBe("devel");
+        expect($(".log-entry-ref[data-ref-name='master']").css("display")).toBe("none");
+        $(".log-entry-ref[data-ref-name='devel']").each(function() {
+            expect($(this).css("display")).not.toBe("none");
+        });
+    });
+
+    test("clearing the filter (null) shows every chip again", () => {
+        webui.setRefChipFilter("devel");
+        webui.setRefChipFilter(null);
+        expect(webui.refChipFilterName).toBeNull();
+        $(".log-entry-ref").each(function() {
+            expect($(this).css("display")).not.toBe("none");
+        });
+    });
+});
+
 describe("webui.getCurrentBranch / findBranchByRef", () => {
     let webui;
 

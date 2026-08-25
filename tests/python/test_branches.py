@@ -20,18 +20,31 @@ def test_parse_for_each_ref_line_pads_missing_fields(backend):
         "track": "",
         "date": "",
         "subject": "",
+        "commit": "",
+        "full_name": "",
     }
 
 
 def test_parse_for_each_ref_line_full(backend):
     entry = backend.parse_for_each_ref_line(
-        "devel\t\torigin/devel\t[ahead 1]\t3 hours ago\tSome subject"
+        "devel\t\torigin/devel\t[ahead 1]\t3 hours ago\tSome subject\tabc123def456\trefs/heads/devel"
     )
     assert entry["name"] == "devel"
     assert entry["is_current"] is False
     assert entry["upstream"] == "origin/devel"
     assert entry["track"] == "[ahead 1]"
     assert entry["subject"] == "Some subject"
+    assert entry["commit"] == "abc123def456"
+    assert entry["full_name"] == "refs/heads/devel"
+
+
+def test_get_branch_entries_excludes_remote_head_symref(backend, git_repo, tmp_path):
+    clone_path = tmp_path / "clone"
+    backend.run_command_capture(["git", "clone", str(git_repo), str(clone_path)])
+    branches = backend.get_branch_entries(str(clone_path))
+    names = [b["display_name"] for b in branches]
+    assert "origin" not in names
+    assert "origin/master" in names or any(b["remote_name"] == "origin/master" for b in branches)
 
 
 def test_get_branch_entries_single_local_branch(backend, git_repo):
@@ -41,6 +54,7 @@ def test_get_branch_entries_single_local_branch(backend, git_repo):
     assert branches[0]["current"] is True
     assert branches[0]["status"] == "local-only"
     assert branches[0]["can_delete"] is False
+    assert len(branches[0]["commit"]) == 40
 
 
 def test_create_branch_and_checkout(backend, git_repo):

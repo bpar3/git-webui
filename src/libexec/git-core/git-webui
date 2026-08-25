@@ -836,7 +836,7 @@ def parse_track_details(track):
 
 def parse_for_each_ref_line(line):
     fields = line.split("\t")
-    while len(fields) < 6:
+    while len(fields) < 8:
         fields.append("")
     return {
         "name": fields[0],
@@ -845,6 +845,8 @@ def parse_for_each_ref_line(line):
         "track": fields[3],
         "date": fields[4],
         "subject": fields[5],
+        "commit": fields[6],
+        "full_name": fields[7],
     }
 
 
@@ -854,7 +856,7 @@ def get_branch_entries(repo_root):
         [
             "for-each-ref",
             "--sort=-committerdate",
-            "--format=%(refname:short)\t%(HEAD)\t%(upstream:short)\t%(upstream:track)\t%(committerdate:relative)\t%(subject)",
+            "--format=%(refname:short)\t%(HEAD)\t%(upstream:short)\t%(upstream:track)\t%(committerdate:relative)\t%(subject)\t%(objectname)\t%(refname)",
             "refs/heads",
         ],
     )
@@ -863,7 +865,7 @@ def get_branch_entries(repo_root):
         [
             "for-each-ref",
             "--sort=-committerdate",
-            "--format=%(refname:short)\t%(HEAD)\t%(upstream:short)\t%(upstream:track)\t%(committerdate:relative)\t%(subject)",
+            "--format=%(refname:short)\t%(HEAD)\t%(upstream:short)\t%(upstream:track)\t%(committerdate:relative)\t%(subject)\t%(objectname)\t%(refname)",
             "refs/remotes",
         ],
     )
@@ -878,7 +880,7 @@ def get_branch_entries(repo_root):
             if not line.strip():
                 continue
             remote_branch = parse_for_each_ref_line(line)
-            if remote_branch["name"].endswith("/HEAD"):
+            if remote_branch["full_name"].endswith("/HEAD"):
                 continue
             short_name = remote_branch["name"].split("/", 1)[1] if "/" in remote_branch["name"] else remote_branch["name"]
             remote_map.setdefault(short_name, []).append(remote_branch)
@@ -912,6 +914,7 @@ def get_branch_entries(repo_root):
             "behind": behind,
             "last_updated": local_branch["date"] or (remote_branch["date"] if remote_branch is not None else ""),
             "subject": local_branch["subject"] or (remote_branch["subject"] if remote_branch is not None else ""),
+            "commit": local_branch["commit"] or (remote_branch["commit"] if remote_branch is not None else ""),
             "can_delete": not local_branch["is_current"],
         })
 
@@ -930,6 +933,7 @@ def get_branch_entries(repo_root):
                 "behind": 0,
                 "last_updated": remote_branch["date"],
                 "subject": remote_branch["subject"],
+                "commit": remote_branch["commit"],
                 "can_delete": False,
             })
 

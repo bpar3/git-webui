@@ -34,9 +34,11 @@ function loadWebui() {
     };
     vm.createContext(sandbox);
     vm.runInContext(source, sandbox, { filename: SOURCE_PATH });
-    // Test-only handle so specs can assert on/reset storage without
-    // depending on Jest's own (unrelated) global localStorage.
+    // Test-only handles so specs can assert on/reset storage and DOM state
+    // without depending on Jest's own (unrelated) global environment.
     sandbox.webui.__testLocalStorage = win.localStorage;
+    sandbox.webui.__testJQuery = $;
+    sandbox.webui.__testDocument = win.document;
     return sandbox.webui;
 }
 
