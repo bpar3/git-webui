@@ -4,6 +4,9 @@
   "description": "A web user interface for git",
   "main": "index.js",
   "scripts": {
+    "build": "node tools/run-grunt.js default",
+    "serve": "node tools/run-grunt.js serve",
+    "release": "node tools/run-grunt.js release",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

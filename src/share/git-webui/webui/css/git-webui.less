@@ -1264,7 +1264,7 @@ body.dark-mode {
     }
 }
 
-@media (min-width: 769px) and (max-width: 1100px) {
+@media (min-width: 769px) and (max-width: 1280px) {
     #repo-chrome {
         padding: 10px 12px 12px 12px;
 
@@ -1293,6 +1293,21 @@ body.dark-mode {
             max-height: 7.5em;
         }
 
+        .repo-workspace-card {
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px 10px;
+        }
+
+        .repo-workspace-card-top {
+            grid-column: 1 / -1;
+        }
+
+        .repo-workspace-card-meta,
+        .repo-workspace-card-path {
+            grid-column: 1 / -1;
+            text-align: left;
+        }
+
         .repo-branch-list {
             max-height: 11.5em;
         }
@@ -1300,6 +1315,7 @@ body.dark-mode {
         .repo-branch-card-actions .btn {
             padding: 2px 6px;
             font-size: 11px;
+            min-height: 24px;
         }
     }
 }

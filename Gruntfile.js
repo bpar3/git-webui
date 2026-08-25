@@ -42,7 +42,7 @@ module.exports = function(grunt) {
             files: {
                 expand: true,
                 cwd: 'src',
-                src: 'share/git-webui/webui/css/*.less',
+                src: 'share/git-webui/webui/css/git-webui.less',
                 dest: 'dist',
                 ext: '.css',
             },
@@ -74,8 +74,8 @@ module.exports = function(grunt) {
     grunt.loadNpmTasks('grunt-shell');
     grunt.loadNpmTasks('grunt-contrib-watch');
 
-    grunt.registerTask('copytodist', ['copy:jquery', 'copy:bootstrap', 'copy:git_webui']);
-    grunt.registerTask('default', ['copytodist', 'less']);
+    grunt.registerTask('copytodist', ['copy:git_webui']);
+    grunt.registerTask('default', ['clean', 'copytodist', 'less']);
     grunt.registerTask('serve', ['default', 'shell:serve']);
     grunt.registerTask('release', ['default', 'copy:release']);
 };
