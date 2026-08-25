@@ -44,10 +44,7 @@ def _run_git(repo_path, *args):
     return result.stdout
 
 
-@pytest.fixture()
-def git_repo(tmp_path):
-    """A throwaway git repo with a single commit on `master`, for backend tests."""
-    repo_path = tmp_path / "repo"
+def _make_git_repo(repo_path):
     repo_path.mkdir()
     _run_git(repo_path, "init", "-b", "master")
     _run_git(repo_path, "config", "user.email", "test@example.com")
@@ -56,3 +53,43 @@ def git_repo(tmp_path):
     _run_git(repo_path, "add", "README.md")
     _run_git(repo_path, "commit", "-m", "Initial commit")
     return repo_path
+
+
+@pytest.fixture()
+def git_repo(tmp_path):
+    """A throwaway git repo with a single commit on `master`, for backend tests."""
+    return _make_git_repo(tmp_path / "repo")
+
+
+@pytest.fixture()
+def second_git_repo(tmp_path):
+    """A second, independent throwaway git repo, for multi-repo tests."""
+    return _make_git_repo(tmp_path / "repo2")
+
+
+@pytest.fixture()
+def handler_state(backend, tmp_path):
+    """Isolates WebUiRequestHandler's class-level state (REPO_ROOT, OPEN_REPOS,
+    RECENT_REPOS, ...) for a single test, redirecting its persisted state file
+    to a tmp path so tests never touch the real ~/.config/git-webui/state.json."""
+    handler = backend.WebUiRequestHandler
+    saved = {
+        "WEB_ROOT": handler.WEB_ROOT,
+        "REPO_ROOT": handler.REPO_ROOT,
+        "APP_STATE_PATH": handler.APP_STATE_PATH,
+        "RECENT_REPOS": list(handler.RECENT_REPOS),
+        "WORKSPACE_ROOT": handler.WORKSPACE_ROOT,
+        "RECENT_WORKSPACES": list(handler.RECENT_WORKSPACES),
+        "OPEN_REPOS": list(handler.OPEN_REPOS),
+    }
+    handler.APP_STATE_PATH = str(tmp_path / "state.json")
+    handler.REPO_ROOT = None
+    handler.RECENT_REPOS = []
+    handler.WORKSPACE_ROOT = None
+    handler.RECENT_WORKSPACES = []
+    handler.OPEN_REPOS = []
+    try:
+        yield handler
+    finally:
+        for key, value in saved.items():
+            setattr(handler, key, value)

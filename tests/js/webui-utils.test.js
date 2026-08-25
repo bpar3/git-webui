@@ -180,6 +180,31 @@ describe("webui avatar helpers", () => {
     });
 });
 
+describe("webui.withRepoParam", () => {
+    let webui;
+
+    beforeEach(() => {
+        webui = loadWebui();
+    });
+
+    test("returns the url unchanged when no repo is active", () => {
+        webui.activeRepoId = null;
+        expect(webui.withRepoParam("/api/branches")).toBe("/api/branches");
+    });
+
+    test("appends ?repo= when the url has no query string yet", () => {
+        webui.activeRepoId = "/home/user/repo";
+        expect(webui.withRepoParam("/api/branches")).toBe("/api/branches?repo=%2Fhome%2Fuser%2Frepo");
+    });
+
+    test("appends &repo= when the url already has a query string", () => {
+        webui.activeRepoId = "/home/user/repo";
+        expect(webui.withRepoParam("/api/blame?path=README.md")).toBe(
+            "/api/blame?path=README.md&repo=%2Fhome%2Fuser%2Frepo"
+        );
+    });
+});
+
 describe("webui.setRefChipFilter", () => {
     let webui;
     let $;

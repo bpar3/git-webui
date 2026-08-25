@@ -21,6 +21,8 @@ var webui = webui || {};
 webui.repo = "/";
 webui.repoPath = null;
 webui.recentRepos = [];
+webui.activeRepoId = null;
+webui.openRepos = [];
 webui.workspacePath = null;
 webui.recentWorkspaces = [];
 webui.workspaceRepos = [];
@@ -88,8 +90,16 @@ webui.parseApiError = function(xhr, fallbackMessage) {
     return fallbackMessage;
 }
 
+webui.withRepoParam = function(url) {
+    if (!webui.activeRepoId) {
+        return url;
+    }
+    var separator = url.indexOf("?") == -1 ? "?" : "&";
+    return url + separator + "repo=" + encodeURIComponent(webui.activeRepoId);
+}
+
 webui.apiGet = function(url, callback) {
-    $.getJSON(url)
+    $.getJSON(webui.withRepoParam(url))
     .done(callback)
     .fail(function(xhr) {
         webui.showError(webui.parseApiError(xhr, "Git webui server not running"));
@@ -98,7 +108,7 @@ webui.apiGet = function(url, callback) {
 
 webui.apiPost = function(url, payload, callback, errorCallback) {
     $.ajax({
-        url: url,
+        url: webui.withRepoParam(url),
         method: "POST",
         data: JSON.stringify(payload || {}),
         contentType: "application/json",
@@ -127,6 +137,23 @@ webui.reloadWithPostAction = function(viewName) {
         sessionStorage.setItem("git-webui-post-action", viewName);
     }
     webui.reloadApp();
+}
+
+// Applies a /api/repos/{select,open,clone,create} response (a full repo
+// context payload) without a full page reload, so opening a repo while
+// others are already open just adds/focuses a tab. The one exception is
+// going from zero open repos to the first one: the view instances
+// (historyView, workspaceView, ...) don't exist yet in that case, so a
+// full bootstrap (page reload) is simplest and only happens once per
+// session.
+webui.applyOpenedRepoContext = function(mainView, context) {
+    webui.recentRepos = context.recent_repos || webui.recentRepos;
+    webui.openRepos = context.open_repos || [];
+    if (!mainView.historyView) {
+        webui.reloadApp();
+        return;
+    }
+    mainView.repoChrome.switchActiveRepo(context.repo_id);
 }
 
 webui.setFlashMessage = function(title, message, type) {
@@ -355,7 +382,7 @@ webui.git = function(cmd, arg1, arg2) {
         cmd += "\n" + arg1;
         var callback = arg2;
     }
-    $.post("git", cmd, function(data, status, xhr) {
+    $.post(webui.withRepoParam("git"), cmd, function(data, status, xhr) {
         if (xhr.status == 200) {
             // Convention : last lines are footer meta data like headers. An empty line marks the start if the footers
             var footers = {};
@@ -418,7 +445,7 @@ webui.getNodeIndex = function(element) {
     return index;
 }
 
-webui.RepoPicker = function() {
+webui.RepoPicker = function(mainView) {
 
     var self = this;
     self.mode = "repo";
@@ -432,7 +459,9 @@ webui.RepoPicker = function() {
     }
 
     self.selectRepo = function(path) {
-        webui.apiPost("/api/repos/select", {path: path}, webui.reloadApp);
+        webui.apiPost("/api/repos/select", {path: path}, function(context) {
+            webui.applyOpenedRepoContext(mainView, context);
+        });
     }
 
     self.openCurrentPath = function() {
@@ -653,6 +682,8 @@ webui.Toolbar = function(mainView) {
     self.updateStatusMeta = function() {
         $(".toolbar-repo-value", self.element).text(webui.repo || "No Repository");
         $(".toolbar-branch-value", self.element).text(self.branchSummary());
+        $(".app-titlebar-path", self.element).text("git-webui" + (webui.repoPath ? " - " + webui.repoPath : ""));
+        $("title")[0].textContent = webui.repoPath ? "Git - " + webui.repo : "Git WebUI";
     }
 
     self.openPicker = function() {
@@ -763,7 +794,10 @@ webui.Toolbar = function(mainView) {
 
     // -- section / tab switching (replaces the former SideBarView) --
 
+    self.activeSectionName = "history";
+
     self.activateSection = function(sectionName) {
+        self.activeSectionName = sectionName;
         $(".toolbar-tab", self.element).removeClass("active");
         $(".toolbar-tab[data-section='" + sectionName + "']", self.element).addClass("active");
     }
@@ -781,6 +815,16 @@ webui.Toolbar = function(mainView) {
     self.showBranches = function() {
         self.activateSection("branches");
         mainView.branchesView.update();
+    }
+
+    self.refreshActiveSection = function() {
+        if (self.activeSectionName == "workspace" && !webui.viewonly) {
+            mainView.workspaceView.update("stage");
+        } else if (self.activeSectionName == "branches") {
+            mainView.branchesView.update();
+        } else {
+            mainView.historyView.update(webui.historyRef);
+        }
     }
 
     // -- hamburger app menu --
@@ -922,8 +966,8 @@ webui.Toolbar = function(mainView) {
             if (data.cancelled) {
                 return;
             }
-            webui.apiPost("/api/repos/clone", {url: url, destination: data.path}, function() {
-                webui.reloadApp();
+            webui.apiPost("/api/repos/clone", {url: url, destination: data.path}, function(context) {
+                webui.applyOpenedRepoContext(mainView, context);
             }, function(xhr) {
                 webui.showError(webui.parseApiError(xhr, "Clone failed"));
             });
@@ -946,8 +990,8 @@ webui.Toolbar = function(mainView) {
             if (data.cancelled) {
                 return;
             }
-            webui.apiPost("/api/repos/create", {destination: data.path, directory_name: name}, function() {
-                webui.reloadApp();
+            webui.apiPost("/api/repos/create", {destination: data.path, directory_name: name}, function(context) {
+                webui.applyOpenedRepoContext(mainView, context);
             }, function(xhr) {
                 webui.showError(webui.parseApiError(xhr, "Create repo failed"));
             });
@@ -1047,16 +1091,85 @@ webui.Toolbar = function(mainView) {
         self.toggleMenu(kind, event.currentTarget);
     }
 
+    // -- repo tabs (multiple repos open simultaneously) --
+
+    self.renderRepoTabs = function() {
+        var strip = $(".repo-tab-strip", self.element);
+        strip.empty();
+        if (webui.openRepos.length == 0) {
+            return;
+        }
+        webui.openRepos.forEach(function(repo) {
+            var tab = $('<div class="repo-tab"><span class="repo-tab-name"></span><button type="button" class="repo-tab-close" title="Close">&times;</button></div>');
+            if (repo.path == webui.activeRepoId) {
+                tab.addClass("active");
+            }
+            $(".repo-tab-name", tab).text(repo.name).attr("title", repo.path);
+            $(".repo-tab-name", tab).click(function() {
+                self.switchActiveRepo(repo.path);
+            });
+            $(".repo-tab-close", tab).click(function(event) {
+                event.stopPropagation();
+                self.closeRepoTab(repo.path);
+            });
+            strip.append(tab);
+        });
+        var addButton = $('<button type="button" class="repo-tab-add" title="Open another repo">+</button>');
+        addButton.click(self.openPicker);
+        strip.append(addButton);
+    }
+
+    self.switchActiveRepo = function(repoId) {
+        if (!repoId || repoId == webui.activeRepoId) {
+            return;
+        }
+        var entry = webui.openRepos.filter(function(repo) { return repo.path == repoId; })[0];
+        webui.activeRepoId = repoId;
+        webui.repoPath = repoId;
+        webui.repo = entry ? entry.name : repoId;
+        webui.historyRef = null;
+        webui.historyAuthorFilter = null;
+        webui.refChipFilterName = null;
+        self.renderRepoTabs();
+        self.update();
+        self.refreshActiveSection();
+    }
+
+    self.closeRepoTab = function(repoId) {
+        webui.apiPost("/api/repos/close", {repo_id: repoId}, function(context) {
+            webui.openRepos = context.open_repos || [];
+            self.renderRepoTabs();
+            if (!context.has_repo) {
+                webui.activeRepoId = null;
+                webui.repoPath = null;
+                mainView.switchTo(new webui.NoRepoView(mainView).element);
+                return;
+            }
+            if (context.repo_id != webui.activeRepoId) {
+                webui.activeRepoId = context.repo_id;
+                webui.repoPath = context.repo_path;
+                webui.repo = context.repo_name;
+                webui.historyRef = null;
+                webui.historyAuthorFilter = null;
+                webui.refChipFilterName = null;
+                self.update();
+                self.refreshActiveSection();
+            }
+        });
+    }
+
     // -- rendering --
 
     self.update = function() {
         self.updateStatusMeta();
         self.loadBranches();
+        self.renderRepoTabs();
     }
 
     self.element = $(   '<div id="app-chrome">' +
                             '<div id="app-titlebar"><span class="app-titlebar-path"></span>' +
                             '</div>' +
+                            '<div class="repo-tab-strip"></div>' +
                             '<div id="app-toolbar">' +
                                 '<button type="button" class="icon-btn" id="app-menu-button" title="Menu" aria-label="Menu">&#9776;</button>' +
                                 '<div class="toolbar-menu" data-menu="app"></div>' +
@@ -1125,8 +1238,6 @@ webui.Toolbar = function(mainView) {
                                     '</div>' +
                                 '</div>' +
                             '</div>')[0];
-
-    $(".app-titlebar-path", self.element).text("git-webui" + (webui.repoPath ? " - " + webui.repoPath : ""));
 
     $("#app-menu-button", self.element).click(function(event) {
         event.stopPropagation();
@@ -2039,6 +2150,7 @@ webui.LogView = function(historyView) {
         $(svg).empty();
         streams = []
         $(content).empty();
+        currentSelection = null;
         self.ref = ref || null;
         self.nextSkip = 0;
         self.populate();
@@ -2935,7 +3047,7 @@ webui.TreeView = function(commitView) {
         $(self.element.lastElementChild).remove();
         var container = $(  '<div id="tree-view-blob-content">' +
                                 '<div class="tree-blob-toolbar"><button type="button" class="btn btn-default btn-xs tree-blame-toggle">Blame</button></div>' +
-                                '<iframe src="/git/cat-file/' + self.stack[self.stack.length - 1].object + '"></iframe>' +
+                                '<iframe src="' + webui.withRepoParam("/git/cat-file/" + self.stack[self.stack.length - 1].object) + '"></iframe>' +
                             '</div>');
         container.appendTo(self.element);
         $(".tree-blame-toggle", container).click(self.toggleBlame);
@@ -3942,6 +4054,8 @@ function MainUi() {
         webui.repo = context.repo_name || "/";
         webui.repoPath = context.repo_path;
         webui.recentRepos = context.recent_repos || [];
+        webui.activeRepoId = context.repo_id || null;
+        webui.openRepos = context.open_repos || [];
         webui.workspacePath = context.workspace_path;
         webui.recentWorkspaces = context.recent_workspaces || [];
         webui.workspaceRepos = context.workspace_repos || [];
@@ -3953,7 +4067,7 @@ function MainUi() {
         var body = $("body")[0];
         $('<div id="message-box">').appendTo(body);
 
-        self.repoPicker = new webui.RepoPicker();
+        self.repoPicker = new webui.RepoPicker(self);
         body.appendChild(self.repoPicker.element);
         self.refActionMenu = new webui.RefActionMenu(self);
         self.commitActionMenu = new webui.CommitActionMenu(self);

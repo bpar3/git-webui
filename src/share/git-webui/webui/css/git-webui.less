@@ -149,6 +149,79 @@ body {
     }
 }
 
+.repo-tab-strip {
+    .display-flex();
+    .align-items(stretch);
+    background: @gf-toolbar-border;
+    gap: 1px;
+    padding-top: 1px;
+    overflow-x: auto;
+    .no-select();
+
+    &:empty {
+        display: none;
+    }
+
+    .repo-tab {
+        .display-flex();
+        .align-items(center);
+        gap: 6px;
+        padding: 5px 8px 5px 12px;
+        background: @gf-row-hover;
+        color: @gf-text-muted;
+        font-size: 11.5px;
+        cursor: pointer;
+        max-width: 16em;
+        flex: 0 1 auto;
+
+        &.active {
+            background: @gf-toolbar-bg;
+            color: @gf-text;
+            font-weight: bold;
+        }
+
+        &:hover {
+            color: @gf-text;
+        }
+    }
+
+    .repo-tab-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .repo-tab-close {
+        flex: 0 0 auto;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        opacity: 0.6;
+        padding: 0 2px;
+        line-height: 1;
+        border-radius: 3px;
+
+        &:hover {
+            opacity: 1;
+            background: rgba(0, 0, 0, 0.08);
+        }
+    }
+
+    .repo-tab-add {
+        flex: 0 0 auto;
+        border: 0;
+        background: @gf-row-hover;
+        color: @gf-text-muted;
+        padding: 5px 12px;
+        font-weight: bold;
+
+        &:hover {
+            background: @gf-toolbar-bg;
+            color: @gf-accent;
+        }
+    }
+}
+
 #app-toolbar {
     .display-flex();
     .align-items(center);
