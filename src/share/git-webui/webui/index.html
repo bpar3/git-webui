@@ -45,40 +45,36 @@ limitations under the License.
         <div class="modal fade" id="help-modal" tabindex="-1" role="dialog">
             <div class="modal-dialog modal-lg">
                 <div class="modal-content">
+                    <div class="modal-header">
+                        <button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>
+                        <div class="repo-picker-eyebrow">Help</div>
+                        <h4 class="modal-title">Git WebUI</h4>
+                    </div>
                     <div class="modal-body">
-                        <h4>History Viewing</h4>
-                        <p>The history view now shows a unified commit graph across local branches, remote branches, and tags.</p>
-                        <p>Click any branch or tag label on a commit to focus that ref, check it out, compare it, merge it, or create a new branch from it.</p>
-                        <p>When selecting a revision the diff of this specific commit is displayed in the right panel.</p><br>
-                        <img alt="Image of log commit" src="/img/doc/log-commit.png"><br>
-                        <p>On top of the right panel, you can choose 'Tree' to display the versioned content at the specific
-                            revision selected in the history graph. You can browse through directories and display file contents.</p><br>
-                        <img alt="Image of log tree" src="/img/doc/log-tree.png">
+                        <h4>Commits</h4>
+                        <p>The Commits tab shows a unified commit graph across local branches, remote branches, and tags.
+                            Click a ref chip on a commit (or a branch in the left column) to check it out, compare it, merge it,
+                            create a branch/tag from it, or rebase onto it. Selecting a commit shows its diff on the right;
+                            switch to the "Tree" tab there to browse the repository contents at that revision, with an
+                            optional Blame view per file.</p>
 
-                        <h4>Remote access</h4>
-                        <p>Other people on your network have read-only access to your repository:
-                            they may access to the web interface (without 'Workspace'), clone or pull from your repository.
-                            All this through the same url:</p>
-                        <p>Clone:</p>
-                        <pre>$ git clone http://&lt;ip_of_the_computer_running_webui&gt;:8000/ repo_name</pre>
-                        <p>Pull:</p>
-                        <pre>$ git pull http://&lt;ip_of_the_computer_running_webui&gt;:8000/</pre>
+                        <h4>Branches</h4>
+                        <p>The Branches tab lists every local and remote branch side by side, with ahead/behind counts and
+                            a filter box to find one quickly.</p>
 
-                        <h4>Commit</h4>
-                        <p>Commits can only be made from localhost.</p>
-                        <img alt="Image of the workspace" src="/img/doc/workspace.png"><br>
-                        <ul>
-                            <li><strong>Working copy</strong> lists the modified files (compared to the staging area) in your working directory</li>
-                            <li><strong>Message</strong> lets you enter a commit message</li>
-                            <li><strong>Staging area</strong> lists the modified files (compared to HEAD) in your staging area. These are the changes that will be committed</li>
-                        </ul>
-                        <p>The diff view lets you review the differences of the selected file.
-                            You can select code in more fine grained way:
-                            <ul>
-                                <li>If the displayed diff is from the working copy, you may stage or cancel the selected lines.</li>
-                                <li>If the displayed diff is from the staging area, you may unstage the selected lines.</li>
-                            </ul>
-                        </p>
+                        <h4>Changes</h4>
+                        <p>The Changes tab lists your Working Copy and Staging Area separately. Select files and use
+                            Stage / Cancel / Unstage, or select individual lines in the diff for finer-grained staging.
+                            Stash or discard changes from the toolbar above the list, then enter a message and commit.</p>
+
+                        <h4>Search</h4>
+                        <p>The Search button (or Ctrl+F) opens an overlay that filters the current commit or branch list
+                            as you type.</p>
+
+                        <h4>Repo menu</h4>
+                        <p>Click the repo name to open, clone, or create repositories, switch between recent ones, or
+                            browse a folder of repos at once. The same menu also gives access to worktrees, stashes,
+                            the reflog, and submodules.</p>
 
                         <h4>Contributing</h4>
                         You can clone the source code of <a href="https://github.com/alberthier/git-webui" target="_blank">git-webui on GitHub</a>

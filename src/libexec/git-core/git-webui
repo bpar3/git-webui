@@ -44,8 +44,6 @@ else:
 
 IS_WINDOWS = platform.system() == "Windows"
 
-allowed_hosts =  ["127.0.0.1", "localhost"]
-
 
 
 
@@ -186,9 +184,6 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
 
 
     def translate_path(self, path):
-        if self.is_git_request():
-            return path
-
         # abandon query parameters
         path = path.split('?',1)[0]
         path = path.split('#',1)[0]
@@ -294,10 +289,6 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
         elif self.path == "/viewonly":
             vo = "1" if self.is_view_only() else "0"
             self.send_text(200, codecs.encode(vo, "utf-8"))
-        elif self.is_git_request():
-            if not self.ensure_repo_selected():
-                return
-            self.process_http_backend()
         else:
             SimpleHTTPRequestHandler.do_GET(self)
 
@@ -534,46 +525,15 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 self.process(cmd, stdin, True, True)
             else:
                 self.send_error(403)
-        elif self.is_git_request():
-            if not self.ensure_repo_selected():
-                return
-            self.process_http_backend()
         else:
             SimpleHTTPRequestHandler.do_POST(self)
 
 
     def is_view_only(self):
-        host = self.headers.get("Host", "").split(":")[0]
-        return host not in allowed_hosts
-
-
-    def process_http_backend(self):
-        parsed_path = urlparse(self.path)
-
-        env = {}
-        env["GIT_PROJECT_ROOT"] = WebUiRequestHandler.REPO_ROOT + "/.git"
-        env["GIT_HTTP_EXPORT_ALL"] = ""
-        env["REQUEST_METHOD"] = self.command
-        env["REMOTE_ADDR"] = self.client_address[0]
-        env["PATH_INFO"] = parsed_path.path
-        env["QUERY_STRING"] = parsed_path.query
-        if 'Content-Type' in self.headers:
-            env['CONTENT_TYPE'] = self.headers['Content-Type']
-        if 'Content-Length' in self.headers:
-            contentLength = self.headers['Content-Length']
-            env['CONTENT_LENGTH'] = contentLength
-            inputData = self.rfile.read(int(contentLength))
-        else:
-            env['CONTENT_LENGTH'] = '0'
-            inputData = b""
-
-        self.wfile.write(b"HTTP/1.0 200 OK\r\n")
-        self.wfile.flush()
-        self.process(['git', "-c", "color.ui=false", 'http-backend'], inputData, False, False, env)
-
-
-    def is_git_request(self):
-        return self.headers.get("User-Agent", "").startswith("git/")
+        # git-webui only ever binds to the loopback interface (see main()
+        # below), so every connection is local by construction. There is no
+        # remote/view-only mode any more.
+        return False
 
 
     def ensure_repo_selected(self):
@@ -1733,9 +1693,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = "Simple HTTP server for git webui")
     parser.add_argument("--port", type = int, help = "server port")
     parser.add_argument("--repo-root", help = "repository root path. By default goes up a dir until a '.git' directory is found")
-    parser.add_argument("--allow-hosts", help = "what other host(s) are allowed to have write access")
     parser.add_argument("--no-browser", dest = "nobrowser", action = 'store_const', const = True, help = "do not start web browser")
-    parser.add_argument("--host", help = "the host webui listens on (default is all)")
 
     args = parser.parse_args()
 
@@ -1744,17 +1702,13 @@ if __name__ == '__main__':
     else:
         args.repo_root = resolve_repo_root(os.path.abspath(args.repo_root))
 
-    writeaccess = read_config_string("writeaccess")
-    if writeaccess is not None:
-        allowed_hosts = writeaccess.split(',') if writeaccess else []
-    if args.allow_hosts is not None:
-        allowed_hosts += args.allow_hosts.split(',')
-
     WebUiRequestHandler.initialize(args.repo_root)
 
     args.port = get_setting_string(args, 'port', None)
     port = int(args.port) if args.port is not None else 8000
-    host = get_setting_string(args, 'host', "")
+    # Always bind to loopback only: git-webui has no remote-access mode, so
+    # nothing other than processes on this machine should ever reach it.
+    host = "127.0.0.1"
     httpd = None
     while httpd is None:
         try:
@@ -1767,7 +1721,7 @@ if __name__ == '__main__':
                 sys.stderr.write("Port {} is already in use, trying another one\n".format(port))
                 port += 1
 
-    url = "http://{}:{}".format(host if host else "localhost", port)
+    url = "http://{}:{}".format("localhost", port)
     print("Serving at {}".format(url))
     nobrowser = get_setting_boolean(args, "nobrowser")
     if not nobrowser:

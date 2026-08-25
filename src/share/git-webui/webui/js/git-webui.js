@@ -25,7 +25,6 @@ webui.workspacePath = null;
 webui.recentWorkspaces = [];
 webui.workspaceRepos = [];
 webui.branches = [];
-webui.hostname = "localhost";
 webui.viewonly = false;
 webui.historyRef = null;
 
@@ -813,18 +812,9 @@ webui.Toolbar = function(mainView) {
         menu.append('<div class="toolbar-menu-divider"></div>');
         menu.append('<div class="toolbar-menu-heading">View</div>');
         menu.append('<button type="button" class="toolbar-menu-item' + ($("body").hasClass("dark-mode") ? " checked" : "") + '" data-action="toggle-theme">Dark Theme</button>');
-        if (!webui.viewonly) {
-            menu.append('<div class="toolbar-menu-divider"></div>');
-            menu.append('<div class="toolbar-menu-heading">Remote Access</div>');
-            menu.append(
-                '<div class="toolbar-menu-remote-access">' +
-                    'Others on this network can clone or pull from this repo:' +
-                    '<code>git clone http://' + webui.escapeHtml(webui.hostname) + ':' + webui.escapeHtml(document.location.port) + '/ ' + webui.escapeHtml(webui.repo) + '</code>' +
-                '</div>'
-            );
-        }
         menu.append('<div class="toolbar-menu-divider"></div>');
-        menu.append('<button type="button" class="toolbar-menu-item" data-toggle="modal" data-target="#help-modal">Help / About</button>');
+        menu.append('<button type="button" class="toolbar-menu-item" data-action="help">Help / About</button>');
+        $(".toolbar-menu-item[data-action]", menu).click(self.onAppMenuAction);
     }
 
     self.onAppMenuAction = function(event) {
@@ -848,6 +838,8 @@ webui.Toolbar = function(mainView) {
             mainView.reflogView.show();
         } else if (action == "submodules") {
             mainView.submodulesView.show();
+        } else if (action == "help") {
+            $("#help-modal").modal("show");
         }
     }
 
@@ -1064,7 +1056,6 @@ webui.Toolbar = function(mainView) {
 
     self.element = $(   '<div id="app-chrome">' +
                             '<div id="app-titlebar"><span class="app-titlebar-path"></span>' +
-                                (webui.viewonly ? '' : '<span class="app-titlebar-remote-access" title="Other machines on this network can clone or pull from this repo over HTTP">&#9679; remote access on :' + webui.escapeHtml(document.location.port) + '</span>') +
                             '</div>' +
                             '<div id="app-toolbar">' +
                                 '<button type="button" class="icon-btn" id="app-menu-button" title="Menu" aria-label="Menu">&#9776;</button>' +
@@ -3206,6 +3197,43 @@ webui.HistoryView = function(mainView) {
         $(".history-view-title", self.element).text(title);
         $(".history-view-subtitle", self.element).text(subtitle);
         $(".history-view-reset", self.element).prop("disabled", !webui.historyRef && !webui.historyAuthorFilter);
+        self.renderRefList();
+    }
+
+    self.renderRefList = function() {
+        var container = $(".history-view-refs", self.element);
+        container.empty();
+        if (!webui.branches || webui.branches.length == 0) {
+            container.append('<div class="toolbar-menu-empty">No branches yet.</div>');
+            return;
+        }
+        webui.branches.forEach(function(branch) {
+            var refInfo = branch.local_name ? {
+                kind: "local",
+                fullName: "refs/heads/" + branch.local_name,
+                displayName: branch.local_name,
+                gitRef: branch.local_name,
+                commit: branch.commit,
+            } : {
+                kind: "remote",
+                fullName: "refs/remotes/" + branch.remote_name,
+                displayName: branch.remote_name,
+                gitRef: branch.remote_name,
+                commit: branch.commit,
+            };
+            var chipClass = refInfo.kind == "local" ? "ref-chip-local" : "ref-chip-remote";
+            var chip = $('<button type="button" class="ref-chip ' + chipClass + ' history-view-ref-chip"></button>');
+            chip.text(refInfo.displayName);
+            if (branch.current) {
+                chip.prepend('<span class="ref-chip-current">&#10003;</span> ');
+                chip.addClass("history-view-ref-current");
+            }
+            chip.click(function(event) {
+                event.stopPropagation();
+                mainView.refActionMenu.show(chip[0], refInfo, { commit: branch.commit || "" });
+            });
+            container.append(chip);
+        });
     }
 
     self.resetFilter = function() {
@@ -3233,7 +3261,7 @@ webui.HistoryView = function(mainView) {
         }
     };
 
-    self.element = $('<div id="history-view"><div class="history-view-sidebar"><div class="history-view-toolbar"><div class="history-view-title"></div><div class="history-view-subtitle"></div><button type="button" class="btn btn-default btn-xs history-view-reset">All refs</button></div></div><div class="history-view-main"></div></div>')[0];
+    self.element = $('<div id="history-view"><div class="history-view-sidebar"><div class="history-view-toolbar"><div class="history-view-title"></div><div class="history-view-subtitle"></div><button type="button" class="btn btn-default btn-xs history-view-reset">All refs</button></div><div class="history-view-refs"></div></div><div class="history-view-main"></div></div>')[0];
     $(".history-view-reset", self.element).click(self.resetFilter);
     var historyMain = $(".history-view-main", self.element)[0];
     self.uncommittedSummary = new webui.UncommittedSummaryView(mainView);
@@ -3918,7 +3946,6 @@ function MainUi() {
         webui.recentWorkspaces = context.recent_workspaces || [];
         webui.workspaceRepos = context.workspace_repos || [];
         webui.viewonly = context.view_only;
-        webui.hostname = context.hostname;
 
         var title = $("title")[0];
         title.textContent = context.has_repo ? "Git - " + webui.repo : "Git WebUI";
