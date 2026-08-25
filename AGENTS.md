@@ -15,4 +15,7 @@
 - **Release:** When a release is ready, run `grunt release` to copy the built app from `dist/` to `release/`.
 
 ## Testing
-- Currently, there are no automated tests defined (`npm test` simply echoes an error). Focus on manual verification using `grunt serve` to ensure changes work locally.
+- **Frontend (Jest):** Run `npm test` to run `tests/js/**/*.test.js`. These unit-test the pure/parsing helper functions in `src/share/git-webui/webui/js/git-webui.js` by loading it in an isolated `vm` context (see `tests/js/helpers/load-webui.js`) rather than a full browser DOM.
+- **Backend (pytest):** Run `pytest` (or `npm run test:py`) to run `tests/python/*.py`. These import `src/libexec/git-core/git-webui` directly and exercise it against real throwaway git repos created per-test (see `tests/python/conftest.py`).
+- Both suites must pass before committing backend/frontend changes. Add new tests alongside new logic rather than relying solely on manual verification.
+- Still verify UI/UX changes manually using `grunt serve` — the test suites cover logic and backend behavior, not visual/interaction correctness.
