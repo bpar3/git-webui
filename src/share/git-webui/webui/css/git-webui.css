@@ -1252,3 +1252,157 @@ body.dark-mode #sidebar section.active h4 {
   background-color: #3e3e42;
   color: #fff;
 }
+@media (max-width: 768px) {
+  #repo-chrome {
+    padding: 8px 10px 10px 10px;
+  }
+  #repo-chrome .repo-chrome-header {
+    gap: 10px;
+  }
+  #repo-chrome .repo-chrome-name {
+    font-size: 18px;
+  }
+  #repo-chrome .repo-chrome-path {
+    font-size: 11px;
+  }
+  #repo-chrome .repo-chrome-status {
+    gap: 6px;
+  }
+  #repo-chrome .repo-chrome-status-item {
+    width: 100%;
+    justify-content: space-between;
+  }
+  #repo-chrome .repo-chrome-status-value {
+    max-width: 14em;
+  }
+  #repo-chrome .repo-chrome-actions,
+  #repo-chrome .repo-chrome-drawers {
+    width: 100%;
+  }
+  #repo-chrome .repo-chrome-actions .btn,
+  #repo-chrome .repo-chrome-drawers .btn {
+    flex: 1 1 0;
+  }
+  #repo-chrome .repo-chrome-drawer-section {
+    padding-top: 8px;
+  }
+  #repo-chrome .repo-chip {
+    max-width: 100%;
+    width: 100%;
+  }
+  #repo-chrome .repo-chrome-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+    max-height: 34vh;
+    overflow-y: auto;
+  }
+  #repo-chrome .repo-workspace-shell,
+  #repo-chrome .repo-branch-shell {
+    margin-top: 0;
+    padding: 10px;
+  }
+  #repo-chrome .repo-workspace-path {
+    max-width: none;
+    width: 100%;
+  }
+  #repo-chrome .repo-workspace-list {
+    max-height: 7.5em;
+  }
+  #repo-chrome .repo-branch-create {
+    width: 100%;
+  }
+  #repo-chrome .repo-branch-create-name,
+  #repo-chrome .repo-branch-create-start,
+  #repo-chrome .repo-branch-create-button {
+    width: 100%;
+    min-width: 0;
+  }
+  #repo-chrome .repo-branch-list {
+    max-height: 12em;
+  }
+  #repo-chrome .repo-branch-card-actions .btn {
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+  #global-container {
+    flex-direction: column;
+    -webkit-flex-direction: column;
+  }
+  #sidebar {
+    order: -1;
+    display: block;
+    width: 100%;
+    height: auto;
+    position: relative;
+    z-index: 1;
+    border-right: 0;
+    border-bottom: 1px solid #1a1a1a;
+  }
+  #sidebar > a {
+    display: none;
+  }
+  #sidebar #sidebar-logo {
+    display: none;
+  }
+  #sidebar #sidebar-content {
+    flex: 0 0 auto !important;
+    -webkit-flex: 0 0 auto !important;
+    display: flex;
+    display: -webkit-flex;
+    min-height: 0;
+    min-width: 0;
+    align-items: center;
+    -webkit-align-items: center;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-top: 0;
+    white-space: nowrap;
+  }
+  #sidebar #sidebar-content > :first-child {
+    border-top: 0;
+  }
+  #sidebar #sidebar-content > section {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+  }
+  #sidebar #sidebar-content > section h4 {
+    font-size: 14px;
+    padding: 10px 12px;
+    margin: 0;
+  }
+  #sidebar #sidebar-content ul,
+  #sidebar #sidebar-content li,
+  #sidebar #sidebar-content > section:not(#sidebar-workspace):not(#sidebar-remote):not(#sidebar-theme) {
+    display: none !important;
+  }
+  #sidebar #sidebar-content #sidebar-theme {
+    margin-left: auto;
+  }
+  #sidebar #sidebar-content #sidebar-theme button {
+    margin: 6px 10px !important;
+  }
+  #main-view,
+  #history-view {
+    flex-direction: column;
+    -webkit-flex-direction: column;
+  }
+  #main-view {
+    order: 0;
+  }
+  #log-view {
+    border-right: 0;
+    border-bottom: 1px #ddd solid;
+    min-height: 14em;
+    max-height: 38vh;
+  }
+  #commit-view {
+    min-height: 18em;
+  }
+  .diff-view-container .panel-heading {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
