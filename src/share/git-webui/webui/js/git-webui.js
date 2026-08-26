@@ -2860,6 +2860,9 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             for (var i = 0; i < offset; ++i) {
                 var pre = $('<pre class="diff-view-line diff-line-phantom">').appendTo(view)[0];
                 pre.webuiLine = " ";
+                if (hunkSelectionAllowed) {
+                    $('<span class="diff-line-check diff-line-check-empty">').appendTo(pre);
+                }
                 if (context.showOld !== false) {
                     $('<span class="diff-line-num diff-line-num-old">').appendTo(pre);
                 }
@@ -2906,6 +2909,16 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             }
         }
 
+        // Staging checkbox, on changed lines and on the hunk header
+        // (which toggles the whole hunk). Purely a rendering of the
+        // line's selected state - the click still goes through
+        // handleClick like clicking the line itself does.
+        if (hunkSelectionAllowed && !context.inHeader && (c == '+' || c == '-' || c == '@')) {
+            $('<span class="diff-line-check">').appendTo(pre);
+        } else if (hunkSelectionAllowed) {
+            $('<span class="diff-line-check diff-line-check-empty">').appendTo(pre);
+        }
+
         if (context.showOld !== false) {
             $('<span class="diff-line-num diff-line-num-old">').text(oldNum).appendTo(pre);
         }
@@ -2913,6 +2926,17 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             $('<span class="diff-line-num diff-line-num-new">').text(newNum).appendTo(pre);
         }
         $('<span class="diff-line-text">').text(line).appendTo(pre);
+
+        // Per-hunk discard, matching GitFiend's hunk header row.
+        if (hunkSelectionAllowed && c == '@' && !context.inHeader && gitApplyType == "stage") {
+            var discard = $('<button type="button" class="diff-hunk-discard">Discard</button>');
+            discard.click(function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                self.discardHunk(pre);
+            });
+            discard.appendTo(pre);
+        }
 
         if (c == '+') {
             $(pre).addClass("diff-line-add");
@@ -2933,6 +2957,9 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
     }
 
     self.createSelectionPatch = function (reverse) {
+        if (!self.sideBySide) {
+            return self.createUnifiedSelectionPatch(reverse);
+        }
         var patch = "";
         // First create the header
         for (var l = 0; l < leftLines.childElementCount; ++l) {
@@ -3090,7 +3117,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         }
 
         var isActive = false
-        var lineContainers = [leftLines, rightLines];
+        var lineContainers = [leftLines, rightLines, singleLines];
         for (var i = 0; i < lineContainers.length; ++i) {
             var lineContainer = lineContainers[i];
             if (!lineContainer) continue;
@@ -3119,11 +3146,138 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         }
     }
 
+    // Selects exactly the changed lines of one hunk, then reverse-applies
+    // them to the working tree - i.e. throws that hunk's changes away.
+    self.discardHunk = function(hunkElement) {
+        if (!window.confirm("Discard this hunk? The changes cannot be recovered.")) {
+            return;
+        }
+        var container = hunkElement.parentElement;
+        $(".diff-view-line", container).removeClass("active");
+        for (var elt = hunkElement.nextElementSibling; elt; elt = elt.nextElementSibling) {
+            var c = self.lineText(elt)[0];
+            if (c == '@') {
+                break;
+            }
+            if (c == '+' || c == '-') {
+                $(elt).addClass("active");
+            }
+        }
+        self.applySelection(true, false);
+    }
+
+    // Builds a patch from the selected lines of a unified diff.
+    //
+    // The old side must reproduce the file the patch is applied against,
+    // so an unselected removal is re-emitted as context (that line is
+    // still there) while an unselected addition is dropped entirely.
+    // Files and hunks that end up with no selected change are skipped,
+    // and each file carries its own header - a diff can span several.
+    self.createUnifiedSelectionPatch = function(reverse) {
+        var lines = singleLines ? singleLines.children : [];
+        var out = "";
+        var fileHeader = "";
+        var fileBody = "";
+        var pending = "";
+        var oldCount = 0;
+        var newCount = 0;
+        var hunkStart = 0;
+        var hunkHasChange = false;
+        var inHunk = false;
+
+        var flushHunk = function() {
+            if (pending && hunkHasChange) {
+                fileBody += "@@ -" + hunkStart + "," + oldCount +
+                            " +" + hunkStart + "," + newCount + " @@\n" + pending;
+            }
+            pending = "";
+            oldCount = 0;
+            newCount = 0;
+            hunkHasChange = false;
+        };
+
+        var flushFile = function() {
+            flushHunk();
+            if (fileBody) {
+                out += fileHeader + fileBody;
+            }
+            fileHeader = "";
+            fileBody = "";
+        };
+
+        for (var i = 0; i < lines.length; ++i) {
+            var element = lines[i];
+            var line = self.lineText(element);
+
+            if (line.indexOf("diff --git ") == 0) {
+                flushFile();
+                fileHeader = line + "\n";
+                inHunk = false;
+                continue;
+            }
+
+            var hunk = webui.parseHunkHeader(line);
+            if (hunk) {
+                flushHunk();
+                hunkStart = hunk.oldStart;
+                inHunk = true;
+                continue;
+            }
+
+            // Everything before the first hunk is file header - which
+            // includes "--- a/x" and "+++ b/x", so this has to come
+            // before any +/- classification or those get rewritten.
+            if (!inHunk) {
+                fileHeader += line + "\n";
+                continue;
+            }
+
+            var c = line[0];
+            var selected = $(element).hasClass("active");
+            if (c == '+') {
+                if (selected) {
+                    pending += line + "\n";
+                    ++newCount;
+                    hunkHasChange = true;
+                }
+            } else if (c == '-') {
+                if (selected) {
+                    pending += line + "\n";
+                    ++oldCount;
+                    hunkHasChange = true;
+                } else {
+                    pending += " " + line.substr(1) + "\n";
+                    ++oldCount;
+                    ++newCount;
+                }
+            } else if (c == '\\') {
+                pending += line + "\n";
+            } else {
+                pending += line + "\n";
+                ++oldCount;
+                ++newCount;
+            }
+        }
+        flushFile();
+        return out;
+    }
+
     self.applySelection = function(reverse, cached) {
-        var patch = self.createSelectionPatch(reverse);
+        // The unified builder always emits a forward patch and lets git
+        // invert it with -R. Hand-reversing would have to rewrite the
+        // "---"/"+++" header lines and swap every hunk range, which is
+        // exactly the kind of thing git already does correctly.
+        var unified = !self.sideBySide;
+        var patch = unified ? self.createUnifiedSelectionPatch() : self.createSelectionPatch(reverse);
+        if (!patch) {
+            return;
+        }
         var cmd = "apply --unidiff-zero";
         if (cached) {
             cmd += " --cached";
+        }
+        if (unified && reverse) {
+            cmd += " -R";
         }
         webui.git(cmd, patch, function (data) {
             parent.update();
@@ -3196,6 +3350,10 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             single = $('<div class="diff-view"><div class="diff-view-lines"></div></div>')[0];
             panelBody.appendChild(single);
             singleLines = single.firstChild;
+
+            if (hunkSelectionAllowed) {
+                $(single).click(self.handleClick);
+            }
         }
 
         $(".diff-context-remove", newElement).click(self.removeContext);
@@ -4236,6 +4394,7 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
                 self.refreshDiff(selectedNode);
             }
             fileListContainer.scrollTop = prevScrollTop;
+            self.refreshCounter();
         });
     };
 
@@ -4270,6 +4429,7 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
         } else {
             workspaceView.workingCopyView.unselect();
         }
+        self.refreshCounter();
         self.refreshDiff(clicked);
     };
 
@@ -4286,6 +4446,7 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
             $(fileList.children[selectedIndex]).removeClass("active");
             selectedIndex = null;
         }
+        self.refreshCounter();
     };
 
     self.getFileList = function(including, excluding) {
@@ -4338,6 +4499,29 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
         return $(".active", fileList).length;
     }
 
+    // "N/M" next to a tick, the way GitFiend heads its file list, and a
+    // click target that selects or clears the whole list at once.
+    self.refreshCounter = function() {
+        var total = fileList.childElementCount;
+        var selected = self.getSelectedItemsCount();
+        $(".changed-files-count", self.element).text(selected + "/" + total);
+        $(".changed-files-toggle", self.element).toggle(total > 0);
+        $(".changed-files-check", self.element).toggleClass("checked", total > 0 && selected == total);
+    }
+
+    self.toggleAll = function() {
+        var total = fileList.childElementCount;
+        var selectAll = self.getSelectedItemsCount() < total;
+        for (var i = 0; i < total; ++i) {
+            $(fileList.children[i]).toggleClass("active", selectAll);
+        }
+        selectedIndex = selectAll && total > 0 ? total - 1 : null;
+        if (selectAll && total > 0) {
+            self.refreshDiff(fileList.children[total - 1]);
+        }
+        self.refreshCounter();
+    }
+
     self.applyFilter = function(query) {
         for (var i = 0; i < fileList.childElementCount; ++i) {
             var child = fileList.children[i];
@@ -4347,6 +4531,10 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
 
     self.element = $(   '<div id="' + type + '-view" class="panel panel-default">' +
                             '<div class="panel-heading">' +
+                                '<button type="button" class="changed-files-toggle" title="Select or clear every file">' +
+                                    '<span class="changed-files-check"></span>' +
+                                    '<span class="changed-files-count"></span>' +
+                                '</button>' +
                                 '<h5>'+ label + '</h5>' +
                                 '<div class="btn-group btn-group-sm"></div>' +
                             '</div>' +
@@ -4370,7 +4558,9 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
     var fileList = $(".list-group", fileListContainer)[0];
     var selectedIndex = null;
 
+    $(".changed-files-toggle", self.element).click(self.toggleAll);
     self.filesCount = 0;
+    self.refreshCounter();
 };
 
 /*

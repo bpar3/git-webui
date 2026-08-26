@@ -1987,6 +1987,60 @@ body {
                     }
                 }
 
+                // Staging checkbox column. The tick only shows once the
+                // line is selected, so an unstaged diff reads as a
+                // column of empty boxes rather than a wall of glyphs.
+                .diff-line-check {
+                    flex: 0 0 auto;
+                    width: 1.6em;
+                    text-align: center;
+                    color: var(--gf-accent);
+                    .no-select();
+                    cursor: pointer;
+
+                    &:before {
+                        content: "\2713";
+                        visibility: hidden;
+                    }
+                }
+
+                .diff-line-check-empty {
+                    cursor: default;
+
+                    &:before {
+                        content: "";
+                    }
+                }
+
+                .active > .diff-line-check:before {
+                    visibility: visible;
+                }
+
+                // Code lines are wider than the viewport, so the button
+                // has to stick to the right edge of the scrollport
+                // rather than sit at the end of the row.
+                .diff-hunk-discard {
+                    flex: 0 0 auto;
+                    align-self: center;
+                    position: sticky;
+                    right: 8px;
+                    margin-left: auto;
+                    margin-right: 8px;
+                    border: 1px solid var(--gf-border-strong);
+                    border-radius: 4px;
+                    background: var(--gf-panel-bg);
+                    color: var(--gf-text-muted);
+                    font-size: 10.5px;
+                    line-height: 1;
+                    padding: 2px 8px;
+
+                    &:hover,
+                    &:focus {
+                        color: var(--gf-danger);
+                        border-color: var(--gf-danger);
+                    }
+                }
+
                 .diff-line-num {
                     flex: 0 0 auto;
                     width: 4.5em;
@@ -2036,6 +2090,30 @@ body {
 
                 .diff-line-del {
                     background-color: var(--gf-diff-removed-bg);
+                }
+
+                // A staged-for-selection line keeps its add/remove
+                // colour and is marked by the tick in the gutter, the
+                // way GitFiend does it - overpainting it solid blue
+                // hid whether the line was an addition or a removal.
+                .diff-line-add.active,
+                .diff-line-del.active {
+                    color: var(--gf-text);
+                    box-shadow: inset 2px 0 0 var(--gf-accent);
+                }
+
+                .diff-line-add.active {
+                    background-color: var(--gf-diff-added-bg);
+                }
+
+                .diff-line-del.active {
+                    background-color: var(--gf-diff-removed-bg);
+                }
+
+                .diff-line-add.active .diff-line-num,
+                .diff-line-del.active .diff-line-num {
+                    color: var(--gf-diff-gutter-text);
+                    border-right-color: var(--gf-diff-gutter-border);
                 }
 
                 // Hunk boundary: GitFiend rules it off above and below
@@ -2193,6 +2271,49 @@ body {
     .active > & {
         background: var(--gf-accent);
         border-color: var(--gf-accent);
+    }
+}
+
+// "✓ 2/4" heading the file list, doubling as select-all / clear-all.
+.changed-files-toggle {
+    .display-flex();
+    .align-items(center);
+    gap: 5px;
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    padding: 1px 4px;
+    border-radius: 4px;
+    color: var(--gf-text-muted);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+
+    &:hover,
+    &:focus {
+        background: var(--gf-row-hover);
+        color: var(--gf-text);
+    }
+
+    .changed-files-check {
+        width: 12px;
+        height: 12px;
+        border: 1px solid var(--gf-border-strong);
+        border-radius: 3px;
+        .display-flex();
+        .align-items(center);
+        justify-content: center;
+        line-height: 1;
+        font-size: 9px;
+        color: #fff;
+
+        &.checked {
+            background: var(--gf-accent);
+            border-color: var(--gf-accent);
+
+            &:before {
+                content: "\2713";
+            }
+        }
     }
 }
 
