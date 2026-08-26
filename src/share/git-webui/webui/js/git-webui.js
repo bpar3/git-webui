@@ -2323,6 +2323,7 @@ webui.LogView = function(historyView) {
             }
 
             self.updateGraph(startAt);
+            historyView.positionRefChips();
         });
     };
 
@@ -2356,6 +2357,31 @@ webui.LogView = function(historyView) {
         return null;
     }
 
+    // Where each commit's row sits inside the scrolling content, so the
+    // ref sidebar can line its chips up with the commits they point at.
+    self.commitOffsets = function() {
+        var offsets = {};
+        var contentTop = content.getBoundingClientRect().top;
+        for (var i = 0; i < content.children.length; ++i) {
+            var element = content.children[i];
+            if (!element.model) {
+                continue;
+            }
+            var anchor = element.querySelector("header") || element;
+            var rect = anchor.getBoundingClientRect();
+            offsets[element.model.commit] = rect.top - contentTop;
+        }
+        return offsets;
+    }
+
+    self.contentHeight = function() {
+        return content.offsetHeight;
+    }
+
+    self.scrollTop = function() {
+        return self.element.scrollTop;
+    }
+
     // Expanding or collapsing a card moves every row below it, so the
     // whole graph has to be redrawn rather than appended to.
     self.redrawGraph = function() {
@@ -2365,6 +2391,7 @@ webui.LogView = function(historyView) {
         self.updateGraph(0);
         svg.setAttribute("height", $(content).outerHeight());
         svg.setAttribute("width", $(content).outerWidth());
+        historyView.positionRefChips();
     }
 
     // Rows are no longer a uniform height (a selected row expands to
@@ -2612,8 +2639,16 @@ webui.LogView = function(historyView) {
                               '<pre class="log-entry-card-message"></pre>' +
                               '<div class="log-entry-card-files"></div>' +
                           '</div>');
-            $(".log-entry-card-meta", self.card).text(
-                self.author.date.toLocaleString() + " by " + self.author.name + "  (" + self.abbrevCommitHash() + ")");
+            $(".log-entry-card-meta", self.card)
+                .text(self.author.date.toLocaleString() + " by " + self.author.name + "  ")
+                .append($('<button type="button" class="log-entry-card-hash">')
+                    .text("(" + self.abbrevCommitHash() + ")")
+                    .attr("title", self.commit)
+                    .click(function(event) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        webui.copyToClipboard(self.commit, "Commit hash");
+                    }));
             $(".log-entry-card-message", self.card).text(self.message);
             $(".log-entry-card-menu", self.card).click(function(event) {
                 event.preventDefault();
@@ -3794,8 +3829,14 @@ webui.CommitDetailView = function(historyView) {
         $(".commit-detail-avatar", self.element)
             .text(webui.getInitials(entry.author.name))
             .attr("style", "background:" + webui.colorForAuthor(entry.author.name));
-        $(".commit-detail-meta", self.element).text(
-            entry.author.date.toLocaleString() + " by " + entry.author.name + "  (" + entry.abbrevCommitHash() + ")");
+        $(".commit-detail-meta", self.element)
+            .text(entry.author.date.toLocaleString() + " by " + entry.author.name + "  ")
+            .append($('<button type="button" class="log-entry-card-hash">')
+                .text("(" + entry.abbrevCommitHash() + ")")
+                .attr("title", entry.commit)
+                .click(function() {
+                    webui.copyToClipboard(entry.commit, "Commit hash");
+                }));
         $(".commit-detail-message", self.element).text(entry.message);
         self.refreshNav();
         self.loadFiles();
@@ -3942,15 +3983,17 @@ webui.HistoryView = function(mainView) {
         } else if (webui.historyRef) {
             subtitle = "Showing " + webui.historyRef + " only";
         }
-        $(".history-view-title", self.element).text("Branches");
-        $(".history-view-subtitle", self.element).text(subtitle).toggle(!!subtitle);
+        $(".history-view-title", self.element).text("Filtered");
+        $(".history-view-subtitle", self.element).text(subtitle);
+        $(".history-view-toolbar", self.element).toggle(!!subtitle);
         $(".history-view-reset", self.element).prop("disabled", !webui.historyRef && !webui.historyAuthorFilter);
         self.renderRefList();
     }
 
     self.renderRefList = function() {
-        var container = $(".history-view-refs", self.element);
+        var container = $(".history-view-refs-layer", self.element);
         container.empty();
+        self.refRows = [];
         if (!webui.branches || webui.branches.length == 0) {
             container.append('<div class="toolbar-menu-empty">No branches yet.</div>');
             return;
@@ -4006,7 +4049,53 @@ webui.HistoryView = function(mainView) {
                 row.append(badge);
             }
             container.append(row);
+            self.refRows.push({ commit: group.commit, element: row });
         });
+        self.positionRefChips();
+    }
+
+    // GitFiend puts each branch label beside the commit it points at
+    // rather than in one list at the top, so a local branch and its
+    // upstream visibly sit apart when one is ahead of the other. The
+    // chips are absolutely positioned against the log's own geometry
+    // and the column is scrolled in step with it.
+    self.positionRefChips = function() {
+        if (!self.refRows || !self.logView) {
+            return;
+        }
+        var layer = $(".history-view-refs-layer", self.element);
+        var refs = $(".history-view-refs", self.element)[0];
+        var offsets = self.logView.commitOffsets();
+        layer.height(self.logView.contentHeight());
+        // The log doesn't start level with this column - the uncommitted
+        // changes summary sits above it - so offsets measured against
+        // the log's content have to be shifted by that gap. Both sides
+        // scroll together, so this stays a constant.
+        var delta = 0;
+        if (refs) {
+            delta = self.logView.element.getBoundingClientRect().top - refs.getBoundingClientRect().top;
+        }
+        self.refRows.forEach(function(row) {
+            var top = offsets[row.commit];
+            if (top != undefined) {
+                top += delta;
+            }
+            if (top == undefined) {
+                // Tip isn't in the loaded range (filtered out, or below
+                // the "show previous commits" cut-off).
+                row.element.hide();
+            } else {
+                row.element.show().css("top", top + "px");
+            }
+        });
+        self.syncRefScroll();
+    }
+
+    self.syncRefScroll = function() {
+        var refs = $(".history-view-refs", self.element)[0];
+        if (refs && self.logView) {
+            refs.scrollTop = self.logView.scrollTop();
+        }
     }
 
     self.resetFilter = function() {
@@ -4053,13 +4142,28 @@ webui.HistoryView = function(mainView) {
         self.logView.redrawGraph();
     };
 
-    self.element = $('<div id="history-view"><div class="history-view-sidebar"><div class="history-view-toolbar"><div class="history-view-title"></div><div class="history-view-subtitle"></div><button type="button" class="btn btn-default btn-xs history-view-reset">All refs</button></div><div class="history-view-refs"></div></div><div class="history-view-main"></div></div>')[0];
+    // The ref column spans the full sidebar so a chip for the very first
+    // commit isn't pushed under a header. The filter banner floats over
+    // it and only appears while a filter is narrowing the list.
+    self.element = $('<div id="history-view">' +
+                         '<div class="history-view-sidebar">' +
+                             '<div class="history-view-refs"><div class="history-view-refs-layer"></div></div>' +
+                             '<div class="history-view-toolbar">' +
+                                 '<div class="history-view-title"></div>' +
+                                 '<div class="history-view-subtitle"></div>' +
+                                 '<button type="button" class="btn btn-default btn-xs history-view-reset">All refs</button>' +
+                             '</div>' +
+                         '</div>' +
+                         '<div class="history-view-main"></div>' +
+                     '</div>')[0];
     $(".history-view-reset", self.element).click(self.resetFilter);
     var historyMain = $(".history-view-main", self.element)[0];
     self.uncommittedSummary = new webui.UncommittedSummaryView(mainView);
     historyMain.appendChild(self.uncommittedSummary.element);
     self.logView = new webui.LogView(self);
     historyMain.appendChild(self.logView.element);
+    $(self.logView.element).scroll(self.syncRefScroll);
+    $(window).resize(self.positionRefChips);
     self.commitView = new webui.CommitView(self);
     self.commitDetailView = new webui.CommitDetailView(self);
     self.mainView = mainView;
