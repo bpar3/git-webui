@@ -31,7 +31,12 @@
 // of baking one palette into the compiled CSS. The titlebar stays dark
 // in both themes (matching a desktop app's OS chrome).
 :root {
-    --gf-font-family:      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    // system-ui leads so the app renders in the desktop's own UI font -
+    // Adwaita Sans / Cantarell under GNOME, SF Pro on macOS, Segoe UI on
+    // Windows - which is what GitFiend picks up. Without it the stack
+    // fell through to Helvetica/Arial and landed on Liberation Sans,
+    // noticeably narrower than the surrounding desktop.
+    --gf-font-family:      system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --gf-font-size:         12.5px;
     --gf-titlebar-bg:       #1e1e1e;
     --gf-titlebar-text:     #e8e8e8;
@@ -1416,9 +1421,11 @@ body {
                 background: var(--gf-accent-bg);
             }
 
+            // Selection is carried by the fill and the accent colour;
+            // bumping the weight as well made the selected subject read
+            // as bold against every other row.
             header .list-group-item-text {
                 color: var(--gf-accent);
-                font-weight: 500;
             }
         }
     }
