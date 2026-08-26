@@ -1611,6 +1611,175 @@ body {
     }
 }
 
+// The view a commit expands into: message across the top, then a
+// filterable list of its files beside the selected file's diff.
+#commit-detail-view {
+    .display-flex();
+    .flex-direction(column);
+    .flex(1);
+    min-height: 0;
+
+    .commit-detail-header {
+        .display-flex();
+        .align-items(center);
+        gap: 8px;
+        flex: 0 0 auto;
+        padding: 6px 12px;
+        background: var(--gf-toolbar-bg);
+        border-bottom: 1px solid var(--gf-border);
+    }
+
+    .commit-detail-avatar {
+        flex: 0 0 auto;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        .display-flex();
+        .align-items(center);
+        justify-content: center;
+        font-size: 9px;
+        font-weight: bold;
+        color: #fff;
+        .no-select();
+    }
+
+    .commit-detail-meta {
+        .flex(1);
+        color: var(--gf-text-muted);
+        font-size: 11.5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .commit-detail-header-actions {
+        .display-flex();
+        .align-items(center);
+        gap: 2px;
+        flex: 0 0 auto;
+    }
+
+    .commit-detail-btn {
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--gf-text-muted);
+        border-radius: 4px;
+        padding: 3px 8px;
+        font-size: 11.5px;
+        line-height: 1;
+
+        &:hover,
+        &:focus {
+            background: var(--gf-row-hover);
+            border-color: var(--gf-border);
+            color: var(--gf-text);
+        }
+
+        &:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            background: transparent;
+            border-color: transparent;
+        }
+    }
+
+    .commit-detail-message {
+        flex: 0 0 auto;
+        margin: 0;
+        padding: 10px 14px;
+        max-height: 10em;
+        overflow: auto;
+        border: 0;
+        border-bottom: 1px solid var(--gf-border);
+        border-radius: 0;
+        background: transparent;
+        color: var(--gf-text);
+        font-family: @font-family-monospace;
+        font-size: 11.5px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .commit-detail-body {
+        .display-flex();
+        .flex(1);
+        min-height: 0;
+    }
+
+    .commit-detail-files {
+        .display-flex();
+        .flex-direction(column);
+        flex: 0 0 24em;
+        width: 24em;
+        min-height: 0;
+        border-right: 1px solid var(--gf-border);
+        background: var(--gf-toolbar-bg);
+    }
+
+    .commit-detail-filter {
+        flex: 0 0 auto;
+        margin: 8px;
+        width: auto;
+    }
+
+    .commit-detail-file-list {
+        .flex(1);
+        overflow: auto;
+        padding-bottom: 6px;
+        font-size: 11.5px;
+    }
+
+    .commit-detail-empty {
+        padding: 6px 12px;
+        color: var(--gf-text-muted);
+    }
+
+    .commit-detail-file {
+        .display-flex();
+        .align-items(center);
+        gap: 8px;
+        padding: 4px 12px;
+        cursor: pointer;
+
+        &:hover {
+            background: var(--gf-row-hover);
+        }
+
+        &.active {
+            background: var(--gf-accent-bg);
+
+            .commit-detail-file-path {
+                color: var(--gf-accent);
+            }
+        }
+
+        .commit-detail-file-path {
+            .flex(1);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--gf-text);
+            // Keep the filename visible when the path is too long to fit.
+            direction: rtl;
+            text-align: left;
+        }
+
+        .commit-detail-file-status {
+            flex: 0 0 auto;
+            font-weight: bold;
+            width: 1.2em;
+            text-align: center;
+        }
+    }
+
+    .commit-detail-diff {
+        .display-flex();
+        .flex(1);
+        min-width: 0;
+    }
+}
+
 .file-list-view {
     .no-select();
     .flex(1);

@@ -266,6 +266,31 @@ describe("webui.getCurrentBranch / findBranchByRef", () => {
     });
 });
 
+describe("webui.quoteArg", () => {
+    let webui;
+
+    beforeEach(() => {
+        webui = loadWebui();
+    });
+
+    test("wraps plain values in double quotes", () => {
+        expect(webui.quoteArg("src/a.js")).toBe('"src/a.js"');
+    });
+
+    test("keeps paths with spaces as a single argument", () => {
+        expect(webui.quoteArg("src/some file.txt")).toBe('"src/some file.txt"');
+    });
+
+    test("escapes embedded quotes and backslashes", () => {
+        expect(webui.quoteArg('a"b')).toBe('"a\\"b"');
+        expect(webui.quoteArg("a\\b")).toBe('"a\\\\b"');
+    });
+
+    test("leaves shell metacharacters alone (shlex is not a shell)", () => {
+        expect(webui.quoteArg("a$b`c")).toBe('"a$b`c"');
+    });
+});
+
 describe("webui.parseNameStatus", () => {
     let webui;
 

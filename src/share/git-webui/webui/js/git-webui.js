@@ -316,6 +316,13 @@ webui.colorForAuthor = function(name) {
     return webui.COLORS[webui.hashString(name) % webui.COLORS.length];
 }
 
+// Quotes a value for the git command strings sent to the backend, which
+// parses them with shlex. Only " and \ need escaping: shlex isn't a
+// shell, so $ and backticks inside double quotes are already literal.
+webui.quoteArg = function(value) {
+    return '"' + String(value).replace(/([\\"])/g, "\\$1") + '"';
+}
+
 // Parses `git diff-tree --name-status` output into {status, path} pairs.
 // Fields are tab-separated; renames and copies carry a similarity score
 // on the status (R100) and a second path, which is the one to show.
@@ -2303,6 +2310,36 @@ webui.LogView = function(historyView) {
         });
     };
 
+    self.selectedEntry = function() {
+        return currentSelection;
+    }
+
+    // Walks to the neighbouring commit row, skipping the "show previous
+    // commits" link and anything else without a model. Returns null at
+    // either end of the list.
+    self.adjacentEntry = function(entry, delta) {
+        if (!entry || !entry.element) {
+            return null;
+        }
+        var children = content.children;
+        var index = -1;
+        for (var i = 0; i < children.length; ++i) {
+            if (children[i] == entry.element) {
+                index = i;
+                break;
+            }
+        }
+        if (index == -1) {
+            return null;
+        }
+        for (var j = index + delta; j >= 0 && j < children.length; j += delta) {
+            if (children[j].model) {
+                return children[j].model;
+            }
+        }
+        return null;
+    }
+
     // Expanding or collapsing a card moves every row below it, so the
     // whole graph has to be redrawn rather than appended to.
     self.redrawGraph = function() {
@@ -2718,7 +2755,9 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
                 fullCmd += " " + self.gitDiffOpts.join(" ")
             }
             if (self.gitFile) {
-                fullCmd += " -- " + self.gitFile;
+                // The backend splits this with shlex, so an unquoted
+                // path breaks on any file with a space in its name.
+                fullCmd += " -- " + webui.quoteArg(self.gitFile);
             }
             webui.git(fullCmd, function(diff) {
                 self.refresh(diff);
@@ -3511,6 +3550,155 @@ webui.CommitView = function(historyView) {
 };
 
 /*
+ * == CommitDetailView ========================================================
+ * The full-view a commit expands into: its message across the top, then
+ * a filterable list of the files it touched beside that file's diff -
+ * GitFiend's expanded-commit layout.
+ */
+webui.CommitDetailView = function(historyView) {
+
+    var self = this;
+    self.historyView = historyView;
+    self.files = [];
+    self.filterText = "";
+    self.selectedPath = null;
+
+    self.update = function(entry) {
+        self.entry = entry;
+        self.selectedPath = null;
+        self.filterText = "";
+        $(".commit-detail-filter", self.element).val("");
+        $(".commit-detail-avatar", self.element)
+            .text(webui.getInitials(entry.author.name))
+            .attr("style", "background:" + webui.colorForAuthor(entry.author.name));
+        $(".commit-detail-meta", self.element).text(
+            entry.author.date.toLocaleString() + " by " + entry.author.name + "  (" + entry.abbrevCommitHash() + ")");
+        $(".commit-detail-message", self.element).text(entry.message);
+        self.refreshNav();
+        self.loadFiles();
+    };
+
+    self.refreshNav = function() {
+        var logView = historyView.logView;
+        $(".commit-detail-prev", self.element).prop("disabled", !logView.adjacentEntry(self.entry, -1));
+        $(".commit-detail-next", self.element).prop("disabled", !logView.adjacentEntry(self.entry, 1));
+    };
+
+    self.step = function(delta) {
+        var next = historyView.logView.adjacentEntry(self.entry, delta);
+        if (next) {
+            next.select();
+            self.update(next);
+        }
+    };
+
+    self.loadFiles = function() {
+        var list = $(".commit-detail-file-list", self.element);
+        list.text("Loading files…");
+        var commit = self.entry.commit;
+        webui.git("diff-tree --no-commit-id --name-status -r -m --first-parent " + commit, function(data) {
+            if (!self.entry || self.entry.commit != commit) {
+                return;
+            }
+            self.files = webui.parseNameStatus(data);
+            self.renderFiles();
+            if (self.files.length > 0) {
+                self.selectFile(self.files[0].path);
+            } else {
+                self.diffView.refresh("");
+            }
+        });
+    };
+
+    self.matchesFilter = function(file) {
+        return !self.filterText || file.path.toLowerCase().indexOf(self.filterText) != -1;
+    };
+
+    self.renderFiles = function() {
+        var list = $(".commit-detail-file-list", self.element);
+        list.empty();
+        var shown = 0;
+        self.files.forEach(function(file) {
+            if (!self.matchesFilter(file)) {
+                return;
+            }
+            ++shown;
+            var row = $('<div class="commit-detail-file">' +
+                            '<span class="commit-detail-file-path"></span>' +
+                            '<span class="commit-detail-file-status"></span>' +
+                        '</div>');
+            $(".commit-detail-file-path", row).text(file.path);
+            $(".commit-detail-file-status", row)
+                .text(file.status)
+                .addClass("log-entry-card-status-" + file.status.charAt(0));
+            if (file.path == self.selectedPath) {
+                row.addClass("active");
+            }
+            row.click(function() {
+                self.selectFile(file.path);
+            });
+            list.append(row);
+        });
+        if (shown == 0) {
+            list.append('<div class="commit-detail-empty">' +
+                (self.files.length == 0 ? "No file changes in this commit." : "No files match this filter.") +
+                '</div>');
+        }
+    };
+
+    self.selectFile = function(path) {
+        self.selectedPath = path;
+        self.renderFiles();
+        // --format= drops the commit header from `git show`; the message
+        // already sits above this pane, so repeating it here would just
+        // push the actual hunks off screen.
+        self.diffView.update("show", ["--format=", self.entry.commit], path);
+    };
+
+    self.onFilterInput = function(event) {
+        self.filterText = event.currentTarget.value.toLowerCase();
+        self.renderFiles();
+    };
+
+    self.element = $(   '<div id="commit-detail-view">' +
+                            '<div class="commit-detail-header">' +
+                                '<span class="commit-detail-avatar"></span>' +
+                                '<span class="commit-detail-meta"></span>' +
+                                '<span class="commit-detail-header-actions">' +
+                                    '<button type="button" class="commit-detail-btn commit-detail-prev" title="Newer commit">&#9650;</button>' +
+                                    '<button type="button" class="commit-detail-btn commit-detail-next" title="Older commit">&#9660;</button>' +
+                                    '<button type="button" class="commit-detail-btn commit-detail-menu" title="Show commit menu">&#8942;</button>' +
+                                    '<button type="button" class="commit-detail-btn commit-detail-tree" title="Browse the tree at this commit">Tree</button>' +
+                                    '<button type="button" class="commit-detail-btn commit-detail-collapse" title="Back to the commit list">&#8601; Back</button>' +
+                                '</span>' +
+                            '</div>' +
+                            '<pre class="commit-detail-message"></pre>' +
+                            '<div class="commit-detail-body">' +
+                                '<div class="commit-detail-files">' +
+                                    '<input type="text" class="form-control input-sm commit-detail-filter" placeholder="Filter">' +
+                                    '<div class="commit-detail-file-list"></div>' +
+                                '</div>' +
+                                '<div class="commit-detail-diff"></div>' +
+                            '</div>' +
+                        '</div>')[0];
+
+    self.diffView = new webui.DiffView(false, false, self);
+    $(".commit-detail-diff", self.element)[0].appendChild(self.diffView.element);
+    $(".commit-detail-filter", self.element).on("input", self.onFilterInput);
+    $(".commit-detail-prev", self.element).click(function() { self.step(-1); });
+    $(".commit-detail-next", self.element).click(function() { self.step(1); });
+    $(".commit-detail-collapse", self.element).click(function() { historyView.collapseCommit(); });
+    // Tree browsing is a git-webui feature GitFiend has no equivalent
+    // for, so it keeps a way in from here rather than being dropped
+    // along with the old Commit/Tree tab pair.
+    $(".commit-detail-tree", self.element).click(function() { historyView.showTreeForCommit(self.entry); });
+    $(".commit-detail-menu", self.element).click(function(event) {
+        event.stopPropagation();
+        historyView.mainView.commitActionMenu.show(event.currentTarget, self.entry);
+    });
+};
+
+/*
  * == HistoryView =============================================================
  */
 webui.HistoryView = function(mainView) {
@@ -3627,7 +3815,13 @@ webui.HistoryView = function(mainView) {
     // takes over the view when a commit is explicitly expanded, and
     // hands back to the list on collapse.
     self.expandCommit = function(entry) {
+        self.commitDetailView.update(entry);
+        mainView.switchTo(self.commitDetailView.element);
+    };
+
+    self.showTreeForCommit = function(entry) {
         self.commitView.update(entry);
+        self.commitView.showTree();
         mainView.switchTo(self.commitView.element);
     };
 
@@ -3644,6 +3838,7 @@ webui.HistoryView = function(mainView) {
     self.logView = new webui.LogView(self);
     historyMain.appendChild(self.logView.element);
     self.commitView = new webui.CommitView(self);
+    self.commitDetailView = new webui.CommitDetailView(self);
     self.mainView = mainView;
     self.refreshToolbar();
 };
