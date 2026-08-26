@@ -8,16 +8,29 @@ unchanged regardless of whether either of these is built.
 
 ```sh
 packaging/build.sh              # everything: dist/, headless binary, desktop app
+                                 # (desktop app in the native format for this machine)
+packaging/build.sh --format=all # ... every bundle format Tauri supports here
+packaging/build.sh --format=deb # ... one specific format instead
 packaging/build.sh --no-tauri   # skip the desktop app (no Rust needed)
 packaging/build.sh --frontend-only  # just dist/, nothing frozen/bundled
 ```
 
 Installs what it safely can on its own (npm/bower deps, PyInstaller via
 `pip install --user`, and - on Linux, via `sudo apt`/`dnf`/`pacman` -
-the WebKitGTK/dbus/gtk3 development packages Tauri needs to compile).
-It will not install a Rust toolchain for you; if `cargo` isn't found
-the desktop-app step is skipped with instructions instead of failing
-the whole run. See `packaging/build.sh -h` for all flags.
+the WebKitGTK/dbus/gtk3 development packages Tauri needs to compile;
+`fuse`/`libfuse2` are only pulled in when an AppImage is actually being
+built). It will not install a Rust toolchain for you; if `cargo` isn't
+found the desktop-app step is skipped with instructions instead of
+failing the whole run.
+
+By default the desktop-app step builds only the one bundle format
+native to the machine it's run on (`rpm` on dnf-based Linux, `deb` on
+apt-based Linux, `appimage` on other Linux, `dmg` on macOS, `msi` on
+Windows) via Tauri's `cargo tauri build --bundles <format>` flag, so a
+plain run produces exactly the installer you'd actually use - not
+every format `tauri.conf.json` lists. Pass `--format=<name>` for a
+specific format or `--format=all` to restore building everything. See
+`packaging/build.sh -h` for all flags.
 
 Status as actually run in this environment: `packaging/build.sh
 --no-tauri` was run end-to-end - it installed dependencies, built

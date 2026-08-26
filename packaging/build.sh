@@ -5,10 +5,21 @@
 #   3. packaging/tauri/.../bundle/ - a standalone desktop app (if Rust is available)
 #
 # Usage:
-#   packaging/build.sh                 # build everything available
-#   packaging/build.sh --no-tauri      # skip the desktop app, just the two above
-#   packaging/build.sh --frontend-only # just step 1 (grunt dist/)
-#   packaging/build.sh -h              # help
+#   packaging/build.sh                    # build everything, desktop app in the
+#                                          # native format for this machine
+#   packaging/build.sh --format=deb       # ... in a specific format instead
+#   packaging/build.sh --format=all       # ... in every format Tauri supports here
+#   packaging/build.sh --no-tauri         # skip the desktop app entirely
+#   packaging/build.sh --frontend-only    # just step 1 (grunt dist/)
+#   packaging/build.sh -h                 # help
+#
+# --format accepts a comma-separated list of Tauri bundle identifiers
+# (deb, rpm, appimage, dmg, app, msi, nsis, ...) or "all". Left
+# unspecified, it defaults to whichever single format is native to
+# this machine: rpm (dnf-based Linux), deb (apt-based Linux), appimage
+# (any other Linux), dmg (macOS), or msi (Windows, e.g. under Git
+# Bash) - so a plain run produces exactly the one installer you'd
+# actually use here, not every format Tauri knows how to build.
 #
 # What this installs automatically (all project-local or user-scoped,
 # nothing system-wide): npm devDependencies, bower frontend deps, and
@@ -24,6 +35,7 @@ cd "$REPO_ROOT"
 
 BUILD_TAURI=1
 FRONTEND_ONLY=0
+FORMAT=""
 
 for arg in "$@"; do
     case "$arg" in
@@ -34,8 +46,15 @@ for arg in "$@"; do
             FRONTEND_ONLY=1
             BUILD_TAURI=0
             ;;
+        --format=*)
+            FORMAT="${arg#--format=}"
+            ;;
+        --format)
+            echo "--format needs a value, e.g. --format=deb or --format=all (see --help)" >&2
+            exit 1
+            ;;
         -h|--help)
-            sed -n '2,17p' "${BASH_SOURCE[0]}"
+            sed -n '2,24p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         *)
@@ -99,34 +118,77 @@ EOF
     exit 0
 fi
 
+# Pick the default bundle format for this machine if the user didn't
+# request one with --format. Kept to a single native format so a plain
+# run produces exactly the installer you'd actually use here.
+DEFAULT_FORMAT=""
+PKG_MANAGER=""
 if [ "$(uname -s)" = "Linux" ]; then
-    echo "Checking Linux system libraries Tauri needs to build (webkit2gtk, dbus, fuse, ...)..."
-    # fuse/libfuse2 is for running the AppImage bundling tools themselves
-    # (linuxdeploy and friends are distributed *as* AppImages, which need
-    # FUSE to mount-and-run) - not for the app's own runtime.
     if command -v dnf >/dev/null 2>&1; then
-        if ! rpm -q webkit2gtk4.1-devel dbus-devel pkgconf-pkg-config gtk3-devel librsvg2-devel openssl-devel fuse fuse-libs >/dev/null 2>&1; then
+        PKG_MANAGER="dnf"
+        DEFAULT_FORMAT="rpm"
+    elif command -v apt-get >/dev/null 2>&1; then
+        PKG_MANAGER="apt-get"
+        DEFAULT_FORMAT="deb"
+    elif command -v pacman >/dev/null 2>&1; then
+        PKG_MANAGER="pacman"
+        DEFAULT_FORMAT="appimage"
+    else
+        DEFAULT_FORMAT="appimage"
+    fi
+elif [ "$(uname -s)" = "Darwin" ]; then
+    DEFAULT_FORMAT="dmg"
+else
+    # Windows (Git Bash/MSYS/Cygwin) and anything else unrecognized.
+    DEFAULT_FORMAT="msi"
+fi
+
+if [ -z "$FORMAT" ]; then
+    FORMAT="$DEFAULT_FORMAT"
+    echo "No --format given - defaulting to '$FORMAT' for this machine (use --format=all for every format)."
+fi
+
+# fuse/libfuse2 is only needed to run the AppImage bundling tools
+# themselves (linuxdeploy and friends are distributed *as* AppImages,
+# which need FUSE to mount-and-run), so only install it when an
+# AppImage is actually going to be built.
+case ",$FORMAT," in
+    *,all,*|*,appimage,*) NEED_FUSE=1 ;;
+    *) NEED_FUSE=0 ;;
+esac
+
+if [ "$(uname -s)" = "Linux" ]; then
+    echo "Checking Linux system libraries Tauri needs to build (webkit2gtk, dbus, ...)..."
+    if [ "$PKG_MANAGER" = "dnf" ]; then
+        FUSE_PKGS=""
+        [ "$NEED_FUSE" = "1" ] && FUSE_PKGS="fuse fuse-libs"
+        if ! rpm -q webkit2gtk4.1-devel dbus-devel pkgconf-pkg-config gtk3-devel librsvg2-devel openssl-devel $FUSE_PKGS >/dev/null 2>&1; then
             echo "Installing via dnf (needs sudo)..."
             sudo dnf install -y webkit2gtk4.1-devel openssl-devel curl wget file \
-                librsvg2-devel gtk3-devel dbus-devel pkgconf-pkg-config fuse fuse-libs
+                librsvg2-devel gtk3-devel dbus-devel pkgconf-pkg-config $FUSE_PKGS
         fi
-    elif command -v apt-get >/dev/null 2>&1; then
+    elif [ "$PKG_MANAGER" = "apt-get" ]; then
         if ! dpkg -s libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config libgtk-3-dev librsvg2-dev libssl-dev >/dev/null 2>&1; then
             echo "Installing via apt-get (needs sudo)..."
             sudo apt-get update
             sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
                 libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
                 libgtk-3-dev libdbus-1-dev pkg-config
-            # Package name varies by release (time_t transition on newer
-            # Ubuntu/Debian); try both, don't fail the build if neither hits.
-            sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64 || true
+            if [ "$NEED_FUSE" = "1" ]; then
+                # Package name varies by release (time_t transition on
+                # newer Ubuntu/Debian); try both, don't fail the build
+                # if neither hits.
+                sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64 || true
+            fi
         fi
-    elif command -v pacman >/dev/null 2>&1; then
+    elif [ "$PKG_MANAGER" = "pacman" ]; then
+        FUSE_PKGS=""
+        [ "$NEED_FUSE" = "1" ] && FUSE_PKGS="fuse2"
         sudo pacman -S --needed --noconfirm webkit2gtk-4.1 base-devel curl wget file \
-            openssl gtk3 librsvg dbus pkgconf fuse2
+            openssl gtk3 librsvg dbus pkgconf $FUSE_PKGS
     else
         echo "Unrecognized Linux package manager - skipping automatic system-dependency install." >&2
-        echo "Tauri needs webkit2gtk, gtk3, librsvg, dbus, pkg-config, and fuse/libfuse2 (for AppImage bundling); install them manually if the build below fails." >&2
+        echo "Tauri needs webkit2gtk, gtk3, librsvg, dbus, pkg-config, and (for AppImage bundling) fuse/libfuse2; install them manually if the build below fails." >&2
     fi
 fi
 
@@ -148,13 +210,20 @@ fi
 echo "Copying sidecar binary to $SIDECAR_DEST"
 cp "$SIDECAR_BIN" "$SIDECAR_DEST"
 
+if [ "$FORMAT" = "all" ]; then
+    BUNDLE_ARGS=()
+else
+    BUNDLE_ARGS=(--bundles "$FORMAT")
+fi
+echo "Building bundle format(s): $FORMAT"
+
 # APPIMAGE_EXTRACT_AND_RUN tells the AppImage-bundling tools (linuxdeploy
 # and friends, which are themselves distributed as AppImages) to extract
 # and run instead of mounting via FUSE - works even when /dev/fuse isn't
 # usable (common in containers/sandboxes) regardless of whether the
 # fuse/libfuse2 package above actually got installed.
 set +e
-(cd packaging/tauri/src-tauri && APPIMAGE_EXTRACT_AND_RUN=1 cargo tauri build)
+(cd packaging/tauri/src-tauri && APPIMAGE_EXTRACT_AND_RUN=1 cargo tauri build "${BUNDLE_ARGS[@]}")
 BUILD_STATUS=$?
 set -e
 
