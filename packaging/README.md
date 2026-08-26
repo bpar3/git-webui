@@ -49,9 +49,13 @@ narrow (the Rust/Tauri side specifically), not the whole pipeline.
 
 ## 1. Headless single-binary (no window, your own browser is the UI)
 
-Freezes `src/libexec/git-core/git-webui` (stdlib-only Python) plus the
-`src/share/git-webui/webui` static assets into one executable, so
-end users don't need Python installed.
+Freezes the built `dist/libexec/git-core/git-webui` (stdlib-only
+Python) plus the `dist/share/git-webui/webui` static assets - CSS
+compiled from LESS, and jQuery/Bootstrap vendored locally rather than
+loaded from a CDN, so the frozen app also works fully offline - into
+one executable. Run `grunt` (or `packaging/build.sh`, which does this
+for you) before packaging so `dist/` is up to date; end users don't
+need Python or Node installed to run the result.
 
 ```sh
 pip install pyinstaller
