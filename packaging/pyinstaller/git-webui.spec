@@ -13,11 +13,11 @@
 #
 #   ./dist-pyinstaller/git-webui-server --no-browser --port 8000 --repo-root .
 #
-# This does NOT require Node/grunt/bower - it freezes the already-built
-# src/share/git-webui/webui tree as-is, so run `grunt` first if you want
-# your latest frontend changes included (the spec bundles src/, not
-# dist/, so grunt isn't strictly required, but dist/ is what's tested
-# day to day - keep them in sync before packaging a release).
+# This bundles the built dist/share/git-webui/webui tree, so `grunt`
+# (or `packaging/build.sh`, which runs it for you) must be run first -
+# dist/ is where the compiled CSS and the vendored jquery/bootstrap
+# assets that index.html now loads locally (instead of from a CDN, so
+# the packaged app also works fully offline) actually live.
 #
 # See packaging/README.md for the bigger picture (this is also the
 # sidecar binary the Tauri desktop app in packaging/tauri/ spawns).
@@ -25,8 +25,8 @@
 import os
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(SPEC))))
-ENTRY_SCRIPT = os.path.join(REPO_ROOT, "src", "libexec", "git-core", "git-webui")
-WEBUI_ASSETS = os.path.join(REPO_ROOT, "src", "share", "git-webui", "webui")
+ENTRY_SCRIPT = os.path.join(REPO_ROOT, "dist", "libexec", "git-core", "git-webui")
+WEBUI_ASSETS = os.path.join(REPO_ROOT, "dist", "share", "git-webui", "webui")
 
 a = Analysis(
     [ENTRY_SCRIPT],

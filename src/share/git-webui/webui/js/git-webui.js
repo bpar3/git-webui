@@ -382,7 +382,7 @@ webui.git = function(cmd, arg1, arg2) {
         cmd += "\n" + arg1;
         var callback = arg2;
     }
-    $.post(webui.withRepoParam("git"), cmd, function(data, status, xhr) {
+    return $.post(webui.withRepoParam("git"), cmd, function(data, status, xhr) {
         if (xhr.status == 200) {
             // Convention : last lines are footer meta data like headers. An empty line marks the start if the footers
             var footers = {};
@@ -1000,11 +1000,20 @@ webui.Toolbar = function(mainView) {
 
     // -- Pull / Push / Fetch : left click executes, right click opens options --
 
+    self.runRemoteAction = function(buttonId, cmd, callback) {
+        var button = $("#" + buttonId, self.element).addClass("toolbar-remote-btn-busy");
+        webui.git(cmd, function(data) {
+            callback(data);
+        }).always(function() {
+            button.removeClass("toolbar-remote-btn-busy");
+        });
+    }
+
     self.onPull = function(event) {
         event.preventDefault();
         var strategy = webui.getPullStrategy();
         var args = strategy == "rebase" ? "pull --rebase" : "pull";
-        webui.git(args, function(data) {
+        self.runRemoteAction("toolbar-pull", args, function(data) {
             webui.showResult("Pull completed", data);
             self.loadBranches();
             if (mainView.workspaceView) {
@@ -1015,7 +1024,7 @@ webui.Toolbar = function(mainView) {
 
     self.onPush = function(event) {
         event.preventDefault();
-        webui.git("push", function(data) {
+        self.runRemoteAction("toolbar-push", "push", function(data) {
             webui.showResult("Push completed", data);
             self.loadBranches();
         });
@@ -1025,7 +1034,7 @@ webui.Toolbar = function(mainView) {
         if (!window.confirm("Force push may overwrite remote history. Continue?")) {
             return;
         }
-        webui.git("push --force", function(data) {
+        self.runRemoteAction("toolbar-push", "push --force", function(data) {
             webui.showResult("Force push completed", data);
             self.loadBranches();
         });
@@ -1035,7 +1044,7 @@ webui.Toolbar = function(mainView) {
         if (event) {
             event.preventDefault();
         }
-        webui.git("fetch", function(data) {
+        self.runRemoteAction("toolbar-fetch", "fetch", function(data) {
             webui.showResult("Fetch completed", data);
             self.loadBranches();
         });
@@ -3319,6 +3328,13 @@ webui.HistoryView = function(mainView) {
             container.append('<div class="toolbar-menu-empty">No branches yet.</div>');
             return;
         }
+        // Branches sharing the same tip commit (a local branch and its
+        // upstream, several merged feature branches, ...) are grouped
+        // into one row - the first ref is shown as the chip, the rest
+        // are collapsed into a "+N" badge, matching GitFiend's graph
+        // labels where multiple refs stack on a single commit.
+        var groups = [];
+        var groupsByCommit = {};
         webui.branches.forEach(function(branch) {
             var refInfo = branch.local_name ? {
                 kind: "local",
@@ -3333,18 +3349,36 @@ webui.HistoryView = function(mainView) {
                 gitRef: branch.remote_name,
                 commit: branch.commit,
             };
-            var chipClass = refInfo.kind == "local" ? "ref-chip-local" : "ref-chip-remote";
+            var group = groupsByCommit[branch.commit];
+            if (!group) {
+                group = { commit: branch.commit, refs: [], current: false };
+                groupsByCommit[branch.commit] = group;
+                groups.push(group);
+            }
+            group.refs.push(refInfo);
+            group.current = group.current || !!branch.current;
+        });
+        groups.forEach(function(group) {
+            var row = $('<div class="history-view-ref-row"></div>');
+            var primary = group.refs[0];
+            var chipClass = primary.kind == "local" ? "ref-chip-local" : "ref-chip-remote";
             var chip = $('<button type="button" class="ref-chip ' + chipClass + ' history-view-ref-chip"></button>');
-            chip.text(refInfo.displayName);
-            if (branch.current) {
+            chip.text(primary.displayName);
+            if (group.current) {
                 chip.prepend('<span class="ref-chip-current">&#10003;</span> ');
                 chip.addClass("history-view-ref-current");
             }
             chip.click(function(event) {
                 event.stopPropagation();
-                mainView.refActionMenu.show(chip[0], refInfo, { commit: branch.commit || "" });
+                mainView.refActionMenu.show(chip[0], primary, { commit: group.commit || "" });
             });
-            container.append(chip);
+            row.append(chip);
+            if (group.refs.length > 1) {
+                var extraNames = group.refs.slice(1).map(function(r) { return r.displayName; }).join(", ");
+                var badge = $('<span class="history-view-ref-extra" title="' + webui.escapeHtml(extraNames) + '">+' + (group.refs.length - 1) + '</span>');
+                row.append(badge);
+            }
+            container.append(row);
         });
     }
 

@@ -65,6 +65,27 @@ class WebUiHttpServer(HTTPServer):
 
 class WebUiRequestHandler(SimpleHTTPRequestHandler):
 
+    # SimpleHTTPRequestHandler falls back to the stdlib mimetypes module
+    # for anything not listed here, which in turn depends on OS-provided
+    # mime.types files that aren't guaranteed to exist (minimal
+    # containers, some packaged/frozen environments) - a missing or
+    # wrong entry for .css is served as a generic type that browsers
+    # refuse to apply as a stylesheet, silently leaving the page
+    # unstyled. Pin the extensions this app actually serves so behavior
+    # doesn't depend on the host's mime database.
+    extensions_map = dict(SimpleHTTPRequestHandler.extensions_map, **{
+        ".css": "text/css",
+        ".js": "application/javascript",
+        ".json": "application/json",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".ico": "image/x-icon",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+        ".ttf": "font/ttf",
+        ".eot": "application/vnd.ms-fontobject",
+    })
+
     WEB_ROOT = None
     REPO_ROOT = None
     APP_STATE_PATH = None

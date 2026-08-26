@@ -15,6 +15,18 @@ module.exports = function(grunt) {
                 src: 'bower_components/bootstrap/dist/js/bootstrap.min.js',
                 dest: 'dist/share/git-webui/webui/js/',
             },
+            bootstrap_css: {
+                expand: true,
+                flatten: true,
+                src: 'bower_components/bootstrap/dist/css/bootstrap.min.css',
+                dest: 'dist/share/git-webui/webui/css/',
+            },
+            bootstrap_fonts: {
+                expand: true,
+                flatten: true,
+                src: 'bower_components/bootstrap/dist/fonts/*',
+                dest: 'dist/share/git-webui/webui/fonts/',
+            },
             git_webui: {
                 options: {
                     mode: true,
@@ -74,7 +86,7 @@ module.exports = function(grunt) {
     grunt.loadNpmTasks('grunt-shell');
     grunt.loadNpmTasks('grunt-contrib-watch');
 
-    grunt.registerTask('copytodist', ['copy:git_webui']);
+    grunt.registerTask('copytodist', ['copy:git_webui', 'copy:jquery', 'copy:bootstrap', 'copy:bootstrap_css', 'copy:bootstrap_fonts']);
     grunt.registerTask('default', ['clean', 'copytodist', 'less']);
     grunt.registerTask('serve', ['default', 'shell:serve']);
     grunt.registerTask('release', ['default', 'copy:release']);
