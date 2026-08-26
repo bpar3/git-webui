@@ -266,6 +266,49 @@ describe("webui.getCurrentBranch / findBranchByRef", () => {
     });
 });
 
+describe("webui.parseHunkHeader", () => {
+    let webui;
+
+    beforeEach(() => {
+        webui = loadWebui();
+    });
+
+    test("reads both starting line numbers", () => {
+        expect(webui.parseHunkHeader("@@ -1190,7 +1190,6 @@")).toEqual({
+            oldStart: 1190,
+            newStart: 1190,
+        });
+    });
+
+    test("keeps the trailing context section out of the result", () => {
+        expect(webui.parseHunkHeader("@@ -1319,6 +1318,143 @@ body {")).toEqual({
+            oldStart: 1319,
+            newStart: 1318,
+        });
+    });
+
+    test("handles single-line hunks that omit the count", () => {
+        expect(webui.parseHunkHeader("@@ -0,0 +1 @@")).toEqual({
+            oldStart: 0,
+            newStart: 1,
+        });
+    });
+
+    test("handles combined diffs with extra @ markers", () => {
+        expect(webui.parseHunkHeader("@@@ -1,7 +1,6 @@@")).toEqual({
+            oldStart: 1,
+            newStart: 1,
+        });
+    });
+
+    test("returns null for non-hunk lines", () => {
+        expect(webui.parseHunkHeader("+added line")).toBeNull();
+        expect(webui.parseHunkHeader("diff --git a/x b/x")).toBeNull();
+        expect(webui.parseHunkHeader("")).toBeNull();
+        expect(webui.parseHunkHeader(undefined)).toBeNull();
+    });
+});
+
 describe("webui.quoteArg", () => {
     let webui;
 

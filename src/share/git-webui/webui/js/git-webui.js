@@ -316,6 +316,22 @@ webui.colorForAuthor = function(name) {
     return webui.COLORS[webui.hashString(name) % webui.COLORS.length];
 }
 
+// Reads the starting line numbers out of a hunk header, e.g.
+// "@@ -1190,7 +1190,6 @@ body {" -> { oldStart: 1190, newStart: 1190 }.
+// The counts are deliberately ignored: the gutters number lines as they
+// are emitted, so only the starting points matter. Returns null for
+// anything that isn't a hunk header.
+webui.parseHunkHeader = function(line) {
+    if (!line) {
+        return null;
+    }
+    var match = /^@@+ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (!match) {
+        return null;
+    }
+    return { oldStart: parseInt(match[1], 10), newStart: parseInt(match[2], 10) };
+}
+
 // Quotes a value for the git command strings sent to the backend, which
 // parses them with shlex. Only " and \ need escaping: shlex isn't a
 // shell, so $ and backticks inside double quotes are already literal.
@@ -2794,9 +2810,13 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
     self.updateSplitView = function(view, diffLines, operation) {
         $(view).empty();
 
+        // Each side of a split view only ever shows one set of numbers:
+        // the left pane is the old file, the right pane the new one.
         var context = { inHeader: true,
                         addedLines: [],
                         removedLines: [],
+                        showOld: operation == '-',
+                        showNew: operation == '+',
                       };
         for (var i = 0; i < diffLines.length; ++i) {
             var line = diffLines[i];
@@ -2839,16 +2859,61 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         if (offset > 0) {
             for (var i = 0; i < offset; ++i) {
                 var pre = $('<pre class="diff-view-line diff-line-phantom">').appendTo(view)[0];
-                pre.appendChild(document.createTextNode(" "));
+                pre.webuiLine = " ";
+                if (context.showOld !== false) {
+                    $('<span class="diff-line-num diff-line-num-old">').appendTo(pre);
+                }
+                if (context.showNew !== false) {
+                    $('<span class="diff-line-num diff-line-num-new">').appendTo(pre);
+                }
+                $('<span class="diff-line-text">').text(" ").appendTo(pre);
             }
         }
         return context;
     }
 
+    // Reconstructing a patch needs the original text of a line, which is
+    // no longer the element's textContent now that gutters live inside
+    // it. addDiffLine stashes the raw line here.
+    self.lineText = function(element) {
+        return element.webuiLine != undefined ? element.webuiLine : element.textContent;
+    }
+
     self.addDiffLine = function(view, line, context) {
         var c = line[0];
         var pre = $('<pre class="diff-view-line">').appendTo(view)[0];
-        pre.appendChild(document.createTextNode(line));
+        pre.webuiLine = line;
+
+        var hunk = webui.parseHunkHeader(line);
+        if (hunk) {
+            context.oldLine = hunk.oldStart;
+            context.newLine = hunk.newStart;
+        }
+
+        // Number the line before classifying it: a removal only consumes
+        // an old line number, an addition only a new one, and context
+        // consumes both.
+        var oldNum = "";
+        var newNum = "";
+        if (!hunk && !context.inHeader && context.oldLine != undefined) {
+            if (c == '+') {
+                newNum = context.newLine++;
+            } else if (c == '-') {
+                oldNum = context.oldLine++;
+            } else if (c != '\\') {
+                oldNum = context.oldLine++;
+                newNum = context.newLine++;
+            }
+        }
+
+        if (context.showOld !== false) {
+            $('<span class="diff-line-num diff-line-num-old">').text(oldNum).appendTo(pre);
+        }
+        if (context.showNew !== false) {
+            $('<span class="diff-line-num diff-line-num-new">').text(newNum).appendTo(pre);
+        }
+        $('<span class="diff-line-text">').text(line).appendTo(pre);
+
         if (c == '+') {
             $(pre).addClass("diff-line-add");
         } else if (c == '-') {
@@ -2871,14 +2936,14 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         var patch = "";
         // First create the header
         for (var l = 0; l < leftLines.childElementCount; ++l) {
-            var line = leftLines.children[l].textContent;
+            var line = self.lineText(leftLines.children[l]);
             if (line[0] == "@") {
                 break;
             } else {
                 patch += line + "\n";
             }
         }
-        patch += rightLines.children[l - 1].textContent + "\n";
+        patch += self.lineText(rightLines.children[l - 1]) + "\n";
         // Then build the patch itself
         var refLineNo = 0;
         var patchOffset = 0;
@@ -2886,7 +2951,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         var hunkRemovedLines = [];
         for (; l < leftLines.childElementCount; ++l) {
             var leftElt = leftLines.children[l];
-            var leftLine = leftElt.textContent;
+            var leftLine = self.lineText(leftElt);
             var leftCmd = leftLine[0];
 
             if (leftCmd == "@" || (leftCmd == " " && !$(leftElt).hasClass("diff-line-phantom"))) {
@@ -2923,9 +2988,9 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
                 if (!$(rightElt).hasClass("diff-line-phantom")) {
                     if ($(rightElt).hasClass("active")) {
                         if (!reverse) {
-                            hunkAddedLines.push(rightElt.textContent);
+                            hunkAddedLines.push(self.lineText(rightElt));
                         } else {
-                            hunkRemovedLines.push(self.reverseLine(rightElt.textContent));
+                            hunkRemovedLines.push(self.reverseLine(self.lineText(rightElt)));
                         }
                     } else if (reverse) {
                         ++refLineNo;
@@ -3008,14 +3073,14 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         if (!lineElt) {
             return;
         }
-        var diffLine = lineElt.textContent;
+        var diffLine = self.lineText(lineElt);
         var cmd = diffLine[0];
         if (cmd == "+" || cmd == "-") {
             $(lineElt).toggleClass("active");
         } else if (cmd == "@") {
             lineElt.webuiActive = !lineElt.webuiActive;
             for (var elt = lineElt.nextElementSibling; elt; elt = elt.nextElementSibling) {
-                cmd = elt.textContent[0];
+                cmd = self.lineText(elt)[0];
                 if (cmd == "+" || cmd == "-") {
                     $(elt).toggleClass("active", lineElt.webuiActive);
                 } else if (cmd == "@") {

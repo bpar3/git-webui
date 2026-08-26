@@ -58,22 +58,33 @@
     --gf-chip-yellow-text:  #8a6d1d;
     --gf-chip-yellow-border:#f0e0a6;
     --gf-danger:            #d1453b;
-    --gf-diff-line-bg:      #ffffff;
-    --gf-diff-header-bg:    #eeeeee;
     --gf-diff-selected-bg:  #337ab7;
-    --gf-diff-added-bg:     @diff-added-light;
-    --gf-diff-removed-bg:   @diff-removed-light;
-    --gf-diff-offset-bg:    @diff-offset-light;
+    // GitFiend's diff sits on a warm off-white, with pastel add/remove
+    // fills rather than the saturated blocks Bootstrap's palette gave.
+    --gf-diff-line-bg:      #fdfbf6;
+    --gf-diff-header-bg:    #ffffff;
+    --gf-diff-added-bg:     #d9f5e1;
+    --gf-diff-removed-bg:   #fadde0;
+    --gf-diff-offset-bg:    #ffffff;
+    --gf-diff-gutter-text:  #a09a90;
+    --gf-diff-gutter-border:#ece7dc;
+    --gf-diff-rule:         #d9d3c7;
+    // The count badges (Changes, Push) are amber in both themes.
+    --gf-badge-bg:          #f0c33c;
+    --gf-badge-text:        #1f1f1f;
 }
 
 body.dark-mode {
-    --gf-titlebar-bg:       #171717;
-    --gf-toolbar-bg:        #232323;
-    --gf-toolbar-border:    #383838;
-    --gf-panel-bg:          #1e1e1e;
-    --gf-page-bg:           #1a1a1a;
-    --gf-border:            #333333;
-    --gf-border-strong:     #444444;
+    // Sampled against GitFiend's dark theme: a true near-black page
+    // with a slightly lifted toolbar, and row dividers light enough to
+    // read as lines rather than disappearing into the background.
+    --gf-titlebar-bg:       #101010;
+    --gf-toolbar-bg:        #262626;
+    --gf-toolbar-border:    #3d3d3d;
+    --gf-panel-bg:          #1b1b1b;
+    --gf-page-bg:           #141414;
+    --gf-border:            #3a3a3a;
+    --gf-border-strong:     #4a4a4a;
     --gf-text:              #e2e2e2;
     --gf-text-muted:        #9a9a9a;
     --gf-text-faint:        #767676;
@@ -90,12 +101,15 @@ body.dark-mode {
     --gf-chip-yellow-text:  #e0c674;
     --gf-chip-yellow-border:#524827;
     --gf-danger:            #e5675e;
-    --gf-diff-line-bg:      #1e1e1e;
-    --gf-diff-header-bg:    #262626;
+    --gf-diff-line-bg:      #1b1b1b;
+    --gf-diff-header-bg:    #212121;
     --gf-diff-selected-bg:  #2f6fb0;
-    --gf-diff-added-bg:     rgba(102, 153, 0, 0.3);
-    --gf-diff-removed-bg:   rgba(204, 0, 0, 0.3);
-    --gf-diff-offset-bg:    rgba(153, 51, 204, 0.3);
+    --gf-diff-added-bg:     #1d3b28;
+    --gf-diff-removed-bg:   #3d2328;
+    --gf-diff-offset-bg:    #212121;
+    --gf-diff-gutter-text:  #6e6e6e;
+    --gf-diff-gutter-border:#333333;
+    --gf-diff-rule:         #3a3a3a;
 }
 
 .no-select() {
@@ -390,8 +404,9 @@ body {
         position: absolute;
         top: -2px;
         right: 4px;
-        background: var(--gf-accent);
-        color: #fff;
+        background: var(--gf-badge-bg);
+        color: var(--gf-badge-text);
+        font-weight: bold;
         border-radius: 999px;
         font-size: 9px;
         padding: 0 4px;
@@ -434,8 +449,9 @@ body {
         position: absolute;
         top: -2px;
         right: 2px;
-        background: var(--gf-danger);
-        color: #fff;
+        background: var(--gf-badge-bg);
+        color: var(--gf-badge-text);
+        font-weight: bold;
         border-radius: 999px;
         font-size: 9px;
         padding: 0 4px;
@@ -1213,6 +1229,9 @@ body {
         background-color: transparent;
         margin: 0;
         border-top-width: 0;
+        // A hairline under each commit, as GitFiend has - it keeps long
+        // lists scannable without boxing every row.
+        border-bottom: 1px solid var(--gf-border);
 
         &:hover {
             background-color: rgba((  red(@list-group-hover-bg) - 25) / @log-view-opacity,
@@ -1944,17 +1963,47 @@ body {
                 display: table;
                 width: 100%;
 
+                // Each line is a flex row: fixed-width number gutters,
+                // then the code. The gutters carry the old and new line
+                // numbers the way GitFiend shows them, so the +/- in the
+                // text no longer has to do that job alone.
                 .diff-view-line {
+                    .display-flex();
                     margin: 0;
-                    padding: 0 0.3em 0 0.3em;
+                    padding: 0;
                     background-color: var(--gf-diff-line-bg);
                     color: var(--gf-text);
                     border: 0;
+                    border-radius: 0;
 
                     &.active {
                         background-color: var(--gf-diff-selected-bg);
                         color: white;
+
+                        .diff-line-num {
+                            color: rgba(255, 255, 255, 0.7);
+                            border-right-color: rgba(255, 255, 255, 0.25);
+                        }
                     }
+                }
+
+                .diff-line-num {
+                    flex: 0 0 auto;
+                    width: 4.5em;
+                    padding: 0 0.6em 0 0;
+                    text-align: right;
+                    color: var(--gf-diff-gutter-text);
+                    background: inherit;
+                    border-right: 1px solid var(--gf-diff-gutter-border);
+                    .no-select();
+                    font-variant-numeric: tabular-nums;
+                }
+
+                .diff-line-text {
+                    .flex(1);
+                    padding: 0 0.3em 0 0.6em;
+                    white-space: pre;
+                    min-width: 0;
                 }
 
                 .diff-line-header {
@@ -1989,8 +2038,19 @@ body {
                     background-color: var(--gf-diff-removed-bg);
                 }
 
+                // Hunk boundary: GitFiend rules it off above and below
+                // with a dashed line rather than filling the row.
                 .diff-line-offset {
                     background-color: var(--gf-diff-offset-bg);
+                    color: var(--gf-text-muted);
+                    font-weight: normal;
+                    border-top: 1px dashed var(--gf-diff-rule);
+                    border-bottom: 1px dashed var(--gf-diff-rule);
+                    margin: 6px 0;
+
+                    .diff-line-num {
+                        border-right-color: transparent;
+                    }
                 }
             }
         }
