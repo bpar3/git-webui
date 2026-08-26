@@ -133,3 +133,41 @@ def test_merge_branch_fast_forwards(backend, git_repo):
     response = backend.merge_branch(str(git_repo), "feature", "master", False)
     assert response["status"] == 200
     assert (git_repo / "feature.txt").exists()
+
+
+def _run(repo, *args):
+    import subprocess
+    subprocess.run(["git"] + list(args), cwd=str(repo), check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def test_get_tag_entries_empty_repo_has_no_tags(backend, git_repo):
+    assert backend.get_tag_entries(str(git_repo)) == []
+
+
+def test_get_tag_entries_lightweight_tag(backend, git_repo):
+    _run(git_repo, "tag", "v1.0")
+    tags = backend.get_tag_entries(str(git_repo))
+    assert len(tags) == 1
+    assert tags[0]["name"] == "v1.0"
+    assert tags[0]["annotated"] is False
+    assert len(tags[0]["commit"]) == 40
+
+
+def test_get_tag_entries_annotated_tag_resolves_to_the_commit(backend, git_repo):
+    """An annotated tag's own objectname is the tag object, not the commit -
+    the entry must carry the commit so it can be placed in the graph."""
+    _run(git_repo, "tag", "-a", "v2.0", "-m", "release")
+    head = backend.run_git_capture(str(git_repo), ["rev-parse", "HEAD"])["stdout"].strip()
+    tags = backend.get_tag_entries(str(git_repo))
+    assert len(tags) == 1
+    assert tags[0]["name"] == "v2.0"
+    assert tags[0]["annotated"] is True
+    assert tags[0]["commit"] == head
+
+
+def test_get_branch_entries_exposes_remote_commit(backend, git_repo):
+    entries = backend.get_branch_entries(str(git_repo))
+    assert len(entries) == 1
+    # No upstream configured, so there is no remote tip to report.
+    assert entries[0]["remote_commit"] is None

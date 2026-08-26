@@ -316,6 +316,82 @@ webui.colorForAuthor = function(name) {
     return webui.COLORS[webui.hashString(name) % webui.COLORS.length];
 }
 
+// Expands branch entries and tags into individual refs, each keyed by
+// the commit it actually points at, then groups them per commit.
+//
+// A tracking branch arrives as one entry holding both a local and a
+// remote name. Those are two distinct refs and sit on different commits
+// whenever the branch is ahead or behind, so they are emitted
+// separately and only end up sharing a row when they really are level.
+// Local branches sort ahead of remotes, and tags last.
+webui.groupRefsByCommit = function(branches, tags) {
+    var order = { local: 0, remote: 1, tag: 2 };
+    var groups = [];
+    var byCommit = {};
+
+    var add = function(commit, refInfo) {
+        if (!commit) {
+            return;
+        }
+        var group = byCommit[commit];
+        if (!group) {
+            group = { commit: commit, refs: [] };
+            byCommit[commit] = group;
+            groups.push(group);
+        }
+        group.refs.push(refInfo);
+    };
+
+    (branches || []).forEach(function(branch) {
+        if (branch.local_name) {
+            add(branch.commit, {
+                kind: "local",
+                fullName: "refs/heads/" + branch.local_name,
+                displayName: branch.local_name,
+                gitRef: branch.local_name,
+                commit: branch.commit,
+                current: !!branch.current,
+            });
+        }
+        if (branch.remote_name) {
+            var remoteCommit = branch.remote_commit || (branch.local_name ? null : branch.commit);
+            add(remoteCommit, {
+                kind: "remote",
+                fullName: "refs/remotes/" + branch.remote_name,
+                displayName: branch.remote_name,
+                gitRef: branch.remote_name,
+                commit: remoteCommit,
+                current: false,
+            });
+        }
+    });
+
+    (tags || []).forEach(function(tag) {
+        add(tag.commit, {
+            kind: "tag",
+            fullName: "refs/tags/" + tag.name,
+            displayName: tag.name,
+            gitRef: tag.name,
+            commit: tag.commit,
+            annotated: !!tag.annotated,
+            current: false,
+        });
+    });
+
+    groups.forEach(function(group) {
+        group.refs.sort(function(a, b) {
+            if (a.current != b.current) {
+                return a.current ? -1 : 1;
+            }
+            if (order[a.kind] != order[b.kind]) {
+                return order[a.kind] - order[b.kind];
+            }
+            return a.displayName.localeCompare(b.displayName);
+        });
+    });
+    return groups;
+}
+
 // Reads the starting line numbers out of a hunk header, e.g.
 // "@@ -1190,7 +1190,6 @@ body {" -> { oldStart: 1190, newStart: 1190 }.
 // The counts are deliberately ignored: the gutters number lines as they
@@ -760,6 +836,7 @@ webui.Toolbar = function(mainView) {
         }
         webui.apiGet("/api/branches", function(data) {
             webui.branches = data.branches || [];
+            webui.tags = data.tags || [];
             self.updateStatusMeta();
             if (mainView.historyView) {
                 mainView.historyView.refreshToolbar();
@@ -2565,7 +2642,6 @@ webui.LogView = function(historyView) {
             self.element = $('<a class="log-entry list-group-item">' +
                                 '<header>' +
                                     '<span class="log-entry-avatar" style="background:' + webui.colorForAuthor(self.author.name) + '" title="' + webui.escapeHtml(self.author.name) + ' &lt;' + webui.escapeHtml(self.author.email) + '&gt;">' + webui.escapeHtml(webui.getInitials(self.author.name)) + '</span>' +
-                                    '<div class="log-entry-refs"></div>' +
                                     '<p class="list-group-item-text"></p>' +
                                     '<button type="button" class="log-entry-menu-btn" title="Show commit menu">&#8942;</button>' +
                                     '<span class="log-entry-date" title="' + webui.escapeHtml(self.author.date.toLocaleString()) + '">' + webui.escapeHtml(self.relativeDate || "") + '</span>' +
@@ -2578,29 +2654,9 @@ webui.LogView = function(historyView) {
                 event.stopPropagation();
                 historyView.mainView.commitActionMenu.show(event.currentTarget, self);
             });
-            if (self.decoratedRefs.length > 0) {
-                var refBox = $(".log-entry-refs", self.element);
-                self.decoratedRefs.forEach(function(refInfo) {
-                    var chipClass = "ref-chip-local";
-                    if (refInfo.kind == "remote") {
-                        chipClass = "ref-chip-remote";
-                    } else if (refInfo.kind == "tag") {
-                        chipClass = "ref-chip-tag";
-                    } else if (refInfo.kind == "head") {
-                        chipClass = "ref-chip-local";
-                    }
-                    var label = $('<button type="button" class="ref-chip ' + chipClass + ' log-entry-ref" data-ref-name="' + webui.escapeHtml(refInfo.displayName) + '">' + webui.escapeHtml(refInfo.displayName) + '</button>');
-                    label.click(function(event) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        historyView.mainView.refActionMenu.show(label[0], refInfo, self);
-                    });
-                    if (webui.refChipFilterName && refInfo.displayName != webui.refChipFilterName) {
-                        label.hide();
-                    }
-                    refBox.append(label);
-                });
-            }
+            // Ref labels live in the left column, positioned at the
+            // commit they point at - repeating them inline beside the
+            // subject said the same thing twice and crowded the row.
             self.element.model = self;
             var model = self;
             $(self.element).click(function (event) {
@@ -3968,6 +4024,8 @@ webui.CommitDetailView = function(historyView) {
 webui.HistoryView = function(mainView) {
 
     var self = this;
+    // Which commits currently have their collapsed "+N" ref pill opened.
+    self.expandedRefCommits = {};
 
     self.show = function() {
         mainView.switchTo(self.element);
@@ -3998,56 +4056,60 @@ webui.HistoryView = function(mainView) {
             container.append('<div class="toolbar-menu-empty">No branches yet.</div>');
             return;
         }
-        // Branches sharing the same tip commit (a local branch and its
-        // upstream, several merged feature branches, ...) are grouped
-        // into one row - the first ref is shown as the chip, the rest
-        // are collapsed into a "+N" badge, matching GitFiend's graph
-        // labels where multiple refs stack on a single commit.
-        var groups = [];
-        var groupsByCommit = {};
-        webui.branches.forEach(function(branch) {
-            var refInfo = branch.local_name ? {
-                kind: "local",
-                fullName: "refs/heads/" + branch.local_name,
-                displayName: branch.local_name,
-                gitRef: branch.local_name,
-                commit: branch.commit,
-            } : {
-                kind: "remote",
-                fullName: "refs/remotes/" + branch.remote_name,
-                displayName: branch.remote_name,
-                gitRef: branch.remote_name,
-                commit: branch.commit,
-            };
-            var group = groupsByCommit[branch.commit];
-            if (!group) {
-                group = { commit: branch.commit, refs: [], current: false };
-                groupsByCommit[branch.commit] = group;
-                groups.push(group);
-            }
-            group.refs.push(refInfo);
-            group.current = group.current || !!branch.current;
-        });
+        var groups = webui.groupRefsByCommit(webui.branches, webui.tags);
         groups.forEach(function(group) {
             var row = $('<div class="history-view-ref-row"></div>');
-            var primary = group.refs[0];
-            var chipClass = primary.kind == "local" ? "ref-chip-local" : "ref-chip-remote";
-            var chip = $('<button type="button" class="ref-chip ' + chipClass + ' history-view-ref-chip"></button>');
-            chip.text(primary.displayName);
-            if (group.current) {
-                chip.prepend('<span class="ref-chip-current">&#10003;</span> ');
-                chip.addClass("history-view-ref-current");
+            var expanded = self.expandedRefCommits[group.commit];
+
+            var addChip = function(refInfo) {
+                var chipClass = "ref-chip-remote";
+                if (refInfo.kind == "tag") {
+                    chipClass = "ref-chip-tag";
+                } else if (refInfo.kind == "local") {
+                    chipClass = "ref-chip-local";
+                }
+                var chip = $('<button type="button" class="ref-chip history-view-ref-chip"></button>')
+                    .addClass(chipClass)
+                    .text(refInfo.displayName);
+                if (refInfo.kind == "tag") {
+                    // A tag reads as a tag at a glance; annotated ones
+                    // get a filled marker, lightweight an outline.
+                    chip.prepend('<span class="ref-chip-tag-mark">' +
+                        (refInfo.annotated ? "&#9679;" : "&#9675;") + '</span> ');
+                    chip.attr("title", (refInfo.annotated ? "Annotated tag " : "Lightweight tag ") + refInfo.displayName);
+                }
+                if (refInfo.current) {
+                    chip.prepend('<span class="ref-chip-current">&#10003;</span> ');
+                    chip.addClass("history-view-ref-current");
+                }
+                chip.click(function(event) {
+                    event.stopPropagation();
+                    mainView.refActionMenu.show(chip[0], refInfo, { commit: group.commit || "" });
+                });
+                row.append(chip);
+            };
+
+            if (expanded) {
+                group.refs.forEach(addChip);
+            } else {
+                addChip(group.refs[0]);
             }
-            chip.click(function(event) {
-                event.stopPropagation();
-                mainView.refActionMenu.show(chip[0], primary, { commit: group.commit || "" });
-            });
-            row.append(chip);
+
             if (group.refs.length > 1) {
-                var extraNames = group.refs.slice(1).map(function(r) { return r.displayName; }).join(", ");
-                var badge = $('<span class="history-view-ref-extra" title="' + webui.escapeHtml(extraNames) + '">+' + (group.refs.length - 1) + '</span>');
-                row.append(badge);
+                var hidden = group.refs.slice(1);
+                var pill = $('<button type="button" class="history-view-ref-extra"></button>')
+                    .text(expanded ? "−" : "+" + hidden.length)
+                    .attr("title", expanded
+                        ? "Show fewer refs"
+                        : hidden.map(function(r) { return r.displayName; }).join(", "));
+                pill.click(function(event) {
+                    event.stopPropagation();
+                    self.expandedRefCommits[group.commit] = !expanded;
+                    self.renderRefList();
+                });
+                row.append(pill);
             }
+
             container.append(row);
             self.refRows.push({ commit: group.commit, element: row });
         });

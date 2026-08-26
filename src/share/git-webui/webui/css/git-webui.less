@@ -1079,6 +1079,10 @@ body {
             position: absolute;
             .display-flex();
             align-items: center;
+            justify-content: flex-end;
+            // Expanding a "+N" pill can put several chips on one row, so
+            // they wrap instead of overflowing the column.
+            flex-wrap: wrap;
             gap: 4px;
             max-width: ~"calc(100% - 16px)";
             min-width: 0;
@@ -1101,15 +1105,31 @@ body {
             font-weight: bold;
         }
 
+        // Click to reveal the other refs sitting on this commit.
         .history-view-ref-extra {
             flex: 0 0 auto;
             font-size: 10px;
             font-weight: bold;
             color: var(--gf-text-muted);
             background: var(--gf-row-hover);
+            border: 1px solid var(--gf-border);
             border-radius: 8px;
             padding: 1px 6px;
-            cursor: default;
+            line-height: 1.3;
+
+            &:hover,
+            &:focus {
+                color: var(--gf-accent);
+                border-color: var(--gf-accent);
+            }
+        }
+
+        // Distinguishes a tag from a branch without spelling it out:
+        // filled marker for annotated, hollow for lightweight.
+        .ref-chip-tag-mark {
+            font-size: 8px;
+            vertical-align: middle;
+            opacity: 0.8;
         }
     }
 
@@ -1248,21 +1268,24 @@ body {
         // lists scannable without boxing every row.
         border-bottom: 1px solid var(--gf-border);
 
+        // Both of these used to be derived from Bootstrap's light-theme
+        // palette at compile time, so in dark mode they painted a pale
+        // row under pale text and the message became unreadable.
         &:hover {
-            background-color: rgba((  red(@list-group-hover-bg) - 25) / @log-view-opacity,
-                                   (green(@list-group-hover-bg) - 25) / @log-view-opacity,
-                                   ( blue(@list-group-hover-bg) - 25) / @log-view-opacity,
-                                   @log-view-opacity);
+            background-color: var(--gf-row-hover);
         }
 
         &.active {
-            background-color: rgba((  red(@brand-primary) - 25) / @log-view-opacity,
-                                   (green(@brand-primary) - 25) / @log-view-opacity,
-                                   ( blue(@brand-primary) - 25) / @log-view-opacity,
-                                   @log-view-opacity);
+            background-color: var(--gf-accent-bg);
 
-            header h6 a {
-                color: @component-active-color;
+            .list-group-item-text {
+                color: var(--gf-accent);
+            }
+
+            .log-entry-hash,
+            .log-entry-date {
+                color: var(--gf-accent);
+                opacity: 0.75;
             }
         }
 

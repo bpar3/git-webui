@@ -266,6 +266,68 @@ describe("webui.getCurrentBranch / findBranchByRef", () => {
     });
 });
 
+describe("webui.groupRefsByCommit", () => {
+    let webui;
+
+    beforeEach(() => {
+        webui = loadWebui();
+    });
+
+    test("returns an empty list when there is nothing to place", () => {
+        expect(webui.groupRefsByCommit([], [])).toEqual([]);
+        expect(webui.groupRefsByCommit(undefined, undefined)).toEqual([]);
+    });
+
+    test("keeps a level branch and its upstream on one commit", () => {
+        const groups = webui.groupRefsByCommit(
+            [{ local_name: "devel", remote_name: "origin/devel", commit: "aaa", remote_commit: "aaa" }], []);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].commit).toBe("aaa");
+        expect(groups[0].refs.map(r => r.displayName)).toEqual(["devel", "origin/devel"]);
+    });
+
+    test("splits a branch from its upstream when it is ahead", () => {
+        const groups = webui.groupRefsByCommit(
+            [{ local_name: "devel", remote_name: "origin/devel", commit: "newer", remote_commit: "older" }], []);
+        expect(groups).toHaveLength(2);
+        const byCommit = Object.fromEntries(groups.map(g => [g.commit, g.refs.map(r => r.displayName)]));
+        expect(byCommit).toEqual({ newer: ["devel"], older: ["origin/devel"] });
+    });
+
+    test("places a remote-only branch at its own commit", () => {
+        const groups = webui.groupRefsByCommit(
+            [{ local_name: null, remote_name: "origin/feature", commit: "bbb" }], []);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].refs[0]).toMatchObject({ kind: "remote", displayName: "origin/feature" });
+    });
+
+    test("groups tags onto the commit they resolve to", () => {
+        const groups = webui.groupRefsByCommit(
+            [{ local_name: "main", commit: "ccc" }],
+            [{ name: "v1.0", commit: "ccc", annotated: true }]);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].refs.map(r => r.kind)).toEqual(["local", "tag"]);
+        expect(groups[0].refs[1].annotated).toBe(true);
+    });
+
+    test("orders current branch first, then locals, remotes, tags", () => {
+        const groups = webui.groupRefsByCommit(
+            [
+                { local_name: "zeta", commit: "x" },
+                { local_name: "alpha", commit: "x", current: true },
+                { local_name: null, remote_name: "origin/zeta", commit: "x" },
+            ],
+            [{ name: "v2", commit: "x" }]);
+        expect(groups[0].refs.map(r => r.displayName))
+            .toEqual(["alpha", "zeta", "origin/zeta", "v2"]);
+    });
+
+    test("ignores refs with no commit rather than grouping them together", () => {
+        const groups = webui.groupRefsByCommit([{ local_name: "orphan", commit: "" }], []);
+        expect(groups).toEqual([]);
+    });
+});
+
 describe("webui.parseHunkHeader", () => {
     let webui;
 
