@@ -2379,7 +2379,11 @@ webui.LogView = function(historyView) {
                     // place to show its commit card, and the graph is
                     // drawn from real row geometry to follow it.
                     entry.element.style.minHeight = self.lineHeight + "px";
-                    if (!currentSelection) {
+                    // Only the first load opens a commit by default.
+                    // Appending more commits must not, or collapsing the
+                    // open one and then loading further history would
+                    // pop a card open again on its own.
+                    if (!currentSelection && startAt == 0) {
                         entry.select();
                     }
                 } else {
@@ -2407,6 +2411,17 @@ webui.LogView = function(historyView) {
 
     self.selectedEntry = function() {
         return currentSelection;
+    }
+
+    // Closes the open commit and drops the selection entirely, which
+    // selecting another commit doesn't do - that just moves it.
+    self.collapseSelection = function() {
+        if (!currentSelection) {
+            return;
+        }
+        $(currentSelection.element).removeClass("active");
+        currentSelection.closeCard();
+        currentSelection = null;
     }
 
     // Walks to the neighbouring commit row, skipping the "show previous
@@ -4266,6 +4281,17 @@ webui.HistoryView = function(mainView) {
     $(document).on("keydown", function(event) {
         if (event.key == "Escape") {
             self.collapseExpandedRefs();
+            self.logView.collapseSelection();
+        }
+    });
+    // Clicking off an open commit closes it. Scoped to this view rather
+    // than the document so working the toolbar - fetching, switching
+    // section - doesn't shut the commit you were reading. Clicks landing
+    // on a commit row are left alone: that row's own handler selects it,
+    // which moves the open card rather than closing it.
+    $(self.element).on("click", function(event) {
+        if ($(event.target).closest(".log-entry").length == 0) {
+            self.logView.collapseSelection();
         }
     });
     self.commitView = new webui.CommitView(self);
