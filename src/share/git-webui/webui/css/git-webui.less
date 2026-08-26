@@ -1190,7 +1190,6 @@ body {
     overflow-y: auto;
     cursor: default;
     margin-bottom: 0;
-    border-right: 1px @separator-line solid;
     position: relative;
 
     svg {
@@ -1319,6 +1318,143 @@ body {
         }
     }
 
+    // A selected commit opens inline, GitFiend-style, instead of in a
+    // docked side pane. The row becomes a column so the card stacks
+    // under the header line it belongs to.
+    .log-entry.expanded {
+        .display-flex();
+        .flex-direction(column);
+        align-items: stretch;
+        cursor: default;
+
+        // The row spans the graph gutter, so an opaque selection fill
+        // would black out the graph for the card's whole height. Keep
+        // the row transparent and mark only the commit line; the card
+        // below supplies its own surface.
+        &.active {
+            background-color: transparent;
+
+            header {
+                border-radius: 4px;
+                background: var(--gf-accent-bg);
+            }
+
+            header .list-group-item-text {
+                color: var(--gf-accent);
+                font-weight: 500;
+            }
+        }
+    }
+
+    .log-entry-card {
+        margin: 6px 0 8px 0;
+        border: 1px solid var(--gf-border);
+        border-radius: 6px;
+        background: var(--gf-panel-bg);
+        overflow: hidden;
+        cursor: default;
+    }
+
+    .log-entry-card-header {
+        .display-flex();
+        .align-items(center);
+        gap: 8px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--gf-border);
+
+        .log-entry-card-meta {
+            .flex(1);
+            color: var(--gf-text-muted);
+            font-size: 11.5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .log-entry-card-actions {
+            .display-flex();
+            gap: 2px;
+            flex: 0 0 auto;
+        }
+
+        .log-entry-card-btn {
+            border: 0;
+            background: transparent;
+            color: var(--gf-text-muted);
+            border-radius: 4px;
+            padding: 2px 6px;
+            line-height: 1;
+
+            &:hover,
+            &:focus {
+                background: var(--gf-row-hover);
+                color: var(--gf-text);
+            }
+        }
+    }
+
+    .log-entry-card-message {
+        margin: 0;
+        padding: 8px 10px;
+        max-height: 11em;
+        overflow: auto;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--gf-text);
+        font-family: @font-family-monospace;
+        font-size: 11.5px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .log-entry-card-files {
+        border-top: 1px solid var(--gf-border);
+        max-height: 14em;
+        overflow: auto;
+        padding: 4px 0;
+        color: var(--gf-text-muted);
+        font-size: 11.5px;
+    }
+
+    .log-entry-card-empty {
+        padding: 6px 10px;
+    }
+
+    .log-entry-card-file {
+        .display-flex();
+        .align-items(center);
+        gap: 8px;
+        padding: 3px 10px;
+
+        &:hover {
+            background: var(--gf-row-hover);
+        }
+
+        .log-entry-card-file-path {
+            .flex(1);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--gf-text);
+            direction: rtl;
+            text-align: left;
+        }
+
+        .log-entry-card-file-status {
+            flex: 0 0 auto;
+            font-weight: bold;
+            width: 1.2em;
+            text-align: center;
+        }
+
+        .log-entry-card-status-A { color: var(--gf-chip-green-text); }
+        .log-entry-card-status-M { color: var(--gf-chip-yellow-text); }
+        .log-entry-card-status-D { color: var(--gf-danger); }
+        .log-entry-card-status-R { color: var(--gf-accent); }
+    }
+
     .log-entry-more {
         padding: @padding-large-vertical @padding-large-horizontal;
 
@@ -1436,9 +1572,36 @@ body {
     .flex-direction(column);
     .flex(1);
 
+    // Now a full-view header (the pane is no longer docked beside the
+    // list), so it carries the way back to the commit list.
     #commit-view-header {
-        border: solid @list-group-border;
-        border-width: 0 0 1px 0;
+        .display-flex();
+        .align-items(center);
+        gap: 8px;
+        padding: 4px 10px;
+        background: var(--gf-toolbar-bg);
+        border-bottom: 1px solid var(--gf-border);
+
+        .nav {
+            .flex(1);
+            margin: 0;
+        }
+    }
+
+    .commit-view-collapse {
+        flex: 0 0 auto;
+        border: 1px solid var(--gf-border);
+        background: transparent;
+        color: var(--gf-text-muted);
+        border-radius: 4px;
+        padding: 3px 10px;
+        font-size: 11.5px;
+
+        &:hover,
+        &:focus {
+            background: var(--gf-row-hover);
+            color: var(--gf-text);
+        }
     }
 
     #commit-view-content {

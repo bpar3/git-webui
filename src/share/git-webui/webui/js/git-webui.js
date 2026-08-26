@@ -316,6 +316,29 @@ webui.colorForAuthor = function(name) {
     return webui.COLORS[webui.hashString(name) % webui.COLORS.length];
 }
 
+// Parses `git diff-tree --name-status` output into {status, path} pairs.
+// Fields are tab-separated; renames and copies carry a similarity score
+// on the status (R100) and a second path, which is the one to show.
+webui.parseNameStatus = function(data) {
+    if (!data) {
+        return [];
+    }
+    var files = [];
+    webui.splitLines(data).forEach(function(line) {
+        var parts = line.split("\t");
+        if (parts.length < 2 || !parts[0]) {
+            return;
+        }
+        var status = parts[0].charAt(0);
+        var path = parts[parts.length - 1];
+        if (!path) {
+            return;
+        }
+        files.push({ status: status, path: path });
+    });
+    return files;
+}
+
 webui.formatRelativeTime = function(date, now) {
     var reference = now || new Date();
     var seconds = Math.round((reference.getTime() - date.getTime()) / 1000);
@@ -2250,7 +2273,10 @@ webui.LogView = function(historyView) {
                     if (!self.lineHeight) {
                         self.lineHeight = Math.ceil($(entry.element).outerHeight() / 2) * 2;
                     }
-                    entry.element.setAttribute("style", "height:" + self.lineHeight + "px");
+                    // min-height, not height: a selected row expands in
+                    // place to show its commit card, and the graph is
+                    // drawn from real row geometry to follow it.
+                    entry.element.style.minHeight = self.lineHeight + "px";
                     if (!currentSelection) {
                         entry.select();
                     }
@@ -2277,8 +2303,43 @@ webui.LogView = function(historyView) {
         });
     };
 
+    // Expanding or collapsing a card moves every row below it, so the
+    // whole graph has to be redrawn rather than appended to.
+    self.redrawGraph = function() {
+        $(svg).empty();
+        streams = [];
+        streamColor = 0;
+        self.updateGraph(0);
+        svg.setAttribute("height", $(content).outerHeight());
+        svg.setAttribute("width", $(content).outerWidth());
+    }
+
+    // Rows are no longer a uniform height (a selected row expands to
+    // show its commit card), so the graph can't derive Y from
+    // index * lineHeight any more. Measure the real position of each
+    // row's header line up front, in one read pass, then draw - reading
+    // geometry inside the draw loop would thrash layout on long lists.
+    self.measureRowCenters = function(startAt) {
+        var centers = [];
+        var contentTop = content.getBoundingClientRect().top;
+        for (var i = startAt; i < content.children.length; ++i) {
+            var element = content.children[i];
+            if (!element.model) {
+                centers[i] = null;
+                continue;
+            }
+            // Anchor on the header strip, not the middle of the row, so
+            // the node stays on the commit line when the card is open.
+            var anchor = element.querySelector("header") || element;
+            var rect = anchor.getBoundingClientRect();
+            centers[i] = rect.top - contentTop + rect.height / 2;
+        }
+        return centers;
+    }
+
     self.updateGraph = function(startAt) {
         // Draw the graph
+        var rowCenters = self.measureRowCenters(startAt);
         var currentY = (startAt + 0.5) * self.lineHeight;
         var maxLeft = 0;
         if (startAt == 0) {
@@ -2287,7 +2348,10 @@ webui.LogView = function(historyView) {
         for (var i = startAt; i < content.children.length; ++i) {
             var entry = content.children[i].model;
             if (!entry) {
-                break;
+                continue;
+            }
+            if (rowCenters[i] != null) {
+                currentY = rowCenters[i];
             }
             var index = 0;
             entry.element.webuiLeft = streams.length;
@@ -2372,6 +2436,8 @@ webui.LogView = function(historyView) {
             // Debug log
             //console.log(entry.commit, entry.parents, $.extend(true, [], streams));
 
+            // Fallback for rows that couldn't be measured (detached /
+            // not yet laid out); measured rows overwrite this above.
             currentY += self.lineHeight;
         }
         for (var i = startAt; i < content.children.length; ++i) {
@@ -2379,7 +2445,7 @@ webui.LogView = function(historyView) {
             if (element.model) {
                 var minLeft = Math.min(maxLeft, 3);
                 var left = element ? Math.max(minLeft, element.webuiLeft) : minLeft;
-                element.setAttribute("style", element.getAttribute("style") + ";padding-left:" + (left + 1) * xOffset + "px");
+                element.style.paddingLeft = ((left + 1) * xOffset) + "px";
             }
         }
         for (var i = 0; i < streams.length; ++i) {
@@ -2467,11 +2533,89 @@ webui.LogView = function(historyView) {
             if (currentSelection != self) {
                 if (currentSelection) {
                     $(currentSelection.element).removeClass("active");
+                    currentSelection.closeCard();
                 }
                 $(self.element).addClass("active");
                 currentSelection = self;
-                logView.historyView.commitView.update(self);
+                self.openCard();
             }
+        };
+
+        // GitFiend shows a selected commit inline - the row grows to
+        // hold its message and file list - rather than in a permanently
+        // docked side pane.
+        self.openCard = function() {
+            if (self.card) {
+                return;
+            }
+            self.card = $('<div class="log-entry-card">' +
+                              '<div class="log-entry-card-header">' +
+                                  '<span class="log-entry-card-meta"></span>' +
+                                  '<span class="log-entry-card-actions">' +
+                                      '<button type="button" class="log-entry-card-btn log-entry-card-menu" title="Show commit menu">&#8942;</button>' +
+                                      '<button type="button" class="log-entry-card-btn log-entry-card-expand" title="Expand this commit">&#8599;</button>' +
+                                  '</span>' +
+                              '</div>' +
+                              '<pre class="log-entry-card-message"></pre>' +
+                              '<div class="log-entry-card-files"></div>' +
+                          '</div>');
+            $(".log-entry-card-meta", self.card).text(
+                self.author.date.toLocaleString() + " by " + self.author.name + "  (" + self.abbrevCommitHash() + ")");
+            $(".log-entry-card-message", self.card).text(self.message);
+            $(".log-entry-card-menu", self.card).click(function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                historyView.mainView.commitActionMenu.show(event.currentTarget, self);
+            });
+            $(".log-entry-card-expand", self.card).click(function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                historyView.expandCommit(self);
+            });
+            self.card.click(function(event) {
+                event.stopPropagation();
+            });
+            $(self.element).addClass("expanded").append(self.card);
+            logView.redrawGraph();
+            self.loadCardFiles();
+        };
+
+        self.loadCardFiles = function() {
+            var fileBox = $(".log-entry-card-files", self.card);
+            fileBox.text("Loading files…");
+            webui.git("diff-tree --no-commit-id --name-status -r -m --first-parent " + self.commit, function(data) {
+                if (!self.card) {
+                    return;
+                }
+                fileBox.empty();
+                var files = webui.parseNameStatus(data);
+                if (files.length == 0) {
+                    fileBox.append('<div class="log-entry-card-empty">No file changes in this commit.</div>');
+                } else {
+                    files.forEach(function(file) {
+                        var row = $('<div class="log-entry-card-file">' +
+                                        '<span class="log-entry-card-file-path"></span>' +
+                                        '<span class="log-entry-card-file-status"></span>' +
+                                    '</div>');
+                        $(".log-entry-card-file-path", row).text(file.path);
+                        $(".log-entry-card-file-status", row)
+                            .text(file.status)
+                            .addClass("log-entry-card-status-" + file.status.charAt(0));
+                        fileBox.append(row);
+                    });
+                }
+                logView.redrawGraph();
+            });
+        };
+
+        self.closeCard = function() {
+            if (!self.card) {
+                return;
+            }
+            self.card.remove();
+            self.card = null;
+            $(self.element).removeClass("expanded");
+            logView.redrawGraph();
         };
 
         self.parents = [];
@@ -3353,6 +3497,11 @@ webui.CommitView = function(historyView) {
     self.element = $('<div id="commit-view">')[0];
     var commitViewHeader = $('<div id="commit-view-header">')[0];
     self.element.appendChild(commitViewHeader);
+    var collapseButton = $('<button type="button" class="commit-view-collapse" title="Back to the commit list">&#8601; Back</button>');
+    collapseButton.click(function() {
+        historyView.collapseCommit();
+    });
+    commitViewHeader.appendChild(collapseButton[0]);
     var buttonBox = new webui.TabBox([["Commit", self.showDiff], ["Tree", self.showTree]]);
     commitViewHeader.appendChild(buttonBox.element);
     var commitViewContent = $('<div id="commit-view-content">')[0];
@@ -3474,6 +3623,19 @@ webui.HistoryView = function(mainView) {
         }
     };
 
+    // The commit detail pane is no longer docked beside the list; it
+    // takes over the view when a commit is explicitly expanded, and
+    // hands back to the list on collapse.
+    self.expandCommit = function(entry) {
+        self.commitView.update(entry);
+        mainView.switchTo(self.commitView.element);
+    };
+
+    self.collapseCommit = function() {
+        mainView.switchTo(self.element);
+        self.logView.redrawGraph();
+    };
+
     self.element = $('<div id="history-view"><div class="history-view-sidebar"><div class="history-view-toolbar"><div class="history-view-title"></div><div class="history-view-subtitle"></div><button type="button" class="btn btn-default btn-xs history-view-reset">All refs</button></div><div class="history-view-refs"></div></div><div class="history-view-main"></div></div>')[0];
     $(".history-view-reset", self.element).click(self.resetFilter);
     var historyMain = $(".history-view-main", self.element)[0];
@@ -3482,7 +3644,6 @@ webui.HistoryView = function(mainView) {
     self.logView = new webui.LogView(self);
     historyMain.appendChild(self.logView.element);
     self.commitView = new webui.CommitView(self);
-    self.element.appendChild(self.commitView.element);
     self.mainView = mainView;
     self.refreshToolbar();
 };

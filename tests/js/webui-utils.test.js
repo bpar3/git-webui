@@ -266,6 +266,45 @@ describe("webui.getCurrentBranch / findBranchByRef", () => {
     });
 });
 
+describe("webui.parseNameStatus", () => {
+    let webui;
+
+    beforeEach(() => {
+        webui = loadWebui();
+    });
+
+    test("returns an empty list for empty or missing output", () => {
+        expect(webui.parseNameStatus("")).toEqual([]);
+        expect(webui.parseNameStatus(undefined)).toEqual([]);
+    });
+
+    test("parses status letters and paths", () => {
+        expect(webui.parseNameStatus("M\tsrc/a.js\nA\tsrc/b.js\nD\tsrc/c.js")).toEqual([
+            { status: "M", path: "src/a.js" },
+            { status: "A", path: "src/b.js" },
+            { status: "D", path: "src/c.js" },
+        ]);
+    });
+
+    test("uses the destination path for renames and drops the score", () => {
+        expect(webui.parseNameStatus("R100\told/name.js\tnew/name.js")).toEqual([
+            { status: "R", path: "new/name.js" },
+        ]);
+    });
+
+    test("ignores malformed lines without a path", () => {
+        expect(webui.parseNameStatus("M\nM\tkept.js\n\t\n")).toEqual([
+            { status: "M", path: "kept.js" },
+        ]);
+    });
+
+    test("handles paths containing spaces", () => {
+        expect(webui.parseNameStatus("A\tsrc/some file.txt")).toEqual([
+            { status: "A", path: "src/some file.txt" },
+        ]);
+    });
+});
+
 describe("webui.formatRelativeTime", () => {
     let webui;
     const now = new Date("2026-08-25T12:00:00Z");
