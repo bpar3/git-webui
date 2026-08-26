@@ -2391,7 +2391,6 @@ webui.LogView = function(historyView) {
                 ++count;
             }
             svg.setAttribute("height", $(content).outerHeight());
-            svg.setAttribute("width", $(content).outerWidth());
             if (self.nextSkip != undefined) {
                 var moreTag = $('<a class="log-entry log-entry-more list-group-item">');
                 $('<a class="list-group-item-text">Show previous commits</a>').appendTo(moreTag[0]);
@@ -2459,6 +2458,19 @@ webui.LogView = function(historyView) {
         return self.element.scrollTop;
     }
 
+    // Slides the SVG over the reserved gutter. The gutter's position is
+    // whatever the row's flex layout settles on, so it's read back from
+    // a real row rather than assumed.
+    self.alignGraphGutter = function(graphWidth) {
+        var gutter = content.querySelector(".log-entry-graph");
+        if (!gutter) {
+            return;
+        }
+        var left = gutter.getBoundingClientRect().left - content.getBoundingClientRect().left;
+        svg.style.left = left + "px";
+        svg.setAttribute("width", graphWidth);
+    }
+
     // Expanding or collapsing a card moves every row below it, so the
     // whole graph has to be redrawn rather than appended to.
     self.redrawGraph = function() {
@@ -2467,7 +2479,6 @@ webui.LogView = function(historyView) {
         streamColor = 0;
         self.updateGraph(0);
         svg.setAttribute("height", $(content).outerHeight());
-        svg.setAttribute("width", $(content).outerWidth());
         historyView.positionRefChips();
     }
 
@@ -2597,14 +2608,21 @@ webui.LogView = function(historyView) {
             // not yet laid out); measured rows overwrite this above.
             currentY += self.lineHeight;
         }
+        // The graph sits in a gutter to the right of the commit subject,
+        // the way GitFiend lays it out, so every row reserves the same
+        // width and the SVG is parked over that column. A per-row width
+        // would make the lanes zig-zag as the branch count changed.
+        var graphWidth = (Math.max(maxLeft, 1) + 1) * xOffset;
         for (var i = startAt; i < content.children.length; ++i) {
             var element = content.children[i];
             if (element.model) {
-                var minLeft = Math.min(maxLeft, 3);
-                var left = element ? Math.max(minLeft, element.webuiLeft) : minLeft;
-                element.style.paddingLeft = ((left + 1) * xOffset) + "px";
+                var gutter = element.querySelector(".log-entry-graph");
+                if (gutter) {
+                    gutter.style.width = graphWidth + "px";
+                }
             }
         }
+        self.alignGraphGutter(graphWidth);
         for (var i = 0; i < streams.length; ++i) {
             var stream = streams[i];
             stream.path.setAttribute("d", stream.path.cmds + currentY);
@@ -2644,6 +2662,7 @@ webui.LogView = function(historyView) {
                                     '<span class="log-entry-avatar" style="background:' + webui.colorForAuthor(self.author.name) + '" title="' + webui.escapeHtml(self.author.name) + ' &lt;' + webui.escapeHtml(self.author.email) + '&gt;">' + webui.escapeHtml(webui.getInitials(self.author.name)) + '</span>' +
                                     '<p class="list-group-item-text"></p>' +
                                     '<button type="button" class="log-entry-menu-btn" title="Show commit menu">&#8942;</button>' +
+                                    '<span class="log-entry-graph"></span>' +
                                     '<span class="log-entry-date" title="' + webui.escapeHtml(self.author.date.toLocaleString()) + '">' + webui.escapeHtml(self.relativeDate || "") + '</span>' +
                                     '<span class="badge log-entry-hash">' + self.abbrevCommitHash() + '</span>' +
                                 '</header>' +

@@ -365,10 +365,16 @@ body {
     }
 }
 
+// Centred on the window rather than parked after the repo/branch
+// labels, so the section tabs don't drift left as those labels shrink.
+// Taken out of the flex flow to centre against the toolbar itself
+// instead of whatever space the side groups happen to leave.
 .toolbar-tabs {
     .display-flex();
     gap: 2px;
-    margin-left: 8px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
 }
 
 .toolbar-tab {
@@ -1246,7 +1252,9 @@ body {
     svg {
         position: absolute;
         top: 0;
+        // left is set from JS, to sit over the gutter the rows reserve.
         left: 0;
+        pointer-events: none;
 
         path {
             stroke-width: 2;
@@ -1345,9 +1353,21 @@ body {
                 }
             }
 
+            // Reserves the column the graph SVG is drawn over. Width is
+            // set from the branch count once the graph is laid out.
+            .log-entry-graph {
+                flex: 0 0 auto;
+                align-self: stretch;
+                margin-left: auto;
+            }
+
+            // Fixed width so the graph gutter beside it keeps the same
+            // left edge on every row - a date that grows from "now" to
+            // "2 days ago" would otherwise shift the lanes.
             .log-entry-date {
                 flex: 0 0 auto;
-                margin-left: auto;
+                width: 7.5em;
+                text-align: right;
                 color: var(--gf-text-faint);
                 font-size: 11px;
             }
@@ -2576,7 +2596,11 @@ body.dark-mode {
         row-gap: 4px;
     }
 
+    // Back into the flow: at this width the tabs get their own row, so
+    // the absolute centring used on wider screens would overlap.
     .toolbar-tabs {
+        position: static;
+        transform: none;
         order: 10;
         flex: 1 1 100%;
         margin-left: 0;
