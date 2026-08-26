@@ -325,6 +325,17 @@ body {
         border-color: var(--gf-toolbar-border);
     }
 
+    // The Branch label acts as the Branches section's tab, so it gets
+    // the same selected treatment the real tabs use.
+    &.active {
+        background: var(--gf-accent-bg);
+        border-color: transparent;
+
+        .toolbar-label-value {
+            color: var(--gf-accent);
+        }
+    }
+
     .toolbar-label-value {
         font-size: 13px;
         font-weight: bold;

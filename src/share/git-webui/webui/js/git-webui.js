@@ -855,8 +855,11 @@ webui.Toolbar = function(mainView) {
 
     self.activateSection = function(sectionName) {
         self.activeSectionName = sectionName;
-        $(".toolbar-tab", self.element).removeClass("active");
-        $(".toolbar-tab[data-section='" + sectionName + "']", self.element).addClass("active");
+        // The Branch label doubles as the Branches section's tab (there
+        // is no separate Branches button), so it takes the active state
+        // alongside the real tabs.
+        $(".toolbar-tab, .toolbar-label[data-section]", self.element).removeClass("active");
+        $("[data-section='" + sectionName + "']", self.element).addClass("active");
     }
 
     self.showWorkspace = function() {
@@ -1246,7 +1249,7 @@ webui.Toolbar = function(mainView) {
                                 '</div>' +
                                 '<div class="toolbar-menu" data-menu="repo"></div>' +
 
-                                '<div class="toolbar-label" id="toolbar-branch-label">' +
+                                '<div class="toolbar-label" id="toolbar-branch-label" data-section="branches" title="Show all branches">' +
                                     '<div class="toolbar-label-value toolbar-branch-value"></div>' +
                                     '<div class="toolbar-label-caption">Branch</div>' +
                                 '</div>' +
@@ -1260,10 +1263,6 @@ webui.Toolbar = function(mainView) {
                                     '<button type="button" class="toolbar-tab" data-section="history">' +
                                         '<span class="toolbar-tab-icon">&#9776;</span>' +
                                         '<span class="toolbar-tab-text">Commits</span>' +
-                                    '</button>' +
-                                    '<button type="button" class="toolbar-tab" data-section="branches">' +
-                                        '<span class="toolbar-tab-icon">&#8942;</span>' +
-                                        '<span class="toolbar-tab-text">Branches</span>' +
                                     '</button>' +
                                     '<button type="button" class="toolbar-tab" id="toolbar-search-button">' +
                                         '<span class="toolbar-tab-icon">&#128269;</span>' +
@@ -1336,7 +1335,7 @@ webui.Toolbar = function(mainView) {
         $(".toolbar-tab[data-section='workspace']", self.element).click(self.showWorkspace);
     }
     $(".toolbar-tab[data-section='history']", self.element).click(self.showHistory);
-    $(".toolbar-tab[data-section='branches']", self.element).click(self.showBranches);
+    $("#toolbar-branch-label", self.element).click(self.showBranches);
     $("#toolbar-search-button", self.element).click(function() {
         mainView.searchOverlay.show();
     });
@@ -4055,6 +4054,10 @@ webui.BranchesView = function(mainView) {
     }
 
     self.onRowClick = function(event) {
+        // RefActionMenu closes itself on any document click, so this
+        // click must not bubble - otherwise it would close the menu
+        // this very handler is opening.
+        event.stopPropagation();
         var row = event.currentTarget;
         var branch = self.branches[parseInt(row.getAttribute("data-index"), 10)];
         var refInfo = self.buildRefInfo(branch);
