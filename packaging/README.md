@@ -100,8 +100,20 @@ cargo tauri build
 ```
 
 Output lands under `packaging/tauri/src-tauri/target/release/bundle/`
-(a `.deb`/`.AppImage` on Linux, `.dmg`/`.app` on macOS, `.msi`/`.exe`
+(a `.deb`/`.rpm`/`.AppImage` on Linux, `.dmg`/`.app` on macOS, `.msi`/`.exe`
 on Windows, per `cargo tauri build`'s usual layout).
+
+On Linux, the `.deb`/`.rpm` bundlers work with just the dev packages
+listed above, but AppImage bundling additionally needs a *working*
+FUSE (`linuxdeploy` and its plugins are themselves distributed as
+AppImages, which need FUSE to mount-and-run) - not just the
+`fuse`/`libfuse2` package installed, but `/dev/fuse` actually usable,
+which containers/sandboxes often don't have. `build.sh` sets
+`APPIMAGE_EXTRACT_AND_RUN=1` around the build to route around that
+(extract-and-run instead of mounting), and treats an AppImage-only
+bundling failure as non-fatal as long as at least one bundle format
+succeeded - confirmed against a real run where `.deb` and `.rpm` built
+fine and only `.AppImage` failed on `failed to run linuxdeploy`.
 
 ### Dev loop
 

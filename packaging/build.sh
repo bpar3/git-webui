@@ -100,12 +100,15 @@ EOF
 fi
 
 if [ "$(uname -s)" = "Linux" ]; then
-    echo "Checking Linux system libraries Tauri needs to build (webkit2gtk, dbus, ...)..."
+    echo "Checking Linux system libraries Tauri needs to build (webkit2gtk, dbus, fuse, ...)..."
+    # fuse/libfuse2 is for running the AppImage bundling tools themselves
+    # (linuxdeploy and friends are distributed *as* AppImages, which need
+    # FUSE to mount-and-run) - not for the app's own runtime.
     if command -v dnf >/dev/null 2>&1; then
-        if ! rpm -q webkit2gtk4.1-devel dbus-devel pkgconf-pkg-config gtk3-devel librsvg2-devel openssl-devel >/dev/null 2>&1; then
+        if ! rpm -q webkit2gtk4.1-devel dbus-devel pkgconf-pkg-config gtk3-devel librsvg2-devel openssl-devel fuse fuse-libs >/dev/null 2>&1; then
             echo "Installing via dnf (needs sudo)..."
             sudo dnf install -y webkit2gtk4.1-devel openssl-devel curl wget file \
-                librsvg2-devel gtk3-devel dbus-devel pkgconf-pkg-config
+                librsvg2-devel gtk3-devel dbus-devel pkgconf-pkg-config fuse fuse-libs
         fi
     elif command -v apt-get >/dev/null 2>&1; then
         if ! dpkg -s libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config libgtk-3-dev librsvg2-dev libssl-dev >/dev/null 2>&1; then
@@ -114,13 +117,16 @@ if [ "$(uname -s)" = "Linux" ]; then
             sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
                 libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
                 libgtk-3-dev libdbus-1-dev pkg-config
+            # Package name varies by release (time_t transition on newer
+            # Ubuntu/Debian); try both, don't fail the build if neither hits.
+            sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64 || true
         fi
     elif command -v pacman >/dev/null 2>&1; then
         sudo pacman -S --needed --noconfirm webkit2gtk-4.1 base-devel curl wget file \
-            openssl gtk3 librsvg dbus pkgconf
+            openssl gtk3 librsvg dbus pkgconf fuse2
     else
         echo "Unrecognized Linux package manager - skipping automatic system-dependency install." >&2
-        echo "Tauri needs webkit2gtk, gtk3, librsvg, dbus, and pkg-config development packages; install them manually if the build below fails." >&2
+        echo "Tauri needs webkit2gtk, gtk3, librsvg, dbus, pkg-config, and fuse/libfuse2 (for AppImage bundling); install them manually if the build below fails." >&2
     fi
 fi
 
@@ -142,8 +148,27 @@ fi
 echo "Copying sidecar binary to $SIDECAR_DEST"
 cp "$SIDECAR_BIN" "$SIDECAR_DEST"
 
-(cd packaging/tauri/src-tauri && cargo tauri build)
+# APPIMAGE_EXTRACT_AND_RUN tells the AppImage-bundling tools (linuxdeploy
+# and friends, which are themselves distributed as AppImages) to extract
+# and run instead of mounting via FUSE - works even when /dev/fuse isn't
+# usable (common in containers/sandboxes) regardless of whether the
+# fuse/libfuse2 package above actually got installed.
+set +e
+(cd packaging/tauri/src-tauri && APPIMAGE_EXTRACT_AND_RUN=1 cargo tauri build)
+BUILD_STATUS=$?
+set -e
+
+BUNDLE_DIR="packaging/tauri/src-tauri/target/release/bundle"
+if [ "$BUILD_STATUS" -ne 0 ]; then
+    if find "$BUNDLE_DIR" -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.app' -o -name '*.msi' -o -name '*.exe' \) 2>/dev/null | grep -q .; then
+        echo
+        echo "cargo tauri build exited non-zero, but at least one installable bundle was produced under $BUNDLE_DIR - see the build output above for which format(s) failed (commonly just AppImage, if FUSE still isn't usable here). Not treating this as a hard failure." >&2
+    else
+        echo "cargo tauri build failed and no bundles were produced under $BUNDLE_DIR." >&2
+        exit "$BUILD_STATUS"
+    fi
+fi
 
 echo
-echo "Desktop app built under packaging/tauri/src-tauri/target/release/bundle/"
+echo "Desktop app built under $BUNDLE_DIR/"
 echo "Done."
