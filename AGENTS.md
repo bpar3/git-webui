@@ -13,6 +13,7 @@
 - **Development Server:** Run `grunt serve` to build the app and start the git-webui server from the `dist/` directory.
 - **Watch Mode:** Run `grunt watch` to automatically rebuild files as you change them in `src/`.
 - **Release:** When a release is ready, run `grunt release` to copy the built app from `dist/` to `release/`.
+- **Standalone/headless packaging:** `packaging/build.sh` installs dependencies (npm/bower, PyInstaller, and - on Linux - the system libraries Tauri needs) and builds a headless single-binary server plus, if Rust is available, a standalone desktop app. See `packaging/README.md`.
 
 ## Testing
 - **Frontend (Jest):** Run `npm test` to run `tests/js/**/*.test.js`. These unit-test the pure/parsing helper functions in `src/share/git-webui/webui/js/git-webui.js` by loading it in an isolated `vm` context (see `tests/js/helpers/load-webui.js`) rather than a full browser DOM.

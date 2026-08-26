@@ -8,7 +8,8 @@
     "serve": "node tools/run-grunt.js serve",
     "release": "node tools/run-grunt.js release",
     "test": "jest",
-    "test:py": "pytest tests/python"
+    "test:py": "pytest tests/python",
+    "package": "bash packaging/build.sh"
   },
   "repository": {
     "type": "git",

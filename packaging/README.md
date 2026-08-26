@@ -4,12 +4,35 @@ Two independent distribution modes, both optional - the normal
 `git webui` alias (Python script + `webbrowser.open()`) keeps working
 unchanged regardless of whether either of these is built.
 
-**Neither of these has been built or run in the environment this was
-authored in** - there's no Rust/Cargo/PyInstaller available there. The
-configs and code are complete and internally consistent, but treat the
-first real build as the first real test. Rebuild `dist/` (`grunt`)
-before packaging a release so the frontend assets that get bundled
-match what you actually tested.
+## Quick start
+
+```sh
+packaging/build.sh              # everything: dist/, headless binary, desktop app
+packaging/build.sh --no-tauri   # skip the desktop app (no Rust needed)
+packaging/build.sh --frontend-only  # just dist/, nothing frozen/bundled
+```
+
+Installs what it safely can on its own (npm/bower deps, PyInstaller via
+`pip install --user`, and - on Linux, via `sudo apt`/`dnf`/`pacman` -
+the WebKitGTK/dbus/gtk3 development packages Tauri needs to compile).
+It will not install a Rust toolchain for you; if `cargo` isn't found
+the desktop-app step is skipped with instructions instead of failing
+the whole run. See `packaging/build.sh -h` for all flags.
+
+Status as actually run in this environment: `packaging/build.sh
+--no-tauri` was run end-to-end - it installed dependencies, built
+`dist/`, froze the headless binary, and the binary was then started
+and confirmed to serve the real app (index/CSS/JS/`/api/context` all
+returned correctly, including reading back repo state persisted from
+earlier runs). The full desktop-app step was exercised up through
+`cargo tauri build` starting to compile; it only stopped short because
+this sandbox's Linux system libraries weren't present and `sudo`
+requires an interactive password that isn't available here (the
+system-dependency install this script now does automatically was
+added in response to hitting exactly that). `Cargo.lock`, generated
+during that run, is committed. Rerun on a machine with a normal sudo
+session to get a real bundle end to end - the remaining risk is
+narrow (the Rust/Tauri side specifically), not the whole pipeline.
 
 ## 1. Headless single-binary (no window, your own browser is the UI)
 
@@ -44,6 +67,10 @@ The window is real OS-native chrome (WebView2 on Windows, WKWebView on
 macOS, WebKitGTK on Linux) - not Chromium, so the bundle stays small
 (~10-40MB with the sidecar included, vs. 100MB+ for an Electron
 equivalent).
+
+`packaging/build.sh` (see Quick start above) does everything below
+automatically once Rust itself is installed. This section is the
+manual/reference version, e.g. for adapting into your own CI.
 
 ### One-time setup
 
