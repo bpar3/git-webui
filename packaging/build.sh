@@ -9,6 +9,7 @@
 #                                          # native format for this machine
 #   packaging/build.sh --format=deb       # ... in a specific format instead
 #   packaging/build.sh --format=all       # ... in every format Tauri supports here
+#   packaging/build.sh --install          # ... and install the built desktop app
 #   packaging/build.sh --no-tauri         # skip the desktop app entirely
 #   packaging/build.sh --frontend-only    # just step 1 (grunt dist/)
 #   packaging/build.sh -h                 # help
@@ -20,6 +21,14 @@
 # (any other Linux), dmg (macOS), or msi (Windows, e.g. under Git
 # Bash) - so a plain run produces exactly the one installer you'd
 # actually use here, not every format Tauri knows how to build.
+#
+# --install installs the resulting bundle onto this machine right
+# after building it (rpm via `sudo dnf install`, deb via `sudo apt-get
+# install`, both of which replace any existing install of the same
+# package - needs sudo). Only valid with a single concrete --format
+# (not the default "all"); for appimage/dmg/msi/other formats it just
+# prints where the built artifact is, since those aren't installed
+# through a system package manager.
 #
 # What this installs automatically (all project-local or user-scoped,
 # nothing system-wide): npm devDependencies, bower frontend deps, and
@@ -36,6 +45,7 @@ cd "$REPO_ROOT"
 BUILD_TAURI=1
 FRONTEND_ONLY=0
 FORMAT=""
+DO_INSTALL=0
 
 for arg in "$@"; do
     case "$arg" in
@@ -53,8 +63,11 @@ for arg in "$@"; do
             echo "--format needs a value, e.g. --format=deb or --format=all (see --help)" >&2
             exit 1
             ;;
+        --install)
+            DO_INSTALL=1
+            ;;
         -h|--help)
-            sed -n '2,24p' "${BASH_SOURCE[0]}"
+            sed -n '2,31p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         *)
@@ -63,6 +76,17 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+if [ "$DO_INSTALL" = "1" ]; then
+    if [ "$FRONTEND_ONLY" = "1" ] || [ "$BUILD_TAURI" = "0" ]; then
+        echo "--install needs the desktop app step - drop --frontend-only/--no-tauri, or drop --install." >&2
+        exit 1
+    fi
+    if [ "$FORMAT" = "all" ]; then
+        echo "--install needs a single concrete --format (e.g. --format=rpm) - it can't tell which built bundle to install from --format=all." >&2
+        exit 1
+    fi
+fi
 
 echo "=== 1. Frontend dependencies (npm, bower) ==="
 npm install --no-audit --no-fund
@@ -240,4 +264,47 @@ fi
 
 echo
 echo "Desktop app built under $BUNDLE_DIR/"
+
+if [ "$DO_INSTALL" = "1" ]; then
+    echo
+    echo "=== 5. Installing the desktop app (--install) ==="
+    case "$FORMAT" in
+        rpm)
+            RPM_FILE="$(find "$BUNDLE_DIR/rpm" -name '*.rpm' 2>/dev/null | head -n1)"
+            if [ -z "$RPM_FILE" ]; then
+                echo "No .rpm found under $BUNDLE_DIR/rpm - nothing to install." >&2
+                exit 1
+            fi
+            echo "Installing $RPM_FILE (needs sudo)..."
+            sudo dnf install -y "$RPM_FILE"
+            ;;
+        deb)
+            DEB_FILE="$(find "$BUNDLE_DIR/deb" -name '*.deb' 2>/dev/null | head -n1)"
+            if [ -z "$DEB_FILE" ]; then
+                echo "No .deb found under $BUNDLE_DIR/deb - nothing to install." >&2
+                exit 1
+            fi
+            echo "Installing $DEB_FILE (needs sudo)..."
+            sudo apt-get install -y "$DEB_FILE"
+            ;;
+        appimage)
+            APPIMAGE_FILE="$(find "$BUNDLE_DIR/appimage" -name '*.AppImage' 2>/dev/null | head -n1)"
+            if [ -z "$APPIMAGE_FILE" ]; then
+                echo "No .AppImage found under $BUNDLE_DIR/appimage - nothing to mark executable." >&2
+                exit 1
+            fi
+            chmod +x "$APPIMAGE_FILE"
+            echo "AppImages aren't installed through a package manager - made executable:"
+            echo "    $APPIMAGE_FILE"
+            echo "Run it directly, or move it wherever you launch it from."
+            ;;
+        *)
+            echo "--install doesn't know how to install format '$FORMAT' automatically." >&2
+            echo "The built artifact is under $BUNDLE_DIR/ - install/open it manually." >&2
+            exit 1
+            ;;
+    esac
+    echo "Installed."
+fi
+
 echo "Done."

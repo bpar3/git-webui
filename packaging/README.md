@@ -11,9 +11,17 @@ packaging/build.sh              # everything: dist/, headless binary, desktop ap
                                  # (desktop app in the native format for this machine)
 packaging/build.sh --format=all # ... every bundle format Tauri supports here
 packaging/build.sh --format=deb # ... one specific format instead
+packaging/build.sh --install    # ... and install the built desktop app (needs sudo)
 packaging/build.sh --no-tauri   # skip the desktop app (no Rust needed)
 packaging/build.sh --frontend-only  # just dist/, nothing frozen/bundled
 ```
+
+`--install` installs the bundle it just built onto this machine
+(`sudo dnf install`/`sudo apt-get install` for rpm/deb - both replace
+an existing install of the same package; `.AppImage` is just marked
+executable, since it isn't installed through a package manager). It
+requires a single concrete `--format` - it's ambiguous which bundle to
+install from `--format=all`.
 
 Installs what it safely can on its own (npm/bower deps, PyInstaller via
 `pip install --user`, and - on Linux, via `sudo apt`/`dnf`/`pacman` -
