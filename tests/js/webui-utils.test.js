@@ -265,3 +265,62 @@ describe("webui.getCurrentBranch / findBranchByRef", () => {
         expect(webui.getCurrentBranch().name).toBe("master");
     });
 });
+
+describe("webui.formatRelativeTime", () => {
+    let webui;
+    const now = new Date("2026-08-25T12:00:00Z");
+    const minutesAgo = (n) => new Date(now.getTime() - n * 60 * 1000);
+    const hoursAgo = (n) => minutesAgo(n * 60);
+    const daysAgo = (n) => hoursAgo(n * 24);
+
+    beforeEach(() => {
+        webui = loadWebui();
+    });
+
+    test("just now for sub-minute deltas", () => {
+        expect(webui.formatRelativeTime(minutesAgo(0.5), now)).toBe("just now");
+    });
+
+    test("singular vs plural minutes", () => {
+        expect(webui.formatRelativeTime(minutesAgo(1), now)).toBe("1 minute ago");
+        expect(webui.formatRelativeTime(minutesAgo(8), now)).toBe("8 minutes ago");
+    });
+
+    test("singular vs plural hours", () => {
+        expect(webui.formatRelativeTime(hoursAgo(1), now)).toBe("1 hour ago");
+        expect(webui.formatRelativeTime(hoursAgo(17), now)).toBe("17 hours ago");
+    });
+
+    test("exactly one day is 'yesterday'", () => {
+        expect(webui.formatRelativeTime(daysAgo(1), now)).toBe("yesterday");
+    });
+
+    test("2-6 days as 'N days ago'", () => {
+        expect(webui.formatRelativeTime(daysAgo(2), now)).toBe("2 days ago");
+        expect(webui.formatRelativeTime(daysAgo(6), now)).toBe("6 days ago");
+    });
+
+    test("exactly one week is 'last week'", () => {
+        expect(webui.formatRelativeTime(daysAgo(7), now)).toBe("last week");
+    });
+
+    test("multiple weeks as 'N weeks ago'", () => {
+        expect(webui.formatRelativeTime(daysAgo(21), now)).toBe("3 weeks ago");
+    });
+
+    test("around a month is 'last month'", () => {
+        expect(webui.formatRelativeTime(daysAgo(30), now)).toBe("last month");
+    });
+
+    test("multiple months as 'N months ago'", () => {
+        expect(webui.formatRelativeTime(daysAgo(90), now)).toBe("3 months ago");
+    });
+
+    test("around a year is 'last year'", () => {
+        expect(webui.formatRelativeTime(daysAgo(365), now)).toBe("last year");
+    });
+
+    test("multiple years as 'N years ago'", () => {
+        expect(webui.formatRelativeTime(daysAgo(365 * 3), now)).toBe("3 years ago");
+    });
+});

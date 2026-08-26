@@ -316,6 +316,48 @@ webui.colorForAuthor = function(name) {
     return webui.COLORS[webui.hashString(name) % webui.COLORS.length];
 }
 
+webui.formatRelativeTime = function(date, now) {
+    var reference = now || new Date();
+    var seconds = Math.round((reference.getTime() - date.getTime()) / 1000);
+    if (seconds < 60) {
+        return "just now";
+    }
+    var minutes = Math.round(seconds / 60);
+    if (minutes < 60) {
+        return minutes + " minute" + (minutes == 1 ? "" : "s") + " ago";
+    }
+    var hours = Math.round(minutes / 60);
+    if (hours < 24) {
+        return hours + " hour" + (hours == 1 ? "" : "s") + " ago";
+    }
+    var days = Math.round(hours / 24);
+    if (days == 1) {
+        return "yesterday";
+    }
+    if (days < 7) {
+        return days + " days ago";
+    }
+    var weeks = Math.round(days / 7);
+    if (weeks == 1) {
+        return "last week";
+    }
+    if (weeks < 4) {
+        return weeks + " weeks ago";
+    }
+    var months = Math.round(days / 30);
+    if (months <= 1) {
+        return "last month";
+    }
+    if (months < 12) {
+        return months + " months ago";
+    }
+    var years = Math.round(days / 365);
+    if (years == 1) {
+        return "last year";
+    }
+    return years + " years ago";
+}
+
 webui.historyAuthorFilter = null;
 
 webui.refChipFilterName = null;
@@ -684,6 +726,21 @@ webui.Toolbar = function(mainView) {
         $(".toolbar-branch-value", self.element).text(self.branchSummary());
         $(".app-titlebar-path", self.element).text("git-webui" + (webui.repoPath ? " - " + webui.repoPath : ""));
         $("title")[0].textContent = webui.repoPath ? "Git - " + webui.repo : "Git WebUI";
+        var current = self.currentBranch();
+        self.setBadge("#toolbar-push-badge", current && current.ahead);
+    }
+
+    self.setBadge = function(selector, count) {
+        var badge = $(selector, self.element);
+        if (count > 0) {
+            badge.text(count > 99 ? "99+" : count).show();
+        } else {
+            badge.hide();
+        }
+    }
+
+    self.setChangesBadge = function(count) {
+        self.setBadge("#toolbar-changes-badge", count);
     }
 
     self.openPicker = function() {
@@ -1198,6 +1255,7 @@ webui.Toolbar = function(mainView) {
                                     '<button type="button" class="toolbar-tab" data-section="workspace">' +
                                         '<span class="toolbar-tab-icon">&#9776;</span>' +
                                         '<span class="toolbar-tab-text">Changes</span>' +
+                                        '<span class="toolbar-tab-badge" id="toolbar-changes-badge"></span>' +
                                     '</button>' +
                                     '<button type="button" class="toolbar-tab" data-section="history">' +
                                         '<span class="toolbar-tab-icon">&#9776;</span>' +
@@ -1222,6 +1280,7 @@ webui.Toolbar = function(mainView) {
                                     '<div class="toolbar-menu" data-menu="pull"></div>' +
                                     '<button type="button" class="toolbar-remote-btn" id="toolbar-push" title="Left-click to push, right-click for options">' +
                                         '<span class="toolbar-remote-btn-icon">&#8593;</span><span>Push</span>' +
+                                        '<span class="toolbar-remote-btn-badge" id="toolbar-push-badge"></span>' +
                                     '</button>' +
                                     '<div class="toolbar-menu" data-menu="push"></div>' +
                                     '<button type="button" class="toolbar-remote-btn" id="toolbar-fetch" title="Left-click to fetch, right-click for options">' +
@@ -2162,6 +2221,7 @@ webui.LogView = function(historyView) {
         currentSelection = null;
         self.ref = ref || null;
         self.nextSkip = 0;
+        self.lastShownDate = null;
         self.populate();
     };
 
@@ -2363,7 +2423,7 @@ webui.LogView = function(historyView) {
                                     '<div class="log-entry-refs"></div>' +
                                     '<p class="list-group-item-text"></p>' +
                                     '<button type="button" class="log-entry-menu-btn" title="Show commit menu">&#8942;</button>' +
-                                    '<span class="log-entry-date">' + self.author.date.toLocaleString() + '</span>' +
+                                    '<span class="log-entry-date" title="' + webui.escapeHtml(self.author.date.toLocaleString()) + '">' + webui.escapeHtml(self.relativeDate || "") + '</span>' +
                                     '<span class="badge log-entry-hash">' + self.abbrevCommitHash() + '</span>' +
                                 '</header>' +
                              '</a>')[0];
@@ -2444,6 +2504,15 @@ webui.LogView = function(historyView) {
 
         self.message = self.message.trim();
         self.decoratedRefs = webui.parseDecoratedRefs(self.refs || [], self.commit);
+
+        // Only label the first commit in a run that shares the same
+        // relative-time bucket ("2 days ago", ...) - repeating it on
+        // every row is noisy, matching GitFiend's commit list.
+        var formatted = webui.formatRelativeTime(self.author.date);
+        if (formatted != logView.lastShownDate) {
+            self.relativeDate = formatted;
+            logView.lastShownDate = formatted;
+        }
 
         self.createElement();
     };
@@ -3437,6 +3506,9 @@ webui.UncommittedSummaryView = function(mainView) {
     }
 
     self.render = function() {
+        if (mainView.repoChrome) {
+            mainView.repoChrome.setChangesBadge(self.files.length);
+        }
         if (self.files.length == 0) {
             $(self.element).hide();
             return;
