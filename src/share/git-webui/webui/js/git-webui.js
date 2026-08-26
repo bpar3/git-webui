@@ -1192,12 +1192,17 @@ webui.Toolbar = function(mainView) {
         });
     }
 
+    // These deliberately say nothing on success: the spinner covers the
+    // wait and the refreshed branch state shows the result, so a modal
+    // would only be something to dismiss. Failures still raise one -
+    // webui.git surfaces a non-zero exit through showError - and git's
+    // warnings on a successful run still reach the message bar.
+
     self.onPull = function(event) {
         event.preventDefault();
         var strategy = webui.getPullStrategy();
         var args = strategy == "rebase" ? "pull --rebase" : "pull";
         self.runRemoteAction("toolbar-pull", args, function(data) {
-            webui.showResult("Pull completed", data);
             self.loadBranches();
             if (mainView.workspaceView) {
                 mainView.workspaceView.update("stage");
@@ -1208,7 +1213,6 @@ webui.Toolbar = function(mainView) {
     self.onPush = function(event) {
         event.preventDefault();
         self.runRemoteAction("toolbar-push", "push", function(data) {
-            webui.showResult("Push completed", data);
             self.loadBranches();
         });
     }
@@ -1218,7 +1222,6 @@ webui.Toolbar = function(mainView) {
             return;
         }
         self.runRemoteAction("toolbar-push", "push --force", function(data) {
-            webui.showResult("Force push completed", data);
             self.loadBranches();
         });
     }
@@ -1228,7 +1231,6 @@ webui.Toolbar = function(mainView) {
             event.preventDefault();
         }
         self.runRemoteAction("toolbar-fetch", "fetch", function(data) {
-            webui.showResult("Fetch completed", data);
             self.loadBranches();
         });
     }
