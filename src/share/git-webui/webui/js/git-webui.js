@@ -2587,7 +2587,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
     self.refresh = function(diff) {
         self.currentDiff = diff;
         self.diffHeader = "";
-        $("span", self.element).text('Context: ' + self.context);
+        $(".diff-tool-stepper-value", self.element).text(self.context);
         if (self.sideBySide) {
             var diffLines = diff.split("\n");
             self.updateSplitView(leftLines, diffLines, '-');
@@ -2903,23 +2903,22 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         var html = '<div class="diff-view-container panel panel-default">';
         if (! (parent instanceof webui.CommitExplorerView)) {
             html +=
-                '<div class="panel-heading btn-toolbar" role="toolbar">' +
-                    '<button type="button" class="btn btn-sm btn-default diff-ignore-whitespace" data-toggle="button">Ignore Whitespace</button>' +
-                    '<button type="button" class="btn btn-sm btn-default diff-context-all" data-toggle="button">Complete file</button>' +
-                    '<div class="btn-group btn-group-sm">' +
-                        '<span></span>&nbsp;' +
-                        '<button type="button" class="btn btn-default diff-context-remove">-</button>' +
-                        '<button type="button" class="btn btn-default diff-context-add">+</button>' +
+                '<div class="panel-heading diff-toolbar" role="toolbar">' +
+                    '<button type="button" class="diff-tool-btn diff-ignore-whitespace' + (self.ignoreWhitespace ? ' on' : '') + '" aria-pressed="' + !!self.ignoreWhitespace + '">Ignore whitespace</button>' +
+                    '<button type="button" class="diff-tool-btn diff-context-all' + (self.complete ? ' on' : '') + '" aria-pressed="' + !!self.complete + '">Complete file</button>' +
+                    '<div class="diff-tool-stepper" title="Lines of context around each change">' +
+                        '<button type="button" class="diff-tool-step diff-context-remove" aria-label="Less context">&minus;</button>' +
+                        '<span class="diff-tool-stepper-value"></span>' +
+                        '<button type="button" class="diff-tool-step diff-context-add" aria-label="More context">+</button>' +
                     '</div>' +
-                    '<div class="btn-group btn-group-sm diff-selection-buttons">' +
-                        '<button type="button" class="btn btn-default diff-stage" style="display:none">Stage</button>' +
-                        '<button type="button" class="btn btn-default diff-cancel" style="display:none">Cancel</button>' +
-                        '<button type="button" class="btn btn-default diff-unstage" style="display:none">Unstage</button>' +
+                    '<div class="diff-tool-group diff-selection-buttons">' +
+                        '<button type="button" class="diff-tool-btn diff-stage" style="display:none">Stage</button>' +
+                        '<button type="button" class="diff-tool-btn diff-cancel" style="display:none">Cancel</button>' +
+                        '<button type="button" class="diff-tool-btn diff-unstage" style="display:none">Unstage</button>' +
                     '</div>' +
-                    '<div class="btn-group btn-group-sm pull-right">' +
-                        '<button type="button" class="btn btn-default diff-toggle-view">Toggle Side-by-Side</button>' +
-                    '</div>' +
-                    (!self.sideBySide ? '<button type="button"  class="btn btn-sm btn-default diff-explore">Explore</button>' : '') +
+                    '<div class="diff-toolbar-spacer"></div>' +
+                    '<button type="button" class="diff-tool-btn diff-toggle-view' + (self.sideBySide ? ' on' : '') + '" aria-pressed="' + !!self.sideBySide + '">Side-by-side</button>' +
+                    (!self.sideBySide ? '<button type="button" class="diff-tool-btn diff-explore">Explore</button>' : '') +
                 '</div>';
         }
         html += '<div class="panel-body"></div></div>'
@@ -3374,17 +3373,17 @@ webui.HistoryView = function(mainView) {
     };
 
     self.refreshToolbar = function() {
-        var currentBranch = webui.getCurrentBranch();
-        var title = webui.historyRef ? "History: " + webui.historyRef : "History: All refs";
-        var subtitle = webui.historyRef ? "Focused graph view" : "Merged local branches, remotes, and tags";
+        // The chip list below labels itself, so the header only speaks
+        // up when a filter is narrowing what's shown - otherwise the
+        // subtitle is filler competing with the actual content.
+        var subtitle = "";
         if (webui.historyAuthorFilter) {
             subtitle = "Commits by " + webui.historyAuthorFilter;
+        } else if (webui.historyRef) {
+            subtitle = "Showing " + webui.historyRef + " only";
         }
-        if (currentBranch && currentBranch.local_name) {
-            subtitle += " • current: " + currentBranch.local_name;
-        }
-        $(".history-view-title", self.element).text(title);
-        $(".history-view-subtitle", self.element).text(subtitle);
+        $(".history-view-title", self.element).text("Branches");
+        $(".history-view-subtitle", self.element).text(subtitle).toggle(!!subtitle);
         $(".history-view-reset", self.element).prop("disabled", !webui.historyRef && !webui.historyAuthorFilter);
         self.renderRefList();
     }
