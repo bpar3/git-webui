@@ -316,6 +316,27 @@ webui.colorForAuthor = function(name) {
     return webui.COLORS[webui.hashString(name) % webui.COLORS.length];
 }
 
+// Turns git's own stash subject into the label GitFiend shows.
+// Auto-created stashes read "WIP on <branch>: <sha> <subject>", which is
+// mostly noise once the row is marked as a stash; an explicit
+// `git stash push -m` reads "On <branch>: <message>" and that message is
+// worth keeping. Anything unrecognised is passed through.
+webui.formatStashSubject = function(message) {
+    if (!message) {
+        return "Stash";
+    }
+    var wip = /^WIP on ([^:]+):/.exec(message);
+    if (wip) {
+        return "Stash on " + wip[1];
+    }
+    var named = /^On ([^:]+):\s*(.*)$/.exec(message);
+    if (named) {
+        return named[2] ? "Stash on " + named[1] + ": " + named[2]
+                        : "Stash on " + named[1];
+    }
+    return message;
+}
+
 // Expands branch entries and tags into individual refs, each keyed by
 // the commit it actually points at, then groups them per commit.
 //
@@ -837,6 +858,7 @@ webui.Toolbar = function(mainView) {
         webui.apiGet("/api/branches", function(data) {
             webui.branches = data.branches || [];
             webui.tags = data.tags || [];
+            webui.stashes = data.stashes || [];
             self.updateStatusMeta();
             if (mainView.historyView) {
                 mainView.historyView.refreshToolbar();
@@ -2357,6 +2379,25 @@ webui.LogView = function(historyView) {
         }
         var startAt = content.childElementCount;
         var refSpec = self.ref ? self.ref : "--all";
+        // --all skips refs/stash, so stash commits are listed explicitly.
+        // Only when showing everything: focusing one ref shouldn't drag
+        // in stashes taken from somewhere else.
+        self.stashCommits = {};
+        self.hiddenCommits = {};
+        if (!self.ref) {
+            (webui.stashes || []).forEach(function(stash) {
+                self.stashCommits[stash.commit] = stash;
+                refSpec += " " + stash.commit;
+                // Seeding the walk with a stash drags in the index and
+                // untracked commits it records. They aren't history, and
+                // they can't be excluded with --not without also
+                // excluding the real commit the stash was taken from,
+                // so they are dropped as the log is parsed.
+                (stash.internal_parents || []).forEach(function(sha) {
+                    self.hiddenCommits[sha] = true;
+                });
+            });
+        }
         var authorSpec = webui.historyAuthorFilter ? " --author=" + JSON.stringify(webui.historyAuthorFilter) : "";
         webui.git("log --date-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
             var start = 0;
@@ -2370,6 +2411,14 @@ webui.LogView = function(historyView) {
                     var len = undefined;
                 }
                 var entry = new Entry(self, data.substr(start, len));
+                if (self.hiddenCommits[entry.commit]) {
+                    // A stash's index/untracked commit - not history.
+                    if (len == undefined) {
+                        break;
+                    }
+                    start = end + 1;
+                    continue;
+                }
                 if (count < maxCount) {
                     content.appendChild(entry.element);
                     if (!self.lineHeight) {
@@ -2527,9 +2576,21 @@ webui.LogView = function(historyView) {
         var rowCenters = self.measureRowCenters(startAt);
         var currentY = (startAt + 0.5) * self.lineHeight;
         var maxLeft = 0;
+        var xOffset = 12;
         if (startAt == 0) {
             streamColor = 0;
         }
+
+        var newStreamPath = function() {
+            var svgPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            ++streamColor;
+            if (streamColor == webui.COLORS.length) {
+                streamColor = 0;
+            }
+            svgPath.setAttribute("style", "stroke:" + webui.COLORS[streamColor]);
+            svg.appendChild(svgPath);
+            return svgPath;
+        };
         for (var i = startAt; i < content.children.length; ++i) {
             var entry = content.children[i].model;
             if (!entry) {
@@ -2543,7 +2604,6 @@ webui.LogView = function(historyView) {
 
             // Find streams to join
             var childCount = 0;
-            var xOffset = 12;
             var removedStreams = 0;
             for (var j = 0; j < streams.length;) {
                 var stream = streams[j];
@@ -2575,46 +2635,71 @@ webui.LogView = function(historyView) {
                 }
             }
 
-            // Add new streams
-            for (var j = 0; j < entry.parents.length; ++j) {
-                var parent = entry.parents[j];
-                var x = (index + j + 1) * xOffset;
-                if (j != 0 || streams.length == 0) {
-                    var svgPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                    ++streamColor
-                    if (streamColor == webui.COLORS.length) {
-                        streamColor = 0;
-                    }
-                    svgPath.setAttribute("style", "stroke:" + webui.COLORS[streamColor]);
-                    var origX = (index + 1) * xOffset;
-                    svgPath.cmds = "M " + origX + " " + currentY + " L " + x + " " + (currentY + self.lineHeight / 2) + " L " + x + " ";
-                    svg.appendChild(svgPath);
-                    var obj = {
-                        sha1: parent,
-                        path: svgPath,
-                    };
-                    streams.splice(index + j, 0, obj);
+            // No open stream was waiting on this commit, so it is the tip
+            // of a branch nothing in the list descends from. It needs a
+            // lane of its own: falling through with index 0 used to drop
+            // it onto whichever unrelated branch happened to hold lane 0,
+            // drawing branches as if they converged on the newest commit.
+            if (childCount == 0) {
+                index = streams.length;
+                if (entry.parents.length > 0) {
+                    var tipX = (index + 1) * xOffset;
+                    var tipPath = newStreamPath();
+                    tipPath.cmds = "M " + tipX + " " + currentY + " L " + tipX + " ";
+                    streams.splice(index, 0, { sha1: entry.parents[0], path: tipPath });
                 }
             }
+
+            // Extra parents of a merge each open a lane beside this one.
+            // The first parent always continues the lane the commit is
+            // already on - reassigned above when a stream matched, or
+            // created just now for a tip.
+            for (var j = 1; j < entry.parents.length; ++j) {
+                var x = (index + j + 1) * xOffset;
+                var svgPath = newStreamPath();
+                var origX = (index + 1) * xOffset;
+                svgPath.cmds = "M " + origX + " " + currentY + " L " + x + " " + (currentY + self.lineHeight / 2) + " L " + x + " ";
+                streams.splice(index + j, 0, {
+                    sha1: entry.parents[j],
+                    path: svgPath,
+                });
+            }
+            var j = entry.parents.length;
             for (var j = index + j; j < streams.length; ++j) {
                 var stream = streams[j];
                 var x = (j + 1) * xOffset;
                 stream.path.cmds += (currentY - self.lineHeight / 2) + " L " + x + " " + currentY + " L " + x + " ";
             }
 
-            var svgCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-            svgCircle.setAttribute("cx", (index + 1) * xOffset);
-            svgCircle.setAttribute("cy", currentY);
-            svgCircle.setAttribute("r", 4);
             var nodeStream = streams[index];
             var nodeColor = nodeStream && nodeStream.path.style.stroke;
-            if (entry.parents.length > 1 && nodeColor) {
-                // Hollow ring for merge commits, matching GitFiend's graph style.
-                svgCircle.setAttribute("style", "fill:#fff;stroke:" + nodeColor + ";stroke-width:2");
-            } else if (nodeColor) {
-                svgCircle.setAttribute("style", "fill:" + nodeColor);
+            var nodeX = (index + 1) * xOffset;
+            var svgNode;
+            if (entry.stash) {
+                // Stashes are squares rather than dots - they sit in the
+                // graph but aren't part of the branch's history.
+                svgNode = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                svgNode.setAttribute("x", nodeX - 3.5);
+                svgNode.setAttribute("y", currentY - 3.5);
+                svgNode.setAttribute("width", 7);
+                svgNode.setAttribute("height", 7);
+                svgNode.setAttribute("rx", 1);
+                if (nodeColor) {
+                    svgNode.setAttribute("style", "fill:" + nodeColor);
+                }
+            } else {
+                svgNode = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                svgNode.setAttribute("cx", nodeX);
+                svgNode.setAttribute("cy", currentY);
+                svgNode.setAttribute("r", 4);
+                if (entry.parents.length > 1 && nodeColor) {
+                    // Hollow ring for merge commits, matching GitFiend's graph style.
+                    svgNode.setAttribute("style", "fill:#fff;stroke:" + nodeColor + ";stroke-width:2");
+                } else if (nodeColor) {
+                    svgNode.setAttribute("style", "fill:" + nodeColor);
+                }
             }
-            svg.appendChild(svgCircle);
+            svg.appendChild(svgNode);
 
             entry.element.webuiLeft = Math.max(entry.element.webuiLeft, streams.length);
             maxLeft = Math.max(maxLeft, entry.element.webuiLeft);
@@ -2674,9 +2759,15 @@ webui.LogView = function(historyView) {
         };
 
         self.createElement = function() {
+            // A stash isn't authored work, so it gets a stash marker
+            // rather than the author's initials, the way GitFiend sets
+            // stash rows apart from commits.
+            var marker = self.stash
+                ? '<span class="log-entry-avatar log-entry-stash-mark" title="' + webui.escapeHtml(self.stash.ref || "stash") + '">&#9707;</span>'
+                : '<span class="log-entry-avatar" style="background:' + webui.colorForAuthor(self.author.name) + '" title="' + webui.escapeHtml(self.author.name) + ' &lt;' + webui.escapeHtml(self.author.email) + '&gt;">' + webui.escapeHtml(webui.getInitials(self.author.name)) + '</span>';
             self.element = $('<a class="log-entry list-group-item">' +
                                 '<header>' +
-                                    '<span class="log-entry-avatar" style="background:' + webui.colorForAuthor(self.author.name) + '" title="' + webui.escapeHtml(self.author.name) + ' &lt;' + webui.escapeHtml(self.author.email) + '&gt;">' + webui.escapeHtml(webui.getInitials(self.author.name)) + '</span>' +
+                                    marker +
                                     '<p class="list-group-item-text"></p>' +
                                     '<button type="button" class="log-entry-menu-btn" title="Show commit menu">&#8942;</button>' +
                                     '<span class="log-entry-graph"></span>' +
@@ -2684,7 +2775,9 @@ webui.LogView = function(historyView) {
                                     '<span class="badge log-entry-hash">' + self.abbrevCommitHash() + '</span>' +
                                 '</header>' +
                              '</a>')[0];
-            $(".list-group-item-text", self.element)[0].appendChild(document.createTextNode(self.abbrevMessage()));
+            var subject = self.stash ? webui.formatStashSubject(self.stash.message) : self.abbrevMessage();
+            $(self.element).toggleClass("log-entry-stash", !!self.stash);
+            $(".list-group-item-text", self.element)[0].appendChild(document.createTextNode(subject));
             $(".log-entry-menu-btn", self.element).click(function(event) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -2827,6 +2920,14 @@ webui.LogView = function(historyView) {
 
         self.message = self.message.trim();
         self.decoratedRefs = webui.parseDecoratedRefs(self.refs || [], self.commit);
+
+        // A stash records its index (and any untracked files) as extra
+        // parents. Those aren't history and would each open a lane, so
+        // the graph follows only the commit the stash was taken from.
+        self.stash = (logView.stashCommits || {})[self.commit];
+        if (self.stash) {
+            self.parents = self.parents.slice(0, 1);
+        }
 
         // Only label the first commit in a run that shares the same
         // relative-time bucket ("2 days ago", ...) - repeating it on

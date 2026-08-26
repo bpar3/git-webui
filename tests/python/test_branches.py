@@ -171,3 +171,25 @@ def test_get_branch_entries_exposes_remote_commit(backend, git_repo):
     assert len(entries) == 1
     # No upstream configured, so there is no remote tip to report.
     assert entries[0]["remote_commit"] is None
+
+
+def test_get_stash_entries_empty_repo(backend, git_repo):
+    assert backend.get_stash_entries(str(git_repo)) == []
+
+
+def test_get_stash_entries_reports_base_and_internal_parents(backend, git_repo):
+    """A stash records the index as an extra parent. That commit is
+    reachable from nothing else and must not be listed as history, so it
+    is reported separately from the commit the stash was taken from."""
+    (git_repo / "README.md").write_text("changed\n")
+    _run(git_repo, "stash")
+    head = backend.run_git_capture(str(git_repo), ["rev-parse", "HEAD"])["stdout"].strip()
+    stashes = backend.get_stash_entries(str(git_repo))
+    assert len(stashes) == 1
+    entry = stashes[0]
+    assert entry["ref"] == "stash@{0}"
+    assert entry["base"] == head
+    assert entry["commit"] != head
+    # index commit is present and is not the base
+    assert len(entry["internal_parents"]) >= 1
+    assert head not in entry["internal_parents"]

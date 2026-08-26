@@ -266,6 +266,43 @@ describe("webui.getCurrentBranch / findBranchByRef", () => {
     });
 });
 
+describe("webui.formatStashSubject", () => {
+    let webui;
+
+    beforeEach(() => {
+        webui = loadWebui();
+    });
+
+    test("strips the sha and subject git tacks onto an automatic stash", () => {
+        expect(webui.formatStashSubject("WIP on slicksheet: 09726f9 C on main"))
+            .toBe("Stash on slicksheet");
+    });
+
+    test("keeps the message from an explicit stash push", () => {
+        expect(webui.formatStashSubject("On main: half-finished parser"))
+            .toBe("Stash on main: half-finished parser");
+    });
+
+    test("handles an explicit stash with an empty message", () => {
+        expect(webui.formatStashSubject("On main:")).toBe("Stash on main");
+    });
+
+    test("copes with branch names containing spaces or slashes", () => {
+        expect(webui.formatStashSubject("WIP on feature/new ui: abc1234 x"))
+            .toBe("Stash on feature/new ui");
+    });
+
+    test("passes through anything it doesn't recognise", () => {
+        expect(webui.formatStashSubject("something else entirely"))
+            .toBe("something else entirely");
+    });
+
+    test("falls back to a plain label when there is no message", () => {
+        expect(webui.formatStashSubject("")).toBe("Stash");
+        expect(webui.formatStashSubject(undefined)).toBe("Stash");
+    });
+});
+
 describe("webui.groupRefsByCommit", () => {
     let webui;
 

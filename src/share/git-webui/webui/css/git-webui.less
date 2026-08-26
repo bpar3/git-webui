@@ -1321,6 +1321,16 @@ body {
                 .no-select();
             }
 
+            // Square, outlined marker so a stash reads as something set
+            // aside rather than a commit by an author.
+            .log-entry-stash-mark {
+                background: transparent;
+                border: 1px solid var(--gf-border-strong);
+                border-radius: 3px;
+                color: var(--gf-text-muted);
+                font-size: 12px;
+            }
+
             .log-entry-refs {
                 flex: 0 0 auto;
                 display: flex;

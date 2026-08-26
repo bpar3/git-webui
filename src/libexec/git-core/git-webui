@@ -305,6 +305,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {
                 "branches": get_branch_entries(WebUiRequestHandler.REPO_ROOT),
                 "tags": get_tag_entries(WebUiRequestHandler.REPO_ROOT),
+                "stashes": get_stash_entries(WebUiRequestHandler.REPO_ROOT),
             })
         elif self.request_path == "/api/remotes":
             if not self.ensure_repo_selected():
@@ -1082,6 +1083,44 @@ def get_tag_entries(repo_root):
             "last_updated": date,
         })
     return tags
+
+
+def get_stash_entries(repo_root):
+    """Stash entries with the commit each one is recorded as.
+
+    `git stash list` walks the refs/stash reflog, so this covers every
+    stash rather than just the most recent one the way refs/stash alone
+    would. The commits are handed to the log walk so stashes show up in
+    the graph beside the commits they were taken from.
+    """
+    result = run_git_capture(
+        repo_root, ["stash", "list", "--format=%H%x09%P%x09%gd%x09%s"])
+    stashes = []
+    if result["returncode"] != 0:
+        return stashes
+    for line in result["stdout"].splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        while len(fields) < 4:
+            fields.append("")
+        commit, parents, ref, message = fields[0], fields[1], fields[2], fields[3]
+        if not commit:
+            continue
+        # A stash also records the index, and any untracked files, as
+        # further parents. Those are synthetic commits reachable from
+        # nothing else, so they are reported for the caller to drop -
+        # a log walk seeded with the stash would otherwise list them
+        # as if they were real history.
+        parent_list = [p for p in parents.split(" ") if p]
+        stashes.append({
+            "commit": commit,
+            "ref": ref,
+            "message": message,
+            "base": parent_list[0] if parent_list else None,
+            "internal_parents": parent_list[1:],
+        })
+    return stashes
 
 
 def get_branch_entries(repo_root):
