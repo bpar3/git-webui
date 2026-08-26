@@ -4114,16 +4114,17 @@ webui.HistoryView = function(mainView) {
                 addChip(group.refs[0]);
             }
 
-            if (group.refs.length > 1) {
+            // Only the collapsed state needs an affordance: once open,
+            // clicking anywhere off the chips closes it, so a dedicated
+            // collapse pill would just be one more thing on the row.
+            if (group.refs.length > 1 && !expanded) {
                 var hidden = group.refs.slice(1);
                 var pill = $('<button type="button" class="history-view-ref-extra"></button>')
-                    .text(expanded ? "−" : "+" + hidden.length)
-                    .attr("title", expanded
-                        ? "Show fewer refs"
-                        : hidden.map(function(r) { return r.displayName; }).join(", "));
+                    .text("+" + hidden.length)
+                    .attr("title", hidden.map(function(r) { return r.displayName; }).join(", "));
                 pill.click(function(event) {
                     event.stopPropagation();
-                    self.expandedRefCommits[group.commit] = !expanded;
+                    self.expandedRefCommits[group.commit] = true;
                     self.renderRefList();
                 });
                 row.append(pill);
@@ -4170,6 +4171,20 @@ webui.HistoryView = function(mainView) {
             }
         });
         self.syncRefScroll();
+    }
+
+    // Closes any opened "+N" ref group. The chips themselves stop the
+    // click from bubbling, so a click that lands on one won't collapse
+    // the group it belongs to.
+    self.collapseExpandedRefs = function() {
+        var open = Object.keys(self.expandedRefCommits).some(function(commit) {
+            return self.expandedRefCommits[commit];
+        });
+        if (!open) {
+            return;
+        }
+        self.expandedRefCommits = {};
+        self.renderRefList();
     }
 
     self.syncRefScroll = function() {
@@ -4245,6 +4260,12 @@ webui.HistoryView = function(mainView) {
     historyMain.appendChild(self.logView.element);
     $(self.logView.element).scroll(self.syncRefScroll);
     $(window).resize(self.positionRefChips);
+    $(document).on("click", self.collapseExpandedRefs);
+    $(document).on("keydown", function(event) {
+        if (event.key == "Escape") {
+            self.collapseExpandedRefs();
+        }
+    });
     self.commitView = new webui.CommitView(self);
     self.commitDetailView = new webui.CommitDetailView(self);
     self.mainView = mainView;
