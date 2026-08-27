@@ -1383,7 +1383,9 @@ gitpar.Toolbar = function(mainView) {
     }
 
     self.element = $(   '<div id="app-chrome">' +
-                            '<div id="app-titlebar"><span class="app-titlebar-path"></span>' +
+                            '<div id="app-titlebar">' +
+                                '<img class="app-titlebar-mark" src="/img/gitpar-icon.svg" alt="GitPar">' +
+                                '<span class="app-titlebar-path"></span>' +
                             '</div>' +
                             '<div class="repo-tab-strip"></div>' +
                             '<div id="app-toolbar">' +

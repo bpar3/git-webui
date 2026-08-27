@@ -142,10 +142,23 @@ body {
   -ms-user-select: none;
   user-select: none;
 }
+#app-titlebar .app-titlebar-mark {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: block;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
 #app-titlebar .app-titlebar-path {
   flex: 1 1 0;
   -webkit-flex: 1 1 0;
   text-align: center;
+  margin-right: 16px;
 }
 .repo-tab-strip {
   display: flex;

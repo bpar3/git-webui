@@ -204,9 +204,21 @@ body {
     font-size: 12px;
     .no-select();
 
+    // Sits at the left of the titlebar so the mark is visible in the app
+    // itself, not only as a browser-tab favicon. The path stays centred.
+    .app-titlebar-mark {
+        flex: 0 0 auto;
+        width: 16px;
+        height: 16px;
+        display: block;
+        .no-select();
+    }
+
     .app-titlebar-path {
         .flex(1);
         text-align: center;
+        // Keeps the path optically centred against the mark on the left.
+        margin-right: 16px;
     }
 }
 
