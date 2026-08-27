@@ -10,6 +10,7 @@
 #   packaging/build.sh --format=deb       # ... in a specific format instead
 #   packaging/build.sh --format=all       # ... in every format Tauri supports here
 #   packaging/build.sh --install          # ... and install the built desktop app
+#   packaging/build.sh --reinstall        # ... replacing it even at the same version
 #   packaging/build.sh --no-tauri         # skip the desktop app entirely
 #   packaging/build.sh --frontend-only    # just step 1 (grunt dist/)
 #   packaging/build.sh -h                 # help
@@ -24,11 +25,17 @@
 #
 # --install installs the resulting bundle onto this machine right
 # after building it (rpm via `sudo dnf install`, deb via `sudo apt-get
-# install`, both of which replace any existing install of the same
-# package - needs sudo). Only valid with a single concrete --format
+# install` - needs sudo). Only valid with a single concrete --format
 # (not the default "all"); for appimage/dmg/msi/other formats it just
 # prints where the built artifact is, since those aren't installed
 # through a system package manager.
+#
+# --reinstall is --install that replaces the package even when the
+# version is unchanged. Both package managers treat installing a version
+# that is already present as nothing to do, so a rebuild would otherwise
+# leave the old files on disk - and the version only moves on a release,
+# so during development that is the usual case. Use this to see your
+# build's changes on the installed app.
 #
 # What this installs automatically (all project-local or user-scoped,
 # nothing system-wide): npm devDependencies, bower frontend deps, and
@@ -46,6 +53,11 @@ BUILD_TAURI=1
 FRONTEND_ONLY=0
 FORMAT=""
 DO_INSTALL=0
+FORCE_REINSTALL=0
+# The package name the app was distributed under before the rename. A
+# post-rename build produces a differently named package, so the old one
+# is left installed and keeps shadowing the new one until it's removed.
+LEGACY_PKG_NAME="git-webui"
 
 for arg in "$@"; do
     case "$arg" in
@@ -66,8 +78,12 @@ for arg in "$@"; do
         --install)
             DO_INSTALL=1
             ;;
+        --reinstall)
+            DO_INSTALL=1
+            FORCE_REINSTALL=1
+            ;;
         -h|--help)
-            sed -n '2,31p' "${BASH_SOURCE[0]}"
+            sed -n "2,40p" "${BASH_SOURCE[0]}"
             exit 0
             ;;
         *)
@@ -275,8 +291,27 @@ if [ "$DO_INSTALL" = "1" ]; then
                 echo "No .rpm found under $BUNDLE_DIR/rpm - nothing to install." >&2
                 exit 1
             fi
-            echo "Installing $RPM_FILE (needs sudo)..."
-            sudo dnf install -y "$RPM_FILE"
+            if [ "$FORCE_REINSTALL" = "1" ]; then
+                echo "Reinstalling $RPM_FILE (needs sudo)..."
+                sudo dnf reinstall -y "$RPM_FILE"
+            else
+                echo "Installing $RPM_FILE (needs sudo)..."
+                sudo dnf install -y "$RPM_FILE"
+                # dnf treats an already-installed identical version as
+                # nothing to do and exits happily, so a rebuild at the
+                # same version silently leaves the old files in place.
+                # The version only moves on a release, so during
+                # development that is the normal case, not the odd one.
+                PKG_NAME="$(rpm -qp --qf '%{NAME}' "$RPM_FILE" 2>/dev/null)"
+                if [ -n "$PKG_NAME" ] && \
+                   [ "$(rpm -q --qf '%{NAME}-%{VERSION}-%{RELEASE}' "$PKG_NAME" 2>/dev/null)" \
+                     = "$(rpm -qp --qf '%{NAME}-%{VERSION}-%{RELEASE}' "$RPM_FILE" 2>/dev/null)" ]; then
+                    echo
+                    echo "Note: $PKG_NAME was already installed at this exact version, so dnf" >&2
+                    echo "had nothing to do and the files on disk are unchanged. Re-run with" >&2
+                    echo "--reinstall to replace them with what you just built." >&2
+                fi
+            fi
             ;;
         deb)
             DEB_FILE="$(find "$BUNDLE_DIR/deb" -name '*.deb' 2>/dev/null | head -n1)"
@@ -284,8 +319,13 @@ if [ "$DO_INSTALL" = "1" ]; then
                 echo "No .deb found under $BUNDLE_DIR/deb - nothing to install." >&2
                 exit 1
             fi
-            echo "Installing $DEB_FILE (needs sudo)..."
-            sudo apt-get install -y "$DEB_FILE"
+            if [ "$FORCE_REINSTALL" = "1" ]; then
+                echo "Reinstalling $DEB_FILE (needs sudo)..."
+                sudo apt-get install -y --reinstall --allow-downgrades "$DEB_FILE"
+            else
+                echo "Installing $DEB_FILE (needs sudo)..."
+                sudo apt-get install -y "$DEB_FILE"
+            fi
             ;;
         appimage)
             APPIMAGE_FILE="$(find "$BUNDLE_DIR/appimage" -name '*.AppImage' 2>/dev/null | head -n1)"
@@ -304,6 +344,23 @@ if [ "$DO_INSTALL" = "1" ]; then
             exit 1
             ;;
     esac
+
+    # The rename changed the package name, so an install leaves the old
+    # package in place with its own binary, icon and desktop entry - and
+    # launching the app can still pick up the old one.
+    if command -v rpm >/dev/null 2>&1 && rpm -q "$LEGACY_PKG_NAME" >/dev/null 2>&1; then
+        echo
+        echo "Warning: $LEGACY_PKG_NAME is still installed alongside this build." >&2
+        echo "It ships its own binary, icon and desktop entry, so you may keep" >&2
+        echo "launching the old app. Remove it with:" >&2
+        echo "    sudo dnf remove $LEGACY_PKG_NAME" >&2
+    elif command -v dpkg >/dev/null 2>&1 && dpkg -s "$LEGACY_PKG_NAME" >/dev/null 2>&1; then
+        echo
+        echo "Warning: $LEGACY_PKG_NAME is still installed alongside this build." >&2
+        echo "Remove it with:" >&2
+        echo "    sudo apt-get remove $LEGACY_PKG_NAME" >&2
+    fi
+
     echo "Installed."
 fi
 
