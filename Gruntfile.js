@@ -7,33 +7,33 @@ module.exports = function(grunt) {
                 expand: true,
                 flatten: true,
                 src: 'bower_components/jquery/dist/jquery.min.js',
-                dest: 'dist/share/git-webui/webui/js/',
+                dest: 'dist/share/gitpar/web/js/',
             },
             bootstrap: {
                 expand: true,
                 flatten: true,
                 src: 'bower_components/bootstrap/dist/js/bootstrap.min.js',
-                dest: 'dist/share/git-webui/webui/js/',
+                dest: 'dist/share/gitpar/web/js/',
             },
             bootstrap_css: {
                 expand: true,
                 flatten: true,
                 src: 'bower_components/bootstrap/dist/css/bootstrap.min.css',
-                dest: 'dist/share/git-webui/webui/css/',
+                dest: 'dist/share/gitpar/web/css/',
             },
             bootstrap_fonts: {
                 expand: true,
                 flatten: true,
                 src: 'bower_components/bootstrap/dist/fonts/*',
-                dest: 'dist/share/git-webui/webui/fonts/',
+                dest: 'dist/share/gitpar/web/fonts/',
             },
-            git_webui: {
+            gitpar: {
                 options: {
                     mode: true,
                 },
                 expand: true,
                 cwd: 'src',
-                src: ['libexec/**', 'share/**', '!**/less', '!**/*.less'],
+                src: ['bin/**', 'share/**', '!**/less', '!**/*.less'],
                 dest: 'dist',
             },
             release: {
@@ -54,7 +54,7 @@ module.exports = function(grunt) {
             files: {
                 expand: true,
                 cwd: 'src',
-                src: 'share/git-webui/webui/css/git-webui.less',
+                src: 'share/gitpar/web/css/gitpar.less',
                 dest: 'dist',
                 ext: '.css',
             },
@@ -62,14 +62,14 @@ module.exports = function(grunt) {
 
         shell: {
             serve: {
-                command: './dist/libexec/git-core/git-webui'
+                command: './dist/bin/gitpar'
             },
         },
 
         watch: {
             scripts: {
                 files: ['src/libexec/**/*', 'src/share/**/*.js', 'src/share/**/*.html'],
-                tasks: 'copy:git_webui'
+                tasks: 'copy:gitpar'
             },
             css: {
                 files: 'src/**/*.less',
@@ -86,7 +86,7 @@ module.exports = function(grunt) {
     grunt.loadNpmTasks('grunt-shell');
     grunt.loadNpmTasks('grunt-contrib-watch');
 
-    grunt.registerTask('copytodist', ['copy:git_webui', 'copy:jquery', 'copy:bootstrap', 'copy:bootstrap_css', 'copy:bootstrap_fonts']);
+    grunt.registerTask('copytodist', ['copy:gitpar', 'copy:jquery', 'copy:bootstrap', 'copy:bootstrap_css', 'copy:bootstrap_fonts']);
     grunt.registerTask('default', ['clean', 'copytodist', 'less']);
     grunt.registerTask('serve', ['default', 'shell:serve']);
     grunt.registerTask('release', ['default', 'copy:release']);

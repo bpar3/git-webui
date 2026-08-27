@@ -3,14 +3,14 @@ const path = require("path");
 const vm = require("vm");
 const { JSDOM } = require("jsdom");
 
-const SOURCE_PATH = path.join(__dirname, "../../../src/share/git-webui/webui/js/git-webui.js");
+const SOURCE_PATH = path.join(__dirname, "../../../src/share/gitpar/web/js/gitpar.js");
 
-// Loads git-webui.js in an isolated vm context backed by its own fresh JSDOM
+// Loads gitpar.js in an isolated vm context backed by its own fresh JSDOM
 // window (not jest's global jsdom window, to avoid a jQuery/jsdom interop quirk
 // where jQuery's factory resolves to a plain object instead of a callable),
 // with the trailing `$(document).ready(() => new MainUi())` bootstrap stripped
 // out so requiring the module doesn't try to hit the network.
-function loadWebui() {
+function loadGitpar() {
     let source = fs.readFileSync(SOURCE_PATH, "utf8");
     source = source.replace(/\$\(document\)\.ready\([\s\S]*?\}\);\s*$/, "");
 
@@ -36,10 +36,10 @@ function loadWebui() {
     vm.runInContext(source, sandbox, { filename: SOURCE_PATH });
     // Test-only handles so specs can assert on/reset storage and DOM state
     // without depending on Jest's own (unrelated) global environment.
-    sandbox.webui.__testLocalStorage = win.localStorage;
-    sandbox.webui.__testJQuery = $;
-    sandbox.webui.__testDocument = win.document;
-    return sandbox.webui;
+    sandbox.gitpar.__testLocalStorage = win.localStorage;
+    sandbox.gitpar.__testJQuery = $;
+    sandbox.gitpar.__testDocument = win.document;
+    return sandbox.gitpar;
 }
 
-module.exports = { loadWebui };
+module.exports = { loadGitpar };

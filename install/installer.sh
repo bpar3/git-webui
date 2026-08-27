@@ -33,14 +33,16 @@ if [ "$OS" = "Windows_NT" ]; then
 fi
 
 cd $HOME
-rm -rf .git-webui > /dev/null 2>&1
-echo "Cloning git-webui repository"
-git clone --depth 1 https://github.com/alberthier/git-webui.git .git-webui
+rm -rf .gitpar > /dev/null 2>&1
+echo "Cloning GitPar repository"
+# TODO: still points at the upstream project GitPar was forked from.
+# Repoint at GitPar's own remote before publishing this installer, or it
+# will install the old app under the new name.
+GITPAR_REPO="${GITPAR_REPO:-https://github.com/alberthier/git-webui.git}"
+git clone --depth 1 "$GITPAR_REPO" .gitpar
 echo "Enabling auto update"
-git config --global --replace-all webui.autoupdate true
-echo "Installing 'webui' alias"
-if [ "$OS" = "Windows_NT" ]; then
-    git config --global --replace-all alias.webui "!${PYTHON} $HOME/.git-webui/release/libexec/git-core/git-webui"
-else
-    git config --global --replace-all alias.webui !$HOME/.git-webui/release/libexec/git-core/git-webui
-fi
+git config --global --replace-all gitpar.autoupdate true
+echo "Linking the 'gitpar' command"
+mkdir -p "$HOME/.local/bin"
+ln -sf "$HOME/.gitpar/release/bin/gitpar" "$HOME/.local/bin/gitpar"
+echo "Installed to \$HOME/.local/bin/gitpar - make sure it is on your PATH."

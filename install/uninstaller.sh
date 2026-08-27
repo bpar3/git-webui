@@ -15,8 +15,8 @@
 # limitations under the License.
 
 cd $HOME
-echo "Removing \$HOME/.git-webui"
-rm -rf .git-webui > /dev/null 2>&1
+echo "Removing \$HOME/.gitpar"
+rm -rf .gitpar > /dev/null 2>&1
 echo "Cleaning up global gitconfig file"
-git config --global --unset-all alias.webui
-git config --global --remove-section webui
+rm -f "$HOME/.local/bin/gitpar"
+git config --global --remove-section gitpar

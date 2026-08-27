@@ -1,19 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# Freezes the stdlib-only Python backend (src/libexec/git-core/git-webui)
+# Freezes the stdlib-only Python backend (src/bin/gitpar)
 # into a single self-contained executable, with the frontend's static
-# assets (src/share/git-webui/webui) bundled alongside it.
+# assets (src/share/gitpar/web) bundled alongside it.
 #
 # Build (from the repo root, with `pip install pyinstaller` done first):
 #
-#   pyinstaller packaging/pyinstaller/git-webui.spec --distpath dist-pyinstaller
+#   pyinstaller packaging/pyinstaller/gitpar.spec --distpath dist-pyinstaller
 #
-# Output: dist-pyinstaller/git-webui-server(.exe). Run it exactly like the
+# Output: dist-pyinstaller/gitpar-server(.exe). Run it exactly like the
 # normal script, e.g.:
 #
-#   ./dist-pyinstaller/git-webui-server --no-browser --port 8000 --repo-root .
+#   ./dist-pyinstaller/gitpar-server --no-browser --port 8000 --repo-root .
 #
-# This bundles the built dist/share/git-webui/webui tree, so `grunt`
+# This bundles the built dist/share/gitpar/web tree, so `grunt`
 # (or `packaging/build.sh`, which runs it for you) must be run first -
 # dist/ is where the compiled CSS and the vendored jquery/bootstrap
 # assets that index.html now loads locally (instead of from a CDN, so
@@ -25,14 +25,14 @@
 import os
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(SPEC))))
-ENTRY_SCRIPT = os.path.join(REPO_ROOT, "dist", "libexec", "git-core", "git-webui")
-WEBUI_ASSETS = os.path.join(REPO_ROOT, "dist", "share", "git-webui", "webui")
+ENTRY_SCRIPT = os.path.join(REPO_ROOT, "dist", "bin", "gitpar")
+WEB_ASSETS = os.path.join(REPO_ROOT, "dist", "share", "gitpar", "web")
 
 a = Analysis(
     [ENTRY_SCRIPT],
     pathex=[],
     binaries=[],
-    datas=[(WEBUI_ASSETS, os.path.join("share", "git-webui", "webui"))],
+    datas=[(WEB_ASSETS, os.path.join("share", "gitpar", "web"))],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -49,7 +49,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="git-webui-server",
+    name="gitpar-server",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

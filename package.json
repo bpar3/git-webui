@@ -1,5 +1,5 @@
 {
-  "name": "git-webui",
+  "name": "gitpar",
   "version": "1.3.0",
   "description": "A web user interface for git",
   "main": "index.js",

@@ -1104,7 +1104,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "git-webui-desktop"
+name = "gitpar-desktop"
 version = "1.3.0"
 dependencies = [
  "serde",

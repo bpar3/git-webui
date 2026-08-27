@@ -1,5 +1,5 @@
-// Desktop shell for git-webui: spawns the PyInstaller-frozen server
-// (packaging/pyinstaller/git-webui.spec output, declared as a Tauri
+// Desktop shell for GitPar: spawns the PyInstaller-frozen server
+// (packaging/pyinstaller/gitpar.spec output, declared as a Tauri
 // "sidecar" in tauri.conf.json) as a child process, waits for its
 // loopback port to accept connections, then points the main window at
 // it. The sidecar is killed when the window closes.
@@ -44,7 +44,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let port = pick_free_port();
-            let repo_root = std::env::var("GIT_WEBUI_REPO_ROOT").unwrap_or_else(|_| {
+            let repo_root = std::env::var("GITPAR_REPO_ROOT").unwrap_or_else(|_| {
                 std::env::current_dir()
                     .expect("failed to read the current directory")
                     .to_string_lossy()
@@ -53,10 +53,10 @@ fn main() {
 
             let shell = app.shell();
             let sidecar = shell
-                .sidecar("git-webui-server")
+                .sidecar("gitpar-server")
                 .expect(
-                    "git-webui-server sidecar binary not found - build it with \
-                     packaging/pyinstaller/git-webui.spec and place it under \
+                    "gitpar-server sidecar binary not found - build it with \
+                     packaging/pyinstaller/gitpar.spec and place it under \
                      src-tauri/binaries/ (see packaging/README.md)",
                 )
                 .args([
@@ -67,7 +67,7 @@ fn main() {
                     &repo_root,
                 ]);
 
-            let (mut events, child) = sidecar.spawn().expect("failed to spawn the git-webui-server sidecar");
+            let (mut events, child) = sidecar.spawn().expect("failed to spawn the gitpar-server sidecar");
             app.manage(SidecarHandle(Mutex::new(Some(child))));
 
             // Forward the sidecar's own stdout/stderr into this
@@ -77,13 +77,13 @@ fn main() {
                 while let Some(event) = events.recv().await {
                     match event {
                         CommandEvent::Stdout(line) => {
-                            print!("[git-webui-server] {}", String::from_utf8_lossy(&line));
+                            print!("[gitpar-server] {}", String::from_utf8_lossy(&line));
                         }
                         CommandEvent::Stderr(line) => {
-                            eprint!("[git-webui-server] {}", String::from_utf8_lossy(&line));
+                            eprint!("[gitpar-server] {}", String::from_utf8_lossy(&line));
                         }
                         CommandEvent::Terminated(payload) => {
-                            eprintln!("git-webui-server exited unexpectedly: {:?}", payload);
+                            eprintln!("gitpar-server exited unexpectedly: {:?}", payload);
                             app_handle.exit(1);
                         }
                         _ => {}
@@ -102,7 +102,7 @@ fn main() {
                     let script = format!("window.location.replace('{}')", url);
                     let _ = window.eval(&script);
                 } else {
-                    eprintln!("git-webui-server did not become ready within 10s");
+                    eprintln!("gitpar-server did not become ready within 10s");
                 }
             });
 
@@ -118,5 +118,5 @@ fn main() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running the git-webui desktop app");
+        .expect("error while running the GitPar desktop app");
 }

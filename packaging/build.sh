@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs dependencies and builds git-webui's distributable artifacts:
+# Installs dependencies and builds GitPar's distributable artifacts:
 #   1. dist/                    - the normal web app (grunt build)
 #   2. dist-pyinstaller/        - a single-file headless server binary
 #   3. packaging/tauri/.../bundle/ - a standalone desktop app (if Rust is available)
@@ -109,11 +109,11 @@ if ! "$PYTHON_BIN" -m PyInstaller --version >/dev/null 2>&1; then
     echo "PyInstaller not found - installing it for the current user..."
     "$PYTHON_BIN" -m pip install --user pyinstaller
 fi
-"$PYTHON_BIN" -m PyInstaller packaging/pyinstaller/git-webui.spec --distpath dist-pyinstaller --noconfirm
+"$PYTHON_BIN" -m PyInstaller packaging/pyinstaller/gitpar.spec --distpath dist-pyinstaller --noconfirm
 
-SIDECAR_BIN="dist-pyinstaller/git-webui-server"
+SIDECAR_BIN="dist-pyinstaller/gitpar-server"
 if [ ! -f "$SIDECAR_BIN" ]; then
-    SIDECAR_BIN="dist-pyinstaller/git-webui-server.exe"
+    SIDECAR_BIN="dist-pyinstaller/gitpar-server.exe"
 fi
 echo "Headless server built: $SIDECAR_BIN"
 
@@ -227,7 +227,7 @@ if [ -z "$TARGET_TRIPLE" ]; then
     exit 1
 fi
 
-SIDECAR_DEST="packaging/tauri/src-tauri/binaries/git-webui-server-$TARGET_TRIPLE"
+SIDECAR_DEST="packaging/tauri/src-tauri/binaries/gitpar-server-$TARGET_TRIPLE"
 if [[ "$SIDECAR_BIN" == *.exe ]]; then
     SIDECAR_DEST="$SIDECAR_DEST.exe"
 fi

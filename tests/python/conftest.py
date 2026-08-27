@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BACKEND_SCRIPT = REPO_ROOT / "src" / "libexec" / "git-core" / "git-webui"
+BACKEND_SCRIPT = REPO_ROOT / "src" / "bin" / "gitpar"
 
 
 def _load_backend_module():
-    loader = SourceFileLoader("git_webui_backend", str(BACKEND_SCRIPT))
+    loader = SourceFileLoader("gitpar_backend", str(BACKEND_SCRIPT))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -69,10 +69,10 @@ def second_git_repo(tmp_path):
 
 @pytest.fixture()
 def handler_state(backend, tmp_path):
-    """Isolates WebUiRequestHandler's class-level state (REPO_ROOT, OPEN_REPOS,
+    """Isolates GitParRequestHandler's class-level state (REPO_ROOT, OPEN_REPOS,
     RECENT_REPOS, ...) for a single test, redirecting its persisted state file
-    to a tmp path so tests never touch the real ~/.config/git-webui/state.json."""
-    handler = backend.WebUiRequestHandler
+    to a tmp path so tests never touch the real ~/.config/gitpar/state.json."""
+    handler = backend.GitParRequestHandler
     saved = {
         "WEB_ROOT": handler.WEB_ROOT,
         "REPO_ROOT": handler.REPO_ROOT,

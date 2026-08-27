@@ -1,7 +1,7 @@
-# Packaging git-webui
+# Packaging GitPar
 
 Two independent distribution modes, both optional - the normal
-`git webui` alias (Python script + `webbrowser.open()`) keeps working
+`gitpar` alias (Python script + `webbrowser.open()`) keeps working
 unchanged regardless of whether either of these is built.
 
 ## Quick start
@@ -57,8 +57,8 @@ narrow (the Rust/Tauri side specifically), not the whole pipeline.
 
 ## 1. Headless single-binary (no window, your own browser is the UI)
 
-Freezes the built `dist/libexec/git-core/git-webui` (stdlib-only
-Python) plus the `dist/share/git-webui/webui` static assets - CSS
+Freezes the built `dist/bin/gitpar` (stdlib-only
+Python) plus the `dist/share/gitpar/web` static assets - CSS
 compiled from LESS, and jQuery/Bootstrap vendored locally rather than
 loaded from a CDN, so the frozen app also works fully offline - into
 one executable. Run `grunt` (or `packaging/build.sh`, which does this
@@ -67,18 +67,18 @@ need Python or Node installed to run the result.
 
 ```sh
 pip install pyinstaller
-pyinstaller packaging/pyinstaller/git-webui.spec --distpath dist-pyinstaller
+pyinstaller packaging/pyinstaller/gitpar.spec --distpath dist-pyinstaller
 ```
 
-Output: `dist-pyinstaller/git-webui-server` (`.exe` on Windows). Run it
+Output: `dist-pyinstaller/gitpar-server` (`.exe` on Windows). Run it
 exactly like the normal script:
 
 ```sh
-./dist-pyinstaller/git-webui-server --repo-root /path/to/repo
+./dist-pyinstaller/gitpar-server --repo-root /path/to/repo
 ```
 
 You need one build per target OS - PyInstaller does not cross-compile.
-`src/libexec/git-core/git-webui`'s `resolve_web_root()` detects the
+`src/bin/gitpar`'s `resolve_web_root()` detects the
 frozen case (`sys.frozen` + `sys._MEIPASS`, both set by PyInstaller at
 runtime) and finds the bundled assets there instead of walking up from
 `sys.argv[0]`; nothing else about the script changes when frozen.
@@ -108,7 +108,7 @@ cargo install tauri-cli --version "^2"
 
 ```sh
 # 1. Build the sidecar binary (step 1 above), one per target platform.
-pyinstaller packaging/pyinstaller/git-webui.spec --distpath dist-pyinstaller
+pyinstaller packaging/pyinstaller/gitpar.spec --distpath dist-pyinstaller
 
 # 2. Copy it into Tauri's expected sidecar location, suffixed with the
 #    Rust target triple (`rustc -vV` to find yours - e.g.
@@ -116,8 +116,8 @@ pyinstaller packaging/pyinstaller/git-webui.spec --distpath dist-pyinstaller
 #    aarch64-apple-darwin). Tauri's externalBin mechanism requires this
 #    exact naming.
 TARGET_TRIPLE=$(rustc -vV | sed -n 's/host: //p')
-cp dist-pyinstaller/git-webui-server \
-   "packaging/tauri/src-tauri/binaries/git-webui-server-$TARGET_TRIPLE"
+cp dist-pyinstaller/gitpar-server \
+   "packaging/tauri/src-tauri/binaries/gitpar-server-$TARGET_TRIPLE"
 
 # 3. Build the app.
 cd packaging/tauri/src-tauri
@@ -161,12 +161,12 @@ above - `cargo tauri dev` doesn't rebuild the Python side for you.)
   it, forwards its stdout/stderr to the app's own logs, and kills it
   when the window closes.
 - `src-tauri/icons/` - generated from the existing
-  `src/share/git-webui/webui/img/git-icon.png` (32x32, 128x128,
+  `src/share/gitpar/web/img/git-icon.png` (32x32, 128x128,
   128x128@2x PNGs, plus `.ico` and `.icns`). Real files, not
   placeholders - regenerate only if you want a different icon
   (`cargo tauri icon <path-to-source-png>` is the easiest way once you
   have the Tauri CLI).
-- `dist-shell/index.html` - a "Starting git-webui..." placeholder the
+- `dist-shell/index.html` - a "Starting GitPar..." placeholder the
   window shows for the (normally sub-second) gap before the sidecar's
   port responds; `main.rs` navigates away from it automatically.
 

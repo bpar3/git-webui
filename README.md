@@ -1,171 +1,111 @@
-# Git WebUI
+# GitPar
 
-This git extension is a standalone web based user interface for git repositories.
+A standalone desktop-style user interface for git repositories, served
+by a small local web server and viewed in your browser.
 
-It comes with history and tree browsing. You may also use it to commit
-as it comes with an UI to review local changes and the ability to stage / unstage code.
+Commits, branches, tags and stashes are shown together on one graph.
+Selecting a commit opens it in place with its message and file list, and
+expanding it gives a filterable file list beside the diff. Local changes
+can be reviewed, staged line by line, and committed. Several repositories
+can be open at once as tabs.
 
-Moreover as git-webui is a web server, your repository is accessible to
-other people on the same network. They can clone or pull your code using the
-same URL.
-
-It has very few dependencies, you probably already have them on your
-Mac / Linux : git, python, and a web browser.
+It has very few dependencies: git, python, and a web browser.
 
 ## Installation
 
-### Automatic (Do you trust me ?)
-
-The following command will install git-webui in `$HOME/.git-webui` and add a
-`webui` alias to your global `.gitconfig` file.
-
-*Note for Windows users:* These install scripts work for you too. Run them from your Git-Bash shell.
-You need to install [Python](https://www.python.org/downloads/) first.
-
-Using curl (Mac OS X & Windows):
-```
-curl https://raw.githubusercontent.com/alberthier/git-webui/master/install/installer.sh | bash
-```
-
-Using wget (Linux):
-```
-wget -O - https://raw.githubusercontent.com/alberthier/git-webui/master/install/installer.sh | bash
-```
-
-Upon installation git-webui will update itself automatically every couple of weeks.
-You can deactivate auto-update by removing the `autoupdate = true` line from the
-`webui` section of your global `.gitconfig` file.
-
-### Manual
-
-Simply clone the repository and install the alias
+### From a clone
 
 ```
-git clone https://github.com/alberthier/git-webui.git
-git config --global alias.webui \!$PWD/git-webui/release/libexec/git-core/git-webui
+git clone <gitpar-repo-url>
+cd gitpar
+npm install && npx bower install
+npx grunt
 ```
 
-If you want to allow auto-update:
+`grunt` builds into `dist/`. Run it with:
+
 ```
-git config --global webui.autoupdate true
+./dist/bin/gitpar
 ```
+
+To install it on the system, `grunt release` produces a `release/` tree
+whose layout mirrors `/usr`:
+
+```
+cp -rf release/* /usr
+```
+
+### Standalone builds
+
+`packaging/build.sh` produces a single-file headless server and, if Rust
+is available, a standalone desktop app. See `packaging/README.md`.
 
 ## Usage
 
-### Starting
+`cd` to any git repository and run:
 
-First cd to any of your project versioned with git
 ```
-cd <my-local-git-clone>
-git webui
+gitpar
 ```
 
-This will start an embedded HTTP server and open your default browser with the GUI.
+This starts a local HTTP server and opens your browser at the UI. It
+binds to the loopback interface only — the repository is never exposed
+on the network.
 
-### History Viewing
+Useful flags:
 
-The toolbar on the left shows your branches and tags. The log of the currently selected one is displayed.
+- `--no-browser` — don't try to open a browser. Required on a headless
+  machine, which would otherwise stall looking for one.
+- `--port <n>` — listen on a specific port.
+- `--repo-root <path>` — open a repository other than the current
+  directory.
 
-When selecting a revision the diff of this specific commit is displayed in the right panel.
+## Views
 
-![Image of log commit](https://raw.githubusercontent.com/alberthier/git-webui/master/src/share/git-webui/webui/img/doc/log-commit.png)
+**Commits** shows the graph, with branch, tag and stash labels beside
+the commits they point at. Selecting a commit expands it in place;
+expanding further opens the full commit with its files and diff.
 
-On top of the right panel, you can choose 'Tree' to display the versioned content at the specific
-revision selected in the left panel. You can browse through directories and display file contents.
+**Changes** lists your working copy and staging area. Diffs can be
+staged, unstaged or discarded a line or a hunk at a time.
 
-![Image of log tree](https://raw.githubusercontent.com/alberthier/git-webui/master/src/share/git-webui/webui/img/doc/log-tree.png)
+**Search** filters the current list as you type.
 
-### Remote access
-
-Other people on your network have read-only access to your repository:
-they may access to the web interface (without 'Workspace'), clone or pull from your repository.
-All this through the same url:
-
-Clone:
-```
-$ git clone http://<ip_of_the_computer_running_webui>:8000/ repo_name
-```
-
-Pull:
-```
-$ git pull http://<ip_of_the_computer_running_webui>:8000/
-```
-
-### Commit
-
-Commits can only be made from localhost.
-
-![Image of the workspace](https://raw.githubusercontent.com/alberthier/git-webui/master/src/share/git-webui/webui/img/doc/workspace.png)
-
-- **Working copy** lists the modified files (compared to the staging area) in your working directory
-- **Message** lets you enter a commit message
-- **Staging area** lists the modified files (compared to HEAD) in your staging area. These are the changes that will be committed
-
-The diff view lets you review the differences of the selected file.
-You can select code in more fine grained way:
-- If the displayed diff is from the working copy, you may stage or cancel the selected lines.
-- If the displayed diff is from the staging area, you may unstage the selected lines.
+Clicking the branch name in the toolbar lists every local and remote
+branch, with ahead/behind counts.
 
 ## Dependencies
 
 ### Runtime
 
-- git (of course :) )
-- python 2.7+ or python 3.0+ (Generally already installed on your Mac / Linux)
-- An up-to-date modern browser
+- git
+- python 3
+- a modern browser
 
 ### Development
 
-- Runtime dependencies and ...
+- the runtime dependencies, plus
 - node.js
 - grunt-cli
 
+Run `npm test` for the frontend tests and `pytest` for the backend ones.
+Both must pass before committing. See `AGENTS.md`.
+
 ## Uninstallation
 
-### Automatic
-
-Using curl (Mac OS X & Windows):
 ```
-curl https://raw.githubusercontent.com/alberthier/git-webui/master/install/uninstaller.sh | bash
-```
-
-Using wget (Linux):
-```
-wget -O - https://raw.githubusercontent.com/alberthier/git-webui/master/install/uninstaller.sh | bash
+rm -rf <gitpar-clone-path>
+rm -f "$HOME/.local/bin/gitpar"
+git config --global --remove-section gitpar
 ```
 
-### Manual
+Settings live in `~/.config/gitpar`.
 
-```
-rm -rf <git-webui-clone-path>
-git config --global --unset-all alias.webui
-git config --global --remove-section webui
-```
+## Built on
 
-## Contributing
-
-You can clone the source code of [git-webui on GitHub](https://github.com/alberthier/git-webui)
-
-After executing `grunt` git-webui is available in the `dist` folder.
-
-Please don't commit any content to the `release` folder. This is for end-users release versions, not for work-in-progress versions
-
-## Packaging
-
-If you want to build a DEB, RPM or Homebrew package for git-webui, you only need the content of the `release` folder.
-
-Installing git-webui globally on the system is nothing else than
-```
-cp -rf release/* /usr
-```
-
-## Limitations
-
-- If you have no web browser installed at all (headless server), you should start git webui with the `--no-browser` option. Otherwise git-webui may freeze searching for a browser.
-
-## Author
-
-[Éric ALBER](mailto:eric.alber@gmail.com) ([@eric_alber](https://twitter.com/eric_alber))
+GitPar started from [git-webui](https://github.com/alberthier/git-webui)
+by [Éric ALBER](mailto:eric.alber@gmail.com)
+([@eric_alber](https://twitter.com/eric_alber)).
 
 ## License
 

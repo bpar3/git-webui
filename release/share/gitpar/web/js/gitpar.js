@@ -16,21 +16,21 @@
 
 "use strict"
 
-var webui = webui || {};
+var gitpar = gitpar || {};
 
-webui.repo = "/";
-webui.repoPath = null;
-webui.recentRepos = [];
-webui.activeRepoId = null;
-webui.openRepos = [];
-webui.workspacePath = null;
-webui.recentWorkspaces = [];
-webui.workspaceRepos = [];
-webui.branches = [];
-webui.viewonly = false;
-webui.historyRef = null;
+gitpar.repo = "/";
+gitpar.repoPath = null;
+gitpar.recentRepos = [];
+gitpar.activeRepoId = null;
+gitpar.openRepos = [];
+gitpar.workspacePath = null;
+gitpar.recentWorkspaces = [];
+gitpar.workspaceRepos = [];
+gitpar.branches = [];
+gitpar.viewonly = false;
+gitpar.historyRef = null;
 
-webui.COLORS = ["#ffab1d", "#fd8c25", "#f36e4a", "#fc6148", "#d75ab6", "#b25ade", "#6575ff", "#7b77e9", "#4ea8ec", "#00d0f5", "#4eb94e", "#51af23", "#8b9f1c", "#d0b02f", "#d0853a", "#a4a4a4",
+gitpar.COLORS = ["#ffab1d", "#fd8c25", "#f36e4a", "#fc6148", "#d75ab6", "#b25ade", "#6575ff", "#7b77e9", "#4ea8ec", "#00d0f5", "#4eb94e", "#51af23", "#8b9f1c", "#d0b02f", "#d0853a", "#a4a4a4",
                 "#ffc51f", "#fe982c", "#fd7854", "#ff705f", "#e467c3", "#bd65e9", "#7183ff", "#8985f7", "#55b6ff", "#10dcff", "#51cd51", "#5cba2e", "#9eb22f", "#debe3d", "#e19344", "#b8b8b8",
                 "#ffd03b", "#ffae38", "#ff8a6a", "#ff7e7e", "#ef72ce", "#c56df1", "#8091ff", "#918dff", "#69caff", "#3ee1ff", "#72da72", "#71cf43", "#abbf3c", "#e6c645", "#eda04e", "#c5c5c5",
                 "#ffd84c", "#ffb946", "#ff987c", "#ff8f8f", "#fb7eda", "#ce76fa", "#90a0ff", "#9c98ff", "#74cbff", "#64e7ff", "#7ce47c", "#85e357", "#b8cc49", "#edcd4c", "#f9ad58", "#d0d0d0",
@@ -44,7 +44,7 @@ webui.COLORS = ["#ffab1d", "#fd8c25", "#f36e4a", "#fc6148", "#d75ab6", "#b25ade"
                 "#ff911a", "#fc8120", "#e7623e", "#fa5236", "#ca4da9", "#a74fd3", "#5a68ff", "#6d69db", "#489bd9", "#00bcde", "#36a436", "#47a519", "#798d0a", "#c1a120", "#bf7730", "#8e8e8e"]
 
 
-webui.showModal = function(title, message, type) {
+gitpar.showModal = function(title, message, type) {
     var body = $("#error-modal .alert");
     $("#error-modal .modal-title").text(title);
     body.removeClass("alert-danger alert-info");
@@ -53,15 +53,15 @@ webui.showModal = function(title, message, type) {
     $("#error-modal").modal('show');
 }
 
-webui.showError = function(message) {
-    webui.showModal("Error", message, "error");
+gitpar.showError = function(message) {
+    gitpar.showModal("Error", message, "error");
 }
 
-webui.showResult = function(title, message) {
-    webui.showModal(title, message, "info");
+gitpar.showResult = function(title, message) {
+    gitpar.showModal(title, message, "info");
 }
 
-webui.showWarning = function(message) {
+gitpar.showWarning = function(message) {
     var messageBox = $("#message-box");
     messageBox.empty();
     $(  '<div class="alert alert-warning alert-dismissible" role="alert">' +
@@ -73,7 +73,7 @@ webui.showWarning = function(message) {
         '</div>').appendTo(messageBox);
 }
 
-webui.parseApiError = function(xhr, fallbackMessage) {
+gitpar.parseApiError = function(xhr, fallbackMessage) {
     if (xhr.responseJSON && xhr.responseJSON.error) {
         return xhr.responseJSON.error;
     }
@@ -90,25 +90,25 @@ webui.parseApiError = function(xhr, fallbackMessage) {
     return fallbackMessage;
 }
 
-webui.withRepoParam = function(url) {
-    if (!webui.activeRepoId) {
+gitpar.withRepoParam = function(url) {
+    if (!gitpar.activeRepoId) {
         return url;
     }
     var separator = url.indexOf("?") == -1 ? "?" : "&";
-    return url + separator + "repo=" + encodeURIComponent(webui.activeRepoId);
+    return url + separator + "repo=" + encodeURIComponent(gitpar.activeRepoId);
 }
 
-webui.apiGet = function(url, callback) {
-    $.getJSON(webui.withRepoParam(url))
+gitpar.apiGet = function(url, callback) {
+    $.getJSON(gitpar.withRepoParam(url))
     .done(callback)
     .fail(function(xhr) {
-        webui.showError(webui.parseApiError(xhr, "Git webui server not running"));
+        gitpar.showError(gitpar.parseApiError(xhr, "GitPar server not running"));
     });
 }
 
-webui.apiPost = function(url, payload, callback, errorCallback) {
+gitpar.apiPost = function(url, payload, callback, errorCallback) {
     $.ajax({
-        url: webui.withRepoParam(url),
+        url: gitpar.withRepoParam(url),
         method: "POST",
         data: JSON.stringify(payload || {}),
         contentType: "application/json",
@@ -119,24 +119,24 @@ webui.apiPost = function(url, payload, callback, errorCallback) {
         if (errorCallback) {
             errorCallback(xhr);
         } else {
-            webui.showError(webui.parseApiError(xhr, "Request failed"));
+            gitpar.showError(gitpar.parseApiError(xhr, "Request failed"));
         }
     });
 }
 
-webui.escapeHtml = function(text) {
+gitpar.escapeHtml = function(text) {
     return $("<div>").text(text || "").html();
 }
 
-webui.reloadApp = function() {
+gitpar.reloadApp = function() {
     document.location.reload();
 }
 
-webui.reloadWithPostAction = function(viewName) {
+gitpar.reloadWithPostAction = function(viewName) {
     if (viewName) {
-        sessionStorage.setItem("git-webui-post-action", viewName);
+        sessionStorage.setItem("gitpar-post-action", viewName);
     }
-    webui.reloadApp();
+    gitpar.reloadApp();
 }
 
 // Applies a /api/repos/{select,open,clone,create} response (a full repo
@@ -146,30 +146,30 @@ webui.reloadWithPostAction = function(viewName) {
 // (historyView, workspaceView, ...) don't exist yet in that case, so a
 // full bootstrap (page reload) is simplest and only happens once per
 // session.
-webui.applyOpenedRepoContext = function(mainView, context) {
-    webui.recentRepos = context.recent_repos || webui.recentRepos;
-    webui.openRepos = context.open_repos || [];
+gitpar.applyOpenedRepoContext = function(mainView, context) {
+    gitpar.recentRepos = context.recent_repos || gitpar.recentRepos;
+    gitpar.openRepos = context.open_repos || [];
     if (!mainView.historyView) {
-        webui.reloadApp();
+        gitpar.reloadApp();
         return;
     }
     mainView.repoChrome.switchActiveRepo(context.repo_id);
 }
 
-webui.setFlashMessage = function(title, message, type) {
-    sessionStorage.setItem("git-webui-flash", JSON.stringify({
+gitpar.setFlashMessage = function(title, message, type) {
+    sessionStorage.setItem("gitpar-flash", JSON.stringify({
         title: title,
         message: message,
         type: type || "info"
     }));
 }
 
-webui.consumeFlashMessage = function() {
-    var payload = sessionStorage.getItem("git-webui-flash");
+gitpar.consumeFlashMessage = function() {
+    var payload = sessionStorage.getItem("gitpar-flash");
     if (!payload) {
         return null;
     }
-    sessionStorage.removeItem("git-webui-flash");
+    sessionStorage.removeItem("gitpar-flash");
     try {
         return JSON.parse(payload);
     } catch (error) {
@@ -177,7 +177,7 @@ webui.consumeFlashMessage = function() {
     }
 }
 
-webui.formatRepoCounts = function(repo) {
+gitpar.formatRepoCounts = function(repo) {
     var parts = [];
     if (repo.staged_count > 0) {
         parts.push(repo.staged_count + " staged");
@@ -194,7 +194,7 @@ webui.formatRepoCounts = function(repo) {
     return parts.join(" • ");
 }
 
-webui.formatRepoTracking = function(repo) {
+gitpar.formatRepoTracking = function(repo) {
     var parts = [];
     if (repo.ahead > 0) {
         parts.push("ahead " + repo.ahead);
@@ -208,7 +208,7 @@ webui.formatRepoTracking = function(repo) {
     return parts.join(" • ");
 }
 
-webui.formatBranchTracking = function(branch) {
+gitpar.formatBranchTracking = function(branch) {
     var parts = [];
     if (branch.upstream) {
         parts.push(branch.upstream);
@@ -225,7 +225,7 @@ webui.formatBranchTracking = function(branch) {
     return parts.join(" • ");
 }
 
-webui.shortRefName = function(refName) {
+gitpar.shortRefName = function(refName) {
     if (!refName) {
         return "";
     }
@@ -241,7 +241,7 @@ webui.shortRefName = function(refName) {
     return refName;
 }
 
-webui.parseDecoratedRefs = function(refs, commitHash) {
+gitpar.parseDecoratedRefs = function(refs, commitHash) {
     var items = [];
     var seen = {};
 
@@ -255,7 +255,7 @@ webui.parseDecoratedRefs = function(refs, commitHash) {
             kind: kind,
             fullName: fullName,
             displayName: displayName,
-            gitRef: gitRef || webui.shortRefName(fullName),
+            gitRef: gitRef || gitpar.shortRefName(fullName),
             commit: commitHash,
         });
     }
@@ -271,23 +271,23 @@ webui.parseDecoratedRefs = function(refs, commitHash) {
         if (ref == "HEAD") {
             pushRef("head", "HEAD", "HEAD", "HEAD");
         } else if (ref.indexOf("refs/heads/") == 0) {
-            pushRef("local", ref, webui.shortRefName(ref), webui.shortRefName(ref));
+            pushRef("local", ref, gitpar.shortRefName(ref), gitpar.shortRefName(ref));
         } else if (ref.indexOf("refs/remotes/") == 0) {
-            pushRef("remote", ref, webui.shortRefName(ref), webui.shortRefName(ref));
+            pushRef("remote", ref, gitpar.shortRefName(ref), gitpar.shortRefName(ref));
         } else if (ref.indexOf("tag: refs/tags/") == 0) {
             var fullTag = ref.substr(5);
-            pushRef("tag", fullTag, webui.shortRefName(fullTag), webui.shortRefName(fullTag));
+            pushRef("tag", fullTag, gitpar.shortRefName(fullTag), gitpar.shortRefName(fullTag));
         } else if (ref.indexOf("refs/tags/") == 0) {
-            pushRef("tag", ref, webui.shortRefName(ref), webui.shortRefName(ref));
+            pushRef("tag", ref, gitpar.shortRefName(ref), gitpar.shortRefName(ref));
         } else {
-            pushRef("other", ref, webui.shortRefName(ref), ref);
+            pushRef("other", ref, gitpar.shortRefName(ref), ref);
         }
     });
 
     return items;
 }
 
-webui.getInitials = function(name) {
+gitpar.getInitials = function(name) {
     if (!name) {
         return "?";
     }
@@ -301,7 +301,7 @@ webui.getInitials = function(name) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-webui.hashString = function(str) {
+gitpar.hashString = function(str) {
     var hash = 0;
     for (var i = 0; i < str.length; ++i) {
         hash = (hash * 31 + str.charCodeAt(i)) | 0;
@@ -309,11 +309,11 @@ webui.hashString = function(str) {
     return Math.abs(hash);
 }
 
-webui.colorForAuthor = function(name) {
+gitpar.colorForAuthor = function(name) {
     if (!name) {
-        return webui.COLORS[0];
+        return gitpar.COLORS[0];
     }
-    return webui.COLORS[webui.hashString(name) % webui.COLORS.length];
+    return gitpar.COLORS[gitpar.hashString(name) % gitpar.COLORS.length];
 }
 
 // Turns git's own stash subject into a compact label.
@@ -321,7 +321,7 @@ webui.colorForAuthor = function(name) {
 // mostly noise once the row is marked as a stash; an explicit
 // `git stash push -m` reads "On <branch>: <message>" and that message is
 // worth keeping. Anything unrecognised is passed through.
-webui.formatStashSubject = function(message) {
+gitpar.formatStashSubject = function(message) {
     if (!message) {
         return "Stash";
     }
@@ -345,7 +345,7 @@ webui.formatStashSubject = function(message) {
 // whenever the branch is ahead or behind, so they are emitted
 // separately and only end up sharing a row when they really are level.
 // Local branches sort ahead of remotes, and tags last.
-webui.groupRefsByCommit = function(branches, tags) {
+gitpar.groupRefsByCommit = function(branches, tags) {
     var order = { local: 0, remote: 1, tag: 2 };
     var groups = [];
     var byCommit = {};
@@ -418,7 +418,7 @@ webui.groupRefsByCommit = function(branches, tags) {
 // The counts are deliberately ignored: the gutters number lines as they
 // are emitted, so only the starting points matter. Returns null for
 // anything that isn't a hunk header.
-webui.parseHunkHeader = function(line) {
+gitpar.parseHunkHeader = function(line) {
     if (!line) {
         return null;
     }
@@ -432,19 +432,19 @@ webui.parseHunkHeader = function(line) {
 // Quotes a value for the git command strings sent to the backend, which
 // parses them with shlex. Only " and \ need escaping: shlex isn't a
 // shell, so $ and backticks inside double quotes are already literal.
-webui.quoteArg = function(value) {
+gitpar.quoteArg = function(value) {
     return '"' + String(value).replace(/([\\"])/g, "\\$1") + '"';
 }
 
 // Parses `git diff-tree --name-status` output into {status, path} pairs.
 // Fields are tab-separated; renames and copies carry a similarity score
 // on the status (R100) and a second path, which is the one to show.
-webui.parseNameStatus = function(data) {
+gitpar.parseNameStatus = function(data) {
     if (!data) {
         return [];
     }
     var files = [];
-    webui.splitLines(data).forEach(function(line) {
+    gitpar.splitLines(data).forEach(function(line) {
         var parts = line.split("\t");
         if (parts.length < 2 || !parts[0]) {
             return;
@@ -459,7 +459,7 @@ webui.parseNameStatus = function(data) {
     return files;
 }
 
-webui.formatRelativeTime = function(date, now) {
+gitpar.formatRelativeTime = function(date, now) {
     var reference = now || new Date();
     var seconds = Math.round((reference.getTime() - date.getTime()) / 1000);
     if (seconds < 60) {
@@ -501,32 +501,32 @@ webui.formatRelativeTime = function(date, now) {
     return years + " years ago";
 }
 
-webui.historyAuthorFilter = null;
+gitpar.historyAuthorFilter = null;
 
-webui.refChipFilterName = null;
+gitpar.refChipFilterName = null;
 
-webui.setRefChipFilter = function(displayName) {
-    webui.refChipFilterName = displayName || null;
+gitpar.setRefChipFilter = function(displayName) {
+    gitpar.refChipFilterName = displayName || null;
     $(".log-entry-ref").each(function() {
         var name = $(this).attr("data-ref-name");
-        $(this).toggle(!webui.refChipFilterName || name == webui.refChipFilterName);
+        $(this).toggle(!gitpar.refChipFilterName || name == gitpar.refChipFilterName);
     });
 }
 
-webui.getCurrentBranch = function() {
-    return webui.branches.filter(function(branch) {
+gitpar.getCurrentBranch = function() {
+    return gitpar.branches.filter(function(branch) {
         return branch.current;
     })[0] || null;
 }
 
-webui.findBranchByRef = function(refInfo) {
+gitpar.findBranchByRef = function(refInfo) {
     if (!refInfo) {
         return null;
     }
     if (refInfo.kind == "head") {
-        return webui.getCurrentBranch();
+        return gitpar.getCurrentBranch();
     }
-    return webui.branches.filter(function(branch) {
+    return gitpar.branches.filter(function(branch) {
         if (refInfo.kind == "local") {
             return branch.local_name == refInfo.gitRef;
         }
@@ -537,24 +537,24 @@ webui.findBranchByRef = function(refInfo) {
     })[0] || null;
 }
 
-webui.copyToClipboard = function(text, label) {
+gitpar.copyToClipboard = function(text, label) {
     if (!text) {
         return;
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text)
         .then(function() {
-            webui.showResult("Copied", (label || "Value") + " copied to clipboard.");
+            gitpar.showResult("Copied", (label || "Value") + " copied to clipboard.");
         })
         .catch(function() {
-            webui.showResult("Copy", text);
+            gitpar.showResult("Copy", text);
         });
     } else {
-        webui.showResult("Copy", text);
+        gitpar.showResult("Copy", text);
     }
 }
 
-webui.git = function(cmd, arg1, arg2) {
+gitpar.git = function(cmd, arg1, arg2) {
     // cmd = git command line arguments
     // other arguments = optional stdin content and a callback function:
     // ex:
@@ -567,7 +567,7 @@ webui.git = function(cmd, arg1, arg2) {
         cmd += "\n" + arg1;
         var callback = arg2;
     }
-    return $.post(webui.withRepoParam("git"), cmd, function(data, status, xhr) {
+    return $.post(gitpar.withRepoParam("git"), cmd, function(data, status, xhr) {
         if (xhr.status == 200) {
             // Convention : last lines are footer meta data like headers. An empty line marks the start if the footers
             var footers = {};
@@ -595,33 +595,33 @@ webui.git = function(cmd, arg1, arg2) {
                 // Return code is 0 but there is stderr output: this is a warning message
                 if (message.length > 0) {
                     console.log(message);
-                    webui.showWarning(message);
+                    gitpar.showWarning(message);
                 }
             } else {
                 console.log(message);
-                webui.showError(message);
+                gitpar.showError(message);
             }
         } else {
             console.log(data);
-            webui.showError(data);
+            gitpar.showError(data);
         }
     }, "text")
     .fail(function(xhr, status, error) {
-        webui.showError("Git webui server not running");
+        gitpar.showError("GitPar server not running");
     });
 };
 
-webui.detachChildren = function(element) {
+gitpar.detachChildren = function(element) {
     while (element.firstChild) {
         element.removeChild(element.firstChild);
     }
 }
 
-webui.splitLines = function(data) {
+gitpar.splitLines = function(data) {
     return data.split("\n").filter(function(s) { return s.length > 0; });
 };
 
-webui.getNodeIndex = function(element) {
+gitpar.getNodeIndex = function(element) {
     var index = 0;
     while (element.previousElementSibling) {
         element = element.previousElementSibling;
@@ -630,7 +630,7 @@ webui.getNodeIndex = function(element) {
     return index;
 }
 
-webui.RepoPicker = function(mainView) {
+gitpar.RepoPicker = function(mainView) {
 
     var self = this;
     self.mode = "repo";
@@ -640,12 +640,12 @@ webui.RepoPicker = function(mainView) {
     }
 
     self.selectWorkspace = function(path) {
-        webui.apiPost("/api/workspaces/select", {path: path}, webui.reloadApp);
+        gitpar.apiPost("/api/workspaces/select", {path: path}, gitpar.reloadApp);
     }
 
     self.selectRepo = function(path) {
-        webui.apiPost("/api/repos/select", {path: path}, function(context) {
-            webui.applyOpenedRepoContext(mainView, context);
+        gitpar.apiPost("/api/repos/select", {path: path}, function(context) {
+            gitpar.applyOpenedRepoContext(mainView, context);
         });
     }
 
@@ -663,12 +663,12 @@ webui.RepoPicker = function(mainView) {
 
     self.openNative = function(path, mode) {
         self.mode = mode || self.mode || "repo";
-        webui.apiPost("/api/fs/pick-directory", {
-            path: path || webui.repoPath || null,
+        gitpar.apiPost("/api/fs/pick-directory", {
+            path: path || gitpar.repoPath || null,
             title: self.getPickerTitle(),
         }, function(data) {
             if (data.unsupported) {
-                webui.showWarning((data.error || "Native folder picker unavailable.") + " Falling back to the built-in browser.");
+                gitpar.showWarning((data.error || "Native folder picker unavailable.") + " Falling back to the built-in browser.");
                 self.open(path, self.mode);
                 return;
             }
@@ -681,14 +681,14 @@ webui.RepoPicker = function(mainView) {
                 self.selectRepo(data.path);
             }
         }, function(xhr) {
-            webui.showWarning(webui.parseApiError(xhr, "Native folder picker unavailable.") + " Falling back to the built-in browser.");
+            gitpar.showWarning(gitpar.parseApiError(xhr, "Native folder picker unavailable.") + " Falling back to the built-in browser.");
             self.open(path, self.mode);
         });
     }
 
     self.loadPath = function(path) {
         var requestPath = path ? "?path=" + encodeURIComponent(path) : "";
-        webui.apiGet("/api/fs/list" + requestPath, function(data) {
+        gitpar.apiGet("/api/fs/list" + requestPath, function(data) {
             self.currentPath = data.path;
             self.parentPath = data.parent_path;
             self.updateChrome();
@@ -720,7 +720,7 @@ webui.RepoPicker = function(mainView) {
         $(".repo-picker-open-current", self.element).text(isWorkspaceMode ? "Open Folder" : "Open Repo");
         $(".repo-picker-hint", self.element).text(
             isWorkspaceMode
-                ? "Choose a parent directory and git-webui will surface each repo as a workspace rail."
+                ? "Choose a parent directory and GitPar will surface each repo as a workspace rail."
                 : "Choose a single git repo or drill into a repo folder from the local filesystem."
         );
     }
@@ -773,7 +773,7 @@ webui.RepoPicker = function(mainView) {
     self.open = function(path, mode) {
         self.mode = mode || "repo";
         self.updateChrome();
-        self.loadPath(path || webui.repoPath || null);
+        self.loadPath(path || gitpar.repoPath || null);
         $(self.element).modal("show");
     }
 
@@ -813,18 +813,18 @@ webui.RepoPicker = function(mainView) {
     });
 };
 
-webui.PULL_STRATEGY_KEY = "git-webui-pull-strategy";
-webui.AUTO_FETCH_KEY = "git-webui-auto-fetch";
+gitpar.PULL_STRATEGY_KEY = "gitpar-pull-strategy";
+gitpar.AUTO_FETCH_KEY = "gitpar-auto-fetch";
 
-webui.getPullStrategy = function() {
-    return localStorage.getItem(webui.PULL_STRATEGY_KEY) || "ff";
+gitpar.getPullStrategy = function() {
+    return localStorage.getItem(gitpar.PULL_STRATEGY_KEY) || "ff";
 }
 
-webui.isAutoFetchEnabled = function() {
-    return localStorage.getItem(webui.AUTO_FETCH_KEY) == "1";
+gitpar.isAutoFetchEnabled = function() {
+    return localStorage.getItem(gitpar.AUTO_FETCH_KEY) == "1";
 }
 
-webui.Toolbar = function(mainView) {
+gitpar.Toolbar = function(mainView) {
 
     var self = this;
     self.expandedDrawer = null;
@@ -833,9 +833,9 @@ webui.Toolbar = function(mainView) {
     // -- data / branch helpers (unchanged behavior from the former RepoChrome) --
 
     self.currentBranch = function() {
-        for (var i = 0; i < webui.branches.length; ++i) {
-            if (webui.branches[i].current) {
-                return webui.branches[i];
+        for (var i = 0; i < gitpar.branches.length; ++i) {
+            if (gitpar.branches[i].current) {
+                return gitpar.branches[i];
             }
         }
         return null;
@@ -850,15 +850,15 @@ webui.Toolbar = function(mainView) {
     }
 
     self.loadBranches = function() {
-        if (!webui.repoPath) {
-            webui.branches = [];
+        if (!gitpar.repoPath) {
+            gitpar.branches = [];
             self.updateStatusMeta();
             return;
         }
-        webui.apiGet("/api/branches", function(data) {
-            webui.branches = data.branches || [];
-            webui.tags = data.tags || [];
-            webui.stashes = data.stashes || [];
+        gitpar.apiGet("/api/branches", function(data) {
+            gitpar.branches = data.branches || [];
+            gitpar.tags = data.tags || [];
+            gitpar.stashes = data.stashes || [];
             self.updateStatusMeta();
             if (mainView.historyView) {
                 mainView.historyView.refreshToolbar();
@@ -867,10 +867,10 @@ webui.Toolbar = function(mainView) {
     }
 
     self.updateStatusMeta = function() {
-        $(".toolbar-repo-value", self.element).text(webui.repo || "No Repository");
+        $(".toolbar-repo-value", self.element).text(gitpar.repo || "No Repository");
         $(".toolbar-branch-value", self.element).text(self.branchSummary());
-        $(".app-titlebar-path", self.element).text("git-webui" + (webui.repoPath ? " - " + webui.repoPath : ""));
-        $("title")[0].textContent = webui.repoPath ? "Git - " + webui.repo : "Git WebUI";
+        $(".app-titlebar-path", self.element).text("GitPar" + (gitpar.repoPath ? " - " + gitpar.repoPath : ""));
+        $("title")[0].textContent = gitpar.repoPath ? "Git - " + gitpar.repo : "GitPar";
         var current = self.currentBranch();
         self.setBadge("#toolbar-push-badge", current && current.ahead);
     }
@@ -889,11 +889,11 @@ webui.Toolbar = function(mainView) {
     }
 
     self.openPicker = function() {
-        mainView.repoPicker.openNative(webui.repoPath, "repo");
+        mainView.repoPicker.openNative(gitpar.repoPath, "repo");
     }
 
     self.openWorkspacePicker = function() {
-        mainView.repoPicker.openNative(webui.workspacePath || webui.repoPath, "workspace");
+        mainView.repoPicker.openNative(gitpar.workspacePath || gitpar.repoPath, "workspace");
     }
 
     self.selectRecentRepo = function(event) {
@@ -904,17 +904,17 @@ webui.Toolbar = function(mainView) {
     }
 
     self.focusHistoryRef = function(refName) {
-        webui.historyRef = refName || null;
+        gitpar.historyRef = refName || null;
         self.activateSection("history");
         if (mainView.historyView) {
-            mainView.historyView.update(webui.historyRef);
+            mainView.historyView.update(gitpar.historyRef);
         }
     }
 
     self.compareRef = function(sourceRef) {
         var current = self.currentBranch();
         var targetRef = current && current.local_name ? current.local_name : null;
-        webui.apiPost("/api/branches/compare", {
+        gitpar.apiPost("/api/branches/compare", {
             source_ref: sourceRef,
             target_ref: targetRef,
         }, function(data) {
@@ -926,10 +926,10 @@ webui.Toolbar = function(mainView) {
     }
 
     self.checkoutRef = function(localName, remoteName) {
-        webui.apiPost("/api/branches/checkout", {
+        gitpar.apiPost("/api/branches/checkout", {
             local_name: localName || null,
             remote_name: remoteName || null,
-        }, webui.reloadApp);
+        }, gitpar.reloadApp);
     }
 
     self.mergeRef = function(sourceRef, squash) {
@@ -942,23 +942,23 @@ webui.Toolbar = function(mainView) {
         if (!window.confirm(actionLabel + " '" + sourceRef + "' into '" + targetRef + "'?")) {
             return;
         }
-        webui.apiPost(squash ? "/api/branches/squash-merge" : "/api/branches/merge", {
+        gitpar.apiPost(squash ? "/api/branches/squash-merge" : "/api/branches/merge", {
             source_ref: sourceRef,
             target_ref: targetRef,
         }, function(data) {
-            webui.setFlashMessage(
+            gitpar.setFlashMessage(
                 actionLabel + " completed",
                 data.message || ((squash ? "Squashed " : "Merged ") + sourceRef + " into " + targetRef),
                 "info"
             );
-            webui.reloadWithPostAction(squash ? "workspace" : "history");
+            gitpar.reloadWithPostAction(squash ? "workspace" : "history");
         }, function(xhr) {
-            webui.setFlashMessage(
+            gitpar.setFlashMessage(
                 actionLabel + " needs attention",
-                webui.parseApiError(xhr, actionLabel + " failed"),
+                gitpar.parseApiError(xhr, actionLabel + " failed"),
                 "error"
             );
-            webui.reloadWithPostAction("workspace");
+            gitpar.reloadWithPostAction("workspace");
         });
     }
 
@@ -969,7 +969,7 @@ webui.Toolbar = function(mainView) {
         if (!window.confirm("Delete branch '" + localName + "'?")) {
             return;
         }
-        webui.apiPost("/api/branches/delete", {local_name: localName}, webui.reloadApp);
+        gitpar.apiPost("/api/branches/delete", {local_name: localName}, gitpar.reloadApp);
     }
 
     self.createBranchAtRef = function(startPoint, suggestedName) {
@@ -977,11 +977,11 @@ webui.Toolbar = function(mainView) {
         if (!branchName) {
             return;
         }
-        webui.apiPost("/api/branches/create", {
+        gitpar.apiPost("/api/branches/create", {
             name: branchName,
             start_point: startPoint,
             checkout: true,
-        }, webui.reloadApp);
+        }, gitpar.reloadApp);
     }
 
     self.createTagAtRef = function(startPoint, suggestedName) {
@@ -989,8 +989,8 @@ webui.Toolbar = function(mainView) {
         if (!tagName) {
             return;
         }
-        webui.git("tag " + tagName + (startPoint ? " " + startPoint : ""), function() {
-            webui.showResult("Tag created", "Created tag " + tagName);
+        gitpar.git("tag " + tagName + (startPoint ? " " + startPoint : ""), function() {
+            gitpar.showResult("Tag created", "Created tag " + tagName);
         });
     }
 
@@ -1014,7 +1014,7 @@ webui.Toolbar = function(mainView) {
 
     self.showHistory = function() {
         self.activateSection("history");
-        mainView.historyView.update(webui.historyRef);
+        mainView.historyView.update(gitpar.historyRef);
     }
 
     self.showBranches = function() {
@@ -1023,12 +1023,12 @@ webui.Toolbar = function(mainView) {
     }
 
     self.refreshActiveSection = function() {
-        if (self.activeSectionName == "workspace" && !webui.viewonly) {
+        if (self.activeSectionName == "workspace" && !gitpar.viewonly) {
             mainView.workspaceView.update("stage");
         } else if (self.activeSectionName == "branches") {
             mainView.branchesView.update();
         } else {
-            mainView.historyView.update(webui.historyRef);
+            mainView.historyView.update(gitpar.historyRef);
         }
     }
 
@@ -1103,35 +1103,35 @@ webui.Toolbar = function(mainView) {
         var menu = $(".toolbar-menu[data-menu='repo']", self.element);
         menu.empty();
         var list = $('<div class="toolbar-repo-list"></div>');
-        if (webui.recentRepos.length == 0) {
+        if (gitpar.recentRepos.length == 0) {
             list.append('<div class="toolbar-menu-empty">No recent repositories yet.</div>');
         } else {
-            webui.recentRepos.forEach(function(repo) {
-                var item = $('<button type="button" class="toolbar-menu-item toolbar-repo-item" data-path="' + webui.escapeHtml(repo.path) + '"></button>');
+            gitpar.recentRepos.forEach(function(repo) {
+                var item = $('<button type="button" class="toolbar-menu-item toolbar-repo-item" data-path="' + gitpar.escapeHtml(repo.path) + '"></button>');
                 if (repo.active) {
                     item.addClass("checked");
                 }
-                item.append('<span class="repo-chip-name">' + webui.escapeHtml(repo.name) + '</span>');
-                item.append('<span class="repo-chip-path">' + webui.escapeHtml(repo.path) + '</span>');
+                item.append('<span class="repo-chip-name">' + gitpar.escapeHtml(repo.name) + '</span>');
+                item.append('<span class="repo-chip-path">' + gitpar.escapeHtml(repo.path) + '</span>');
                 item.click(self.selectRecentRepo);
                 list.append(item);
             });
         }
         menu.append(list);
 
-        if (webui.workspacePath) {
+        if (gitpar.workspacePath) {
             menu.append('<div class="toolbar-menu-divider"></div>');
-            menu.append('<div class="toolbar-menu-heading">Folder of Repos: ' + webui.escapeHtml(webui.workspacePath) + '</div>');
-            if (webui.workspaceRepos.length == 0) {
+            menu.append('<div class="toolbar-menu-heading">Folder of Repos: ' + gitpar.escapeHtml(gitpar.workspacePath) + '</div>');
+            if (gitpar.workspaceRepos.length == 0) {
                 menu.append('<div class="toolbar-menu-empty">No git repos found in this folder.</div>');
             } else {
-                webui.workspaceRepos.forEach(function(repo) {
+                gitpar.workspaceRepos.forEach(function(repo) {
                     var item = $('<button type="button" class="toolbar-menu-item toolbar-repo-item"></button>');
                     if (repo.active) {
                         item.addClass("checked");
                     }
-                    item.append('<span class="repo-chip-name">' + webui.escapeHtml(repo.name) + ' <span class="ref-chip-extra">[' + webui.escapeHtml(repo.branch) + ']</span></span>');
-                    item.append('<span class="repo-chip-path">' + webui.escapeHtml(webui.formatRepoCounts(repo)) + '</span>');
+                    item.append('<span class="repo-chip-name">' + gitpar.escapeHtml(repo.name) + ' <span class="ref-chip-extra">[' + gitpar.escapeHtml(repo.branch) + ']</span></span>');
+                    item.append('<span class="repo-chip-path">' + gitpar.escapeHtml(gitpar.formatRepoCounts(repo)) + '</span>');
                     item.click(function() {
                         mainView.repoPicker.selectRepo(repo.path);
                     });
@@ -1145,7 +1145,7 @@ webui.Toolbar = function(mainView) {
         menu.append('<button type="button" class="toolbar-menu-item" data-action="open-workspace">Open Repo Folder&hellip;</button>');
         menu.append('<button type="button" class="toolbar-menu-item" data-action="clone-repo">Clone Repo&hellip;</button>');
         menu.append('<button type="button" class="toolbar-menu-item" data-action="create-repo">Create Repo&hellip;</button>');
-        if (!webui.viewonly) {
+        if (!gitpar.viewonly) {
             menu.append('<div class="toolbar-menu-divider"></div>');
             menu.append('<button type="button" class="toolbar-menu-item" data-action="worktrees">Worktrees&hellip;</button>');
             menu.append('<button type="button" class="toolbar-menu-item" data-action="stashes">Stashes&hellip;</button>');
@@ -1160,21 +1160,21 @@ webui.Toolbar = function(mainView) {
         if (!url) {
             return;
         }
-        webui.apiPost("/api/fs/pick-directory", {
-            path: webui.workspacePath || webui.repoPath || null,
+        gitpar.apiPost("/api/fs/pick-directory", {
+            path: gitpar.workspacePath || gitpar.repoPath || null,
             title: "Choose destination folder",
         }, function(data) {
             if (data.unsupported) {
-                webui.showWarning(data.error || "Native folder picker unavailable.");
+                gitpar.showWarning(data.error || "Native folder picker unavailable.");
                 return;
             }
             if (data.cancelled) {
                 return;
             }
-            webui.apiPost("/api/repos/clone", {url: url, destination: data.path}, function(context) {
-                webui.applyOpenedRepoContext(mainView, context);
+            gitpar.apiPost("/api/repos/clone", {url: url, destination: data.path}, function(context) {
+                gitpar.applyOpenedRepoContext(mainView, context);
             }, function(xhr) {
-                webui.showError(webui.parseApiError(xhr, "Clone failed"));
+                gitpar.showError(gitpar.parseApiError(xhr, "Clone failed"));
             });
         });
     }
@@ -1184,21 +1184,21 @@ webui.Toolbar = function(mainView) {
         if (!name) {
             return;
         }
-        webui.apiPost("/api/fs/pick-directory", {
-            path: webui.workspacePath || webui.repoPath || null,
+        gitpar.apiPost("/api/fs/pick-directory", {
+            path: gitpar.workspacePath || gitpar.repoPath || null,
             title: "Choose parent folder",
         }, function(data) {
             if (data.unsupported) {
-                webui.showWarning(data.error || "Native folder picker unavailable.");
+                gitpar.showWarning(data.error || "Native folder picker unavailable.");
                 return;
             }
             if (data.cancelled) {
                 return;
             }
-            webui.apiPost("/api/repos/create", {destination: data.path, directory_name: name}, function(context) {
-                webui.applyOpenedRepoContext(mainView, context);
+            gitpar.apiPost("/api/repos/create", {destination: data.path, directory_name: name}, function(context) {
+                gitpar.applyOpenedRepoContext(mainView, context);
             }, function(xhr) {
-                webui.showError(webui.parseApiError(xhr, "Create repo failed"));
+                gitpar.showError(gitpar.parseApiError(xhr, "Create repo failed"));
             });
         });
     }
@@ -1207,7 +1207,7 @@ webui.Toolbar = function(mainView) {
 
     self.runRemoteAction = function(buttonId, cmd, callback) {
         var button = $("#" + buttonId, self.element).addClass("toolbar-remote-btn-busy");
-        webui.git(cmd, function(data) {
+        gitpar.git(cmd, function(data) {
             callback(data);
         }).always(function() {
             button.removeClass("toolbar-remote-btn-busy");
@@ -1217,12 +1217,12 @@ webui.Toolbar = function(mainView) {
     // These deliberately say nothing on success: the spinner covers the
     // wait and the refreshed branch state shows the result, so a modal
     // would only be something to dismiss. Failures still raise one -
-    // webui.git surfaces a non-zero exit through showError - and git's
+    // gitpar.git surfaces a non-zero exit through showError - and git's
     // warnings on a successful run still reach the message bar.
 
     self.onPull = function(event) {
         event.preventDefault();
-        var strategy = webui.getPullStrategy();
+        var strategy = gitpar.getPullStrategy();
         var args = strategy == "rebase" ? "pull --rebase" : "pull";
         self.runRemoteAction("toolbar-pull", args, function(data) {
             self.loadBranches();
@@ -1258,8 +1258,8 @@ webui.Toolbar = function(mainView) {
     }
 
     self.toggleAutoFetch = function() {
-        var enabled = !webui.isAutoFetchEnabled();
-        localStorage.setItem(webui.AUTO_FETCH_KEY, enabled ? "1" : "0");
+        var enabled = !gitpar.isAutoFetchEnabled();
+        localStorage.setItem(gitpar.AUTO_FETCH_KEY, enabled ? "1" : "0");
         self.applyAutoFetch();
     }
 
@@ -1268,20 +1268,20 @@ webui.Toolbar = function(mainView) {
             clearInterval(self.autoFetchTimer);
             self.autoFetchTimer = null;
         }
-        if (webui.isAutoFetchEnabled()) {
+        if (gitpar.isAutoFetchEnabled()) {
             self.autoFetchTimer = setInterval(self.onFetch, 5 * 60 * 1000);
         }
     }
 
     self.setPullStrategy = function(strategy) {
-        localStorage.setItem(webui.PULL_STRATEGY_KEY, strategy);
+        localStorage.setItem(gitpar.PULL_STRATEGY_KEY, strategy);
     }
 
     self.renderRemoteMenu = function(kind) {
         var menu = $(".toolbar-menu[data-menu='" + kind + "']", self.element);
         menu.empty();
         if (kind == "pull") {
-            var strategy = webui.getPullStrategy();
+            var strategy = gitpar.getPullStrategy();
             var ffItem = $('<button type="button" class="toolbar-menu-item' + (strategy != "rebase" ? " checked" : "") + '">Fast Forward When Possible</button>');
             ffItem.click(function() { self.setPullStrategy("ff"); });
             var rebaseItem = $('<button type="button" class="toolbar-menu-item' + (strategy == "rebase" ? " checked" : "") + '">Rebase</button>');
@@ -1292,7 +1292,7 @@ webui.Toolbar = function(mainView) {
             forceItem.click(self.onForcePush);
             menu.append(forceItem).append('<div class="toolbar-menu-divider"></div>');
         } else if (kind == "fetch") {
-            var autoItem = $('<button type="button" class="toolbar-menu-item' + (webui.isAutoFetchEnabled() ? " checked" : "") + '">Auto fetch</button>');
+            var autoItem = $('<button type="button" class="toolbar-menu-item' + (gitpar.isAutoFetchEnabled() ? " checked" : "") + '">Auto fetch</button>');
             autoItem.click(self.toggleAutoFetch);
             menu.append(autoItem).append('<div class="toolbar-menu-divider"></div>');
         }
@@ -1312,12 +1312,12 @@ webui.Toolbar = function(mainView) {
     self.renderRepoTabs = function() {
         var strip = $(".repo-tab-strip", self.element);
         strip.empty();
-        if (webui.openRepos.length == 0) {
+        if (gitpar.openRepos.length == 0) {
             return;
         }
-        webui.openRepos.forEach(function(repo) {
+        gitpar.openRepos.forEach(function(repo) {
             var tab = $('<div class="repo-tab"><span class="repo-tab-name"></span><button type="button" class="repo-tab-close" title="Close">&times;</button></div>');
-            if (repo.path == webui.activeRepoId) {
+            if (repo.path == gitpar.activeRepoId) {
                 tab.addClass("active");
             }
             $(".repo-tab-name", tab).text(repo.name).attr("title", repo.path);
@@ -1336,38 +1336,38 @@ webui.Toolbar = function(mainView) {
     }
 
     self.switchActiveRepo = function(repoId) {
-        if (!repoId || repoId == webui.activeRepoId) {
+        if (!repoId || repoId == gitpar.activeRepoId) {
             return;
         }
-        var entry = webui.openRepos.filter(function(repo) { return repo.path == repoId; })[0];
-        webui.activeRepoId = repoId;
-        webui.repoPath = repoId;
-        webui.repo = entry ? entry.name : repoId;
-        webui.historyRef = null;
-        webui.historyAuthorFilter = null;
-        webui.refChipFilterName = null;
+        var entry = gitpar.openRepos.filter(function(repo) { return repo.path == repoId; })[0];
+        gitpar.activeRepoId = repoId;
+        gitpar.repoPath = repoId;
+        gitpar.repo = entry ? entry.name : repoId;
+        gitpar.historyRef = null;
+        gitpar.historyAuthorFilter = null;
+        gitpar.refChipFilterName = null;
         self.renderRepoTabs();
         self.update();
         self.refreshActiveSection();
     }
 
     self.closeRepoTab = function(repoId) {
-        webui.apiPost("/api/repos/close", {repo_id: repoId}, function(context) {
-            webui.openRepos = context.open_repos || [];
+        gitpar.apiPost("/api/repos/close", {repo_id: repoId}, function(context) {
+            gitpar.openRepos = context.open_repos || [];
             self.renderRepoTabs();
             if (!context.has_repo) {
-                webui.activeRepoId = null;
-                webui.repoPath = null;
-                mainView.switchTo(new webui.NoRepoView(mainView).element);
+                gitpar.activeRepoId = null;
+                gitpar.repoPath = null;
+                mainView.switchTo(new gitpar.NoRepoView(mainView).element);
                 return;
             }
-            if (context.repo_id != webui.activeRepoId) {
-                webui.activeRepoId = context.repo_id;
-                webui.repoPath = context.repo_path;
-                webui.repo = context.repo_name;
-                webui.historyRef = null;
-                webui.historyAuthorFilter = null;
-                webui.refChipFilterName = null;
+            if (context.repo_id != gitpar.activeRepoId) {
+                gitpar.activeRepoId = context.repo_id;
+                gitpar.repoPath = context.repo_path;
+                gitpar.repo = context.repo_name;
+                gitpar.historyRef = null;
+                gitpar.historyAuthorFilter = null;
+                gitpar.refChipFilterName = null;
                 self.update();
                 self.refreshActiveSection();
             }
@@ -1476,7 +1476,7 @@ webui.Toolbar = function(mainView) {
     $("#toolbar-fetch", self.element).click(self.onFetch);
     $("#toolbar-fetch", self.element).on("contextmenu", function(event) { self.onRemoteContextMenu("fetch", event); });
 
-    if (webui.viewonly) {
+    if (gitpar.viewonly) {
         $("#toolbar-push, #toolbar-pull, #app-menu-button", self.element).prop("disabled", true);
     } else {
         $(".toolbar-tab[data-section='workspace']", self.element).click(self.showWorkspace);
@@ -1496,12 +1496,12 @@ webui.Toolbar = function(mainView) {
     self.activateSection("history");
 };
 
-webui.ConfigureRemotesView = function() {
+gitpar.ConfigureRemotesView = function() {
 
     var self = this;
 
     self.refresh = function() {
-        webui.apiGet("/api/remotes", function(data) {
+        gitpar.apiGet("/api/remotes", function(data) {
             self.render(data.remotes || []);
         });
     }
@@ -1524,10 +1524,10 @@ webui.ConfigureRemotesView = function() {
                 if (!window.confirm("Remove remote '" + remote.name + "'?")) {
                     return;
                 }
-                webui.apiPost("/api/remotes/remove", {name: remote.name}, function(data) {
+                gitpar.apiPost("/api/remotes/remove", {name: remote.name}, function(data) {
                     self.render(data.remotes || []);
                 }, function(xhr) {
-                    webui.showError(webui.parseApiError(xhr, "Unable to remove remote"));
+                    gitpar.showError(gitpar.parseApiError(xhr, "Unable to remove remote"));
                 });
             });
             list.append(row);
@@ -1540,11 +1540,11 @@ webui.ConfigureRemotesView = function() {
         if (!name || !url) {
             return;
         }
-        webui.apiPost("/api/remotes/add", {name: name, url: url}, function(data) {
+        gitpar.apiPost("/api/remotes/add", {name: name, url: url}, function(data) {
             $(".configure-remotes-add-name, .configure-remotes-add-url", self.element).val("");
             self.render(data.remotes || []);
         }, function(xhr) {
-            webui.showError(webui.parseApiError(xhr, "Unable to add remote"));
+            gitpar.showError(gitpar.parseApiError(xhr, "Unable to add remote"));
         });
     }
 
@@ -1579,12 +1579,12 @@ webui.ConfigureRemotesView = function() {
 /*
  * == WorktreesView =============================================================
  */
-webui.WorktreesView = function(mainView) {
+gitpar.WorktreesView = function(mainView) {
 
     var self = this;
 
     self.refresh = function() {
-        webui.apiGet("/api/worktrees", function(data) {
+        gitpar.apiGet("/api/worktrees", function(data) {
             self.render(data.worktrees || []);
         });
     }
@@ -1603,15 +1603,15 @@ webui.WorktreesView = function(mainView) {
                             '</div>');
             $(".worktrees-row-path", row).text(worktree.path);
             $(".worktrees-row-branch", row).text(worktree.detached ? "(detached)" : (worktree.branch || ""));
-            $(".worktrees-remove", row).prop("disabled", worktree.path == webui.repoPath);
+            $(".worktrees-remove", row).prop("disabled", worktree.path == gitpar.repoPath);
             $(".worktrees-remove", row).click(function() {
                 if (!window.confirm("Remove worktree at '" + worktree.path + "'?")) {
                     return;
                 }
-                webui.apiPost("/api/worktrees/remove", {path: worktree.path, force: true}, function(data) {
+                gitpar.apiPost("/api/worktrees/remove", {path: worktree.path, force: true}, function(data) {
                     self.render(data.worktrees || []);
                 }, function(xhr) {
-                    webui.showError(webui.parseApiError(xhr, "Unable to remove worktree"));
+                    gitpar.showError(gitpar.parseApiError(xhr, "Unable to remove worktree"));
                 });
             });
             list.append(row);
@@ -1625,16 +1625,16 @@ webui.WorktreesView = function(mainView) {
         if (!path || !branch) {
             return;
         }
-        webui.apiPost("/api/worktrees/add", {
+        gitpar.apiPost("/api/worktrees/add", {
             path: path,
             branch: branch,
             create_branch: createBranch,
-            start_point: webui.historyRef || "HEAD",
+            start_point: gitpar.historyRef || "HEAD",
         }, function(data) {
             $(".worktrees-add-path, .worktrees-add-branch", self.element).val("");
             self.render(data.worktrees || []);
         }, function(xhr) {
-            webui.showError(webui.parseApiError(xhr, "Unable to add worktree"));
+            gitpar.showError(gitpar.parseApiError(xhr, "Unable to add worktree"));
         });
     }
 
@@ -1670,12 +1670,12 @@ webui.WorktreesView = function(mainView) {
 /*
  * == StashesView ================================================================
  */
-webui.StashesView = function(mainView) {
+gitpar.StashesView = function(mainView) {
 
     var self = this;
 
     self.refresh = function() {
-        webui.apiGet("/api/stashes", function(data) {
+        gitpar.apiGet("/api/stashes", function(data) {
             self.render(data.stashes || []);
         });
     }
@@ -1704,10 +1704,10 @@ webui.StashesView = function(mainView) {
                 if (!window.confirm("Drop stash '" + stash.message + "'?")) {
                     return;
                 }
-                webui.apiPost("/api/stashes/drop", {ref: stash.ref}, function(data) {
+                gitpar.apiPost("/api/stashes/drop", {ref: stash.ref}, function(data) {
                     self.render(data.stashes || []);
                 }, function(xhr) {
-                    webui.showError(webui.parseApiError(xhr, "Unable to drop stash"));
+                    gitpar.showError(gitpar.parseApiError(xhr, "Unable to drop stash"));
                 });
             });
             list.append(row);
@@ -1715,14 +1715,14 @@ webui.StashesView = function(mainView) {
     }
 
     self.apply = function(ref, pop) {
-        webui.apiPost("/api/stashes/apply", {ref: ref, pop: pop}, function(data) {
-            webui.showResult(pop ? "Stash popped" : "Stash applied", data.message || "");
+        gitpar.apiPost("/api/stashes/apply", {ref: ref, pop: pop}, function(data) {
+            gitpar.showResult(pop ? "Stash popped" : "Stash applied", data.message || "");
             $(self.element).modal("hide");
             if (mainView.workspaceView) {
                 mainView.workspaceView.update("stage");
             }
         }, function(xhr) {
-            webui.showError(webui.parseApiError(xhr, "Unable to apply stash"));
+            gitpar.showError(gitpar.parseApiError(xhr, "Unable to apply stash"));
         });
     }
 
@@ -1751,12 +1751,12 @@ webui.StashesView = function(mainView) {
 /*
  * == ReflogView ================================================================
  */
-webui.ReflogView = function(mainView) {
+gitpar.ReflogView = function(mainView) {
 
     var self = this;
 
     self.refresh = function() {
-        webui.apiGet("/api/reflog", function(data) {
+        gitpar.apiGet("/api/reflog", function(data) {
             self.render(data.entries || []);
         });
     }
@@ -1781,10 +1781,10 @@ webui.ReflogView = function(mainView) {
                 if (!window.confirm("Hard reset the current branch to " + entry.selector + " (" + entry.action + ")? This cannot be undone.")) {
                     return;
                 }
-                webui.git("reset --hard " + entry.commit, function() {
-                    webui.showResult("Reset complete", "Reset to " + entry.selector);
+                gitpar.git("reset --hard " + entry.commit, function() {
+                    gitpar.showResult("Reset complete", "Reset to " + entry.selector);
                     $(self.element).modal("hide");
-                    webui.reloadWithPostAction("history");
+                    gitpar.reloadWithPostAction("history");
                 });
             });
             list.append(row);
@@ -1816,12 +1816,12 @@ webui.ReflogView = function(mainView) {
 /*
  * == SubmodulesView =============================================================
  */
-webui.SubmodulesView = function(mainView) {
+gitpar.SubmodulesView = function(mainView) {
 
     var self = this;
 
     self.refresh = function() {
-        webui.apiGet("/api/submodules", function(data) {
+        gitpar.apiGet("/api/submodules", function(data) {
             self.render(data.submodules || []);
         });
     }
@@ -1844,11 +1844,11 @@ webui.SubmodulesView = function(mainView) {
     }
 
     self.onUpdateAll = function() {
-        webui.apiPost("/api/submodules/update", {init: true}, function(data) {
-            webui.showResult("Submodules updated", "Ran submodule update --init --recursive");
+        gitpar.apiPost("/api/submodules/update", {init: true}, function(data) {
+            gitpar.showResult("Submodules updated", "Ran submodule update --init --recursive");
             self.render(data.submodules || []);
         }, function(xhr) {
-            webui.showError(webui.parseApiError(xhr, "Unable to update submodules"));
+            gitpar.showError(gitpar.parseApiError(xhr, "Unable to update submodules"));
         });
     }
 
@@ -1882,14 +1882,14 @@ webui.SubmodulesView = function(mainView) {
  * plus per-commit Pick/Squash/Drop. Reword is intentionally not supported -
  * it would need a second pause/resume round trip with the rebase process.
  */
-webui.InteractiveRebaseView = function(mainView) {
+gitpar.InteractiveRebaseView = function(mainView) {
 
     var self = this;
 
     self.show = function(base) {
         self.base = base;
-        webui.git("log --format=%H%x09%s --date-order " + base + "..HEAD --", function(data) {
-            var commits = webui.splitLines(data).filter(function(line) { return line.length > 0; }).map(function(line) {
+        gitpar.git("log --format=%H%x09%s --date-order " + base + "..HEAD --", function(data) {
+            var commits = gitpar.splitLines(data).filter(function(line) { return line.length > 0; }).map(function(line) {
                 var parts = line.split("\t");
                 return { commit: parts[0], message: parts[1] || "" };
             });
@@ -1904,7 +1904,7 @@ webui.InteractiveRebaseView = function(mainView) {
         var list = $(".interactive-rebase-list", self.element);
         list.empty();
         if (commits.length == 0) {
-            list.append('<div class="toolbar-menu-empty">HEAD is already up to date with ' + webui.escapeHtml(self.base) + '.</div>');
+            list.append('<div class="toolbar-menu-empty">HEAD is already up to date with ' + gitpar.escapeHtml(self.base) + '.</div>');
             return;
         }
         commits.forEach(function(commit) {
@@ -1935,12 +1935,12 @@ webui.InteractiveRebaseView = function(mainView) {
         if (!window.confirm("Rewrite " + actions.length + " commit(s) onto " + self.base + "? This rewrites history.")) {
             return;
         }
-        webui.apiPost("/api/rebase/plan", {base: self.base, actions: actions}, function(data) {
-            webui.showResult("Rebase completed", data.message || "");
+        gitpar.apiPost("/api/rebase/plan", {base: self.base, actions: actions}, function(data) {
+            gitpar.showResult("Rebase completed", data.message || "");
             $(self.element).modal("hide");
-            webui.reloadWithPostAction("history");
+            gitpar.reloadWithPostAction("history");
         }, function(xhr) {
-            webui.showError(webui.parseApiError(xhr, "Rebase failed"));
+            gitpar.showError(gitpar.parseApiError(xhr, "Rebase failed"));
         });
     }
 
@@ -1964,14 +1964,14 @@ webui.InteractiveRebaseView = function(mainView) {
     $("body").append(self.element);
 };
 
-webui.NoRepoView = function(mainView) {
+gitpar.NoRepoView = function(mainView) {
 
     var self = this;
 
     self.element = $(   '<div id="no-repo-view" class="jumbotron">' +
                             '<div class="no-repo-kicker">Local Git Dashboard</div>' +
                             '<h1>Choose a repository</h1>' +
-                            '<p>Start from recent repositories, or open a folder of repos to build a multi-repo workspace without restarting git-webui.</p>' +
+                            '<p>Start from recent repositories, or open a folder of repos to build a multi-repo workspace without restarting git-gitpar.</p>' +
                             '<p><button type="button" class="btn btn-primary btn-lg no-repo-browse">Browse Repo</button> <button type="button" class="btn btn-default btn-lg no-repo-workspace">Open Repo Folder</button></p>' +
                         '</div>')[0];
 
@@ -1983,7 +1983,7 @@ webui.NoRepoView = function(mainView) {
     });
 };
 
-webui.TabBox = function(buttons) {
+gitpar.TabBox = function(buttons) {
 
     var self = this;
 
@@ -2015,7 +2015,7 @@ webui.TabBox = function(buttons) {
 /*
  * == RefActionMenu ============================================================
  */
-webui.RefActionMenu = function(mainView) {
+gitpar.RefActionMenu = function(mainView) {
 
     var self = this;
 
@@ -2042,10 +2042,10 @@ webui.RefActionMenu = function(mainView) {
     }
 
     self.render = function(refInfo, entry) {
-        var branch = webui.findBranchByRef(refInfo);
-        var current = webui.getCurrentBranch();
+        var branch = gitpar.findBranchByRef(refInfo);
+        var current = gitpar.getCurrentBranch();
         var isCurrentLocal = branch && branch.current && branch.local_name;
-        var mergeDisabled = webui.viewonly || !current || !current.local_name || isCurrentLocal;
+        var mergeDisabled = gitpar.viewonly || !current || !current.local_name || isCurrentLocal;
 
         $(".ref-action-menu-title", self.element).text(refInfo.displayName || refInfo.gitRef || refInfo.fullName || "Ref");
         $(".ref-action-menu-subtitle", self.element).text(entry.commit.substr(0, 12));
@@ -2061,26 +2061,26 @@ webui.RefActionMenu = function(mainView) {
         if (refInfo.kind == "local") {
             self.addAction("Checkout", function() {
                 mainView.repoChrome.checkoutRef(refInfo.gitRef, null);
-            }, webui.viewonly || isCurrentLocal);
+            }, gitpar.viewonly || isCurrentLocal);
         } else if (refInfo.kind == "remote") {
             self.addAction("Checkout tracking branch", function() {
                 mainView.repoChrome.checkoutRef(null, refInfo.gitRef);
-            }, webui.viewonly);
+            }, gitpar.viewonly);
         }
 
         self.addAction("Create branch here", function() {
             mainView.repoChrome.createBranchAtRef(refInfo.gitRef || entry.commit, refInfo.displayName + "-copy");
-        }, webui.viewonly);
+        }, gitpar.viewonly);
         self.addAction("Create tag here", function() {
             mainView.repoChrome.createTagAtRef(refInfo.gitRef || entry.commit, refInfo.displayName + "-tag");
-        }, webui.viewonly);
+        }, gitpar.viewonly);
 
         self.addAction("Hide other branches", function() {
-            webui.setRefChipFilter(refInfo.displayName);
+            gitpar.setRefChipFilter(refInfo.displayName);
         }, !refInfo.displayName);
         self.addAction("Show All Branches", function() {
-            webui.setRefChipFilter(null);
-        }, !webui.refChipFilterName);
+            gitpar.setRefChipFilter(null);
+        }, !gitpar.refChipFilterName);
 
         if (refInfo.kind == "local" || refInfo.kind == "remote") {
             self.addAction("Compare to current branch", function() {
@@ -2097,24 +2097,24 @@ webui.RefActionMenu = function(mainView) {
         if (refInfo.kind == "local") {
             self.addAction("Delete local branch", function() {
                 mainView.repoChrome.removeBranch(refInfo.gitRef);
-            }, webui.viewonly || !branch || !branch.can_delete, "danger");
+            }, gitpar.viewonly || !branch || !branch.can_delete, "danger");
         }
 
         if (refInfo.kind == "local" || refInfo.kind == "remote") {
             self.addAction("Interactive Rebase onto here&hellip;", function() {
                 mainView.interactiveRebaseView.show(refInfo.gitRef);
-            }, webui.viewonly);
+            }, gitpar.viewonly);
         }
 
         self.addAction("Copy ref name", function() {
-            webui.copyToClipboard(refInfo.gitRef || refInfo.fullName, "Ref name");
+            gitpar.copyToClipboard(refInfo.gitRef || refInfo.fullName, "Ref name");
         }, !(refInfo.gitRef || refInfo.fullName));
         self.addAction("Copy commit hash", function() {
-            webui.copyToClipboard(entry.commit, "Commit hash");
+            gitpar.copyToClipboard(entry.commit, "Commit hash");
         }, !entry.commit);
         self.addAction("Configure Remotes", function() {
             mainView.configureRemotesView.show();
-        }, webui.viewonly);
+        }, gitpar.viewonly);
     }
 
     self.show = function(anchor, refInfo, entry) {
@@ -2176,7 +2176,7 @@ webui.RefActionMenu = function(mainView) {
  * == CommitActionMenu =========================================================
  * The hover "⋮ show commit menu" popup for a single commit row.
  */
-webui.CommitActionMenu = function(mainView) {
+gitpar.CommitActionMenu = function(mainView) {
 
     var self = this;
 
@@ -2209,37 +2209,37 @@ webui.CommitActionMenu = function(mainView) {
 
         self.addAction("Create Branch Here…", function() {
             mainView.repoChrome.createBranchAtRef(entry.commit, entry.commit.substr(0, 8) + "-branch");
-        }, webui.viewonly);
+        }, gitpar.viewonly);
         self.addAction("Create Tag Here…", function() {
             mainView.repoChrome.createTagAtRef(entry.commit, entry.commit.substr(0, 8) + "-tag");
-        }, webui.viewonly);
+        }, gitpar.viewonly);
         self.addAction("Show all commits by " + entry.author.name, function() {
             mainView.historyView.showCommitsByAuthor(entry.author.name);
         }, false);
 
-        webui.apiGet("/api/commits/" + entry.commit + "/is-ancestor", function(data) {
+        gitpar.apiGet("/api/commits/" + entry.commit + "/is-ancestor", function(data) {
             if (data.is_ancestor) {
                 self.addAction("Revert Changes in this Commit…", function() {
                     if (!window.confirm("Revert commit " + entry.commit.substr(0, 8) + "?")) {
                         return;
                     }
-                    webui.git("revert --no-edit " + entry.commit, function() {
-                        webui.showResult("Revert completed", "Reverted " + entry.commit.substr(0, 8));
-                        mainView.historyView.update(webui.historyRef);
+                    gitpar.git("revert --no-edit " + entry.commit, function() {
+                        gitpar.showResult("Revert completed", "Reverted " + entry.commit.substr(0, 8));
+                        mainView.historyView.update(gitpar.historyRef);
                     });
-                }, webui.viewonly, "danger");
+                }, gitpar.viewonly, "danger");
             } else {
                 self.addAction("Cherry-pick Changes in this Commit…", function() {
-                    webui.git("cherry-pick " + entry.commit, function() {
-                        webui.showResult("Cherry-pick completed", "Cherry-picked " + entry.commit.substr(0, 8));
-                        mainView.historyView.update(webui.historyRef);
+                    gitpar.git("cherry-pick " + entry.commit, function() {
+                        gitpar.showResult("Cherry-pick completed", "Cherry-picked " + entry.commit.substr(0, 8));
+                        mainView.historyView.update(gitpar.historyRef);
                     });
-                }, webui.viewonly);
+                }, gitpar.viewonly);
             }
         });
 
         self.addAction("Copy commit hash", function() {
-            webui.copyToClipboard(entry.commit, "Commit hash");
+            gitpar.copyToClipboard(entry.commit, "Commit hash");
         }, !entry.commit);
     }
 
@@ -2302,7 +2302,7 @@ webui.CommitActionMenu = function(mainView) {
  * == SearchOverlay =============================================================
  * The Ctrl+F "Search commits, branches or users" overlay.
  */
-webui.SearchOverlay = function(mainView) {
+gitpar.SearchOverlay = function(mainView) {
 
     var self = this;
 
@@ -2344,7 +2344,7 @@ webui.SearchOverlay = function(mainView) {
     $(document).on("keydown", function(event) {
         if (event.key == "Escape") {
             self.hide();
-        } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() == "f" && !webui.viewonly) {
+        } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() == "f" && !gitpar.viewonly) {
             event.preventDefault();
             self.show();
         }
@@ -2356,7 +2356,7 @@ webui.SearchOverlay = function(mainView) {
 /*
  * == LogView =================================================================
  */
-webui.LogView = function(historyView) {
+gitpar.LogView = function(historyView) {
 
     var self = this;
 
@@ -2385,7 +2385,7 @@ webui.LogView = function(historyView) {
         self.stashCommits = {};
         self.hiddenCommits = {};
         if (!self.ref) {
-            (webui.stashes || []).forEach(function(stash) {
+            (gitpar.stashes || []).forEach(function(stash) {
                 self.stashCommits[stash.commit] = stash;
                 refSpec += " " + stash.commit;
                 // Seeding the walk with a stash drags in the index and
@@ -2398,8 +2398,8 @@ webui.LogView = function(historyView) {
                 });
             });
         }
-        var authorSpec = webui.historyAuthorFilter ? " --author=" + JSON.stringify(webui.historyAuthorFilter) : "";
-        webui.git("log --date-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
+        var authorSpec = gitpar.historyAuthorFilter ? " --author=" + JSON.stringify(gitpar.historyAuthorFilter) : "";
+        gitpar.git("log --date-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
             var start = 0;
             var count = 0;
             self.nextSkip = undefined;
@@ -2584,10 +2584,10 @@ webui.LogView = function(historyView) {
         var newStreamPath = function() {
             var svgPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
             ++streamColor;
-            if (streamColor == webui.COLORS.length) {
+            if (streamColor == gitpar.COLORS.length) {
                 streamColor = 0;
             }
-            svgPath.setAttribute("style", "stroke:" + webui.COLORS[streamColor]);
+            svgPath.setAttribute("style", "stroke:" + gitpar.COLORS[streamColor]);
             svg.appendChild(svgPath);
             return svgPath;
         };
@@ -2600,7 +2600,7 @@ webui.LogView = function(historyView) {
                 currentY = rowCenters[i];
             }
             var index = 0;
-            entry.element.webuiLeft = streams.length;
+            entry.element.gitparLeft = streams.length;
 
             // Find streams to join
             var childCount = 0;
@@ -2701,8 +2701,8 @@ webui.LogView = function(historyView) {
             }
             svg.appendChild(svgNode);
 
-            entry.element.webuiLeft = Math.max(entry.element.webuiLeft, streams.length);
-            maxLeft = Math.max(maxLeft, entry.element.webuiLeft);
+            entry.element.gitparLeft = Math.max(entry.element.gitparLeft, streams.length);
+            maxLeft = Math.max(maxLeft, entry.element.gitparLeft);
             // Debug log
             //console.log(entry.commit, entry.parents, $.extend(true, [], streams));
 
@@ -2763,19 +2763,19 @@ webui.LogView = function(historyView) {
             // rather than the author's initials - it reads as something
             // set aside rather than a commit.
             var marker = self.stash
-                ? '<span class="log-entry-avatar log-entry-stash-mark" title="' + webui.escapeHtml(self.stash.ref || "stash") + '">&#9707;</span>'
-                : '<span class="log-entry-avatar" style="background:' + webui.colorForAuthor(self.author.name) + '" title="' + webui.escapeHtml(self.author.name) + ' &lt;' + webui.escapeHtml(self.author.email) + '&gt;">' + webui.escapeHtml(webui.getInitials(self.author.name)) + '</span>';
+                ? '<span class="log-entry-avatar log-entry-stash-mark" title="' + gitpar.escapeHtml(self.stash.ref || "stash") + '">&#9707;</span>'
+                : '<span class="log-entry-avatar" style="background:' + gitpar.colorForAuthor(self.author.name) + '" title="' + gitpar.escapeHtml(self.author.name) + ' &lt;' + gitpar.escapeHtml(self.author.email) + '&gt;">' + gitpar.escapeHtml(gitpar.getInitials(self.author.name)) + '</span>';
             self.element = $('<a class="log-entry list-group-item">' +
                                 '<header>' +
                                     marker +
                                     '<p class="list-group-item-text"></p>' +
                                     '<button type="button" class="log-entry-menu-btn" title="Show commit menu">&#8942;</button>' +
                                     '<span class="log-entry-graph"></span>' +
-                                    '<span class="log-entry-date" title="' + webui.escapeHtml(self.author.date.toLocaleString()) + '">' + webui.escapeHtml(self.relativeDate || "") + '</span>' +
+                                    '<span class="log-entry-date" title="' + gitpar.escapeHtml(self.author.date.toLocaleString()) + '">' + gitpar.escapeHtml(self.relativeDate || "") + '</span>' +
                                     '<span class="badge log-entry-hash">' + self.abbrevCommitHash() + '</span>' +
                                 '</header>' +
                              '</a>')[0];
-            var subject = self.stash ? webui.formatStashSubject(self.stash.message) : self.abbrevMessage();
+            var subject = self.stash ? gitpar.formatStashSubject(self.stash.message) : self.abbrevMessage();
             $(self.element).toggleClass("log-entry-stash", !!self.stash);
             $(".list-group-item-text", self.element)[0].appendChild(document.createTextNode(subject));
             $(".log-entry-menu-btn", self.element).click(function(event) {
@@ -2832,7 +2832,7 @@ webui.LogView = function(historyView) {
                     .click(function(event) {
                         event.preventDefault();
                         event.stopPropagation();
-                        webui.copyToClipboard(self.commit, "Commit hash");
+                        gitpar.copyToClipboard(self.commit, "Commit hash");
                     }));
             $(".log-entry-card-message", self.card).text(self.message);
             $(".log-entry-card-menu", self.card).click(function(event) {
@@ -2856,12 +2856,12 @@ webui.LogView = function(historyView) {
         self.loadCardFiles = function() {
             var fileBox = $(".log-entry-card-files", self.card);
             fileBox.text("Loading files…");
-            webui.git("diff-tree --no-commit-id --name-status -r -m --first-parent " + self.commit, function(data) {
+            gitpar.git("diff-tree --no-commit-id --name-status -r -m --first-parent " + self.commit, function(data) {
                 if (!self.card) {
                     return;
                 }
                 fileBox.empty();
-                var files = webui.parseNameStatus(data);
+                var files = gitpar.parseNameStatus(data);
                 if (files.length == 0) {
                     fileBox.append('<div class="log-entry-card-empty">No file changes in this commit.</div>');
                 } else {
@@ -2919,7 +2919,7 @@ webui.LogView = function(historyView) {
         });
 
         self.message = self.message.trim();
-        self.decoratedRefs = webui.parseDecoratedRefs(self.refs || [], self.commit);
+        self.decoratedRefs = gitpar.parseDecoratedRefs(self.refs || [], self.commit);
 
         // A stash records its index (and any untracked files) as extra
         // parents. Those aren't history and would each open a lane, so
@@ -2932,7 +2932,7 @@ webui.LogView = function(historyView) {
         // Only label the first commit in a run that shares the same
         // relative-time bucket ("2 days ago", ...) - repeating it on
         // every row is noise.
-        var formatted = webui.formatRelativeTime(self.author.date);
+        var formatted = gitpar.formatRelativeTime(self.author.date);
         if (formatted != logView.lastShownDate) {
             self.relativeDate = formatted;
             logView.lastShownDate = formatted;
@@ -2954,7 +2954,7 @@ webui.LogView = function(historyView) {
 /*
  * == DiffView ================================================================
  */
-webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
+gitpar.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
 
     var self = this;
     self.sideBySide = initialSideBySide;
@@ -2973,14 +2973,14 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
                 if (left) {
                     left.scrollTop = 0;
                     left.scrollLeft = 0;
-                    left.webuiPrevScrollTop = 0;
-                    left.webuiPrevScrollLeft = 0;
+                    left.gitparPrevScrollTop = 0;
+                    left.gitparPrevScrollLeft = 0;
                 }
                 if (right) {
                     right.scrollTop = 0;
                     right.scrollLeft = 0;
-                    right.webuiPrevScrollTop = 0;
-                    right.webuiPrevScrollLeft = 0;
+                    right.gitparPrevScrollTop = 0;
+                    right.gitparPrevScrollLeft = 0;
                 }
             }
             self.gitFile = file;
@@ -3001,9 +3001,9 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             if (self.gitFile) {
                 // The backend splits this with shlex, so an unquoted
                 // path breaks on any file with a space in its name.
-                fullCmd += " -- " + webui.quoteArg(self.gitFile);
+                fullCmd += " -- " + gitpar.quoteArg(self.gitFile);
             }
-            webui.git(fullCmd, function(diff) {
+            gitpar.git(fullCmd, function(diff) {
                 self.refresh(diff);
             });
         } else {
@@ -3070,7 +3070,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             }
         }
         self.flushAddedRemovedLines(view, operation, context);
-        view.parentElement.scrollTop = view.parentElement.webuiPrevScrollTop;
+        view.parentElement.scrollTop = view.parentElement.gitparPrevScrollTop;
     }
 
     self.flushAddedRemovedLines = function(view, operation, context) {
@@ -3087,7 +3087,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         if (offset > 0) {
             for (var i = 0; i < offset; ++i) {
                 var pre = $('<pre class="diff-view-line diff-line-phantom">').appendTo(view)[0];
-                pre.webuiLine = " ";
+                pre.gitparLine = " ";
                 if (hunkSelectionAllowed) {
                     $('<span class="diff-line-check diff-line-check-empty">').appendTo(pre);
                 }
@@ -3107,15 +3107,15 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
     // no longer the element's textContent now that gutters live inside
     // it. addDiffLine stashes the raw line here.
     self.lineText = function(element) {
-        return element.webuiLine != undefined ? element.webuiLine : element.textContent;
+        return element.gitparLine != undefined ? element.gitparLine : element.textContent;
     }
 
     self.addDiffLine = function(view, line, context) {
         var c = line[0];
         var pre = $('<pre class="diff-view-line">').appendTo(view)[0];
-        pre.webuiLine = line;
+        pre.gitparLine = line;
 
-        var hunk = webui.parseHunkHeader(line);
+        var hunk = gitpar.parseHunkHeader(line);
         if (hunk) {
             context.oldLine = hunk.oldStart;
             context.newLine = hunk.newStart;
@@ -3172,7 +3172,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             $(pre).addClass("diff-line-del");
         } else if (c == '@') {
             $(pre).addClass("diff-line-offset");
-            pre.webuiActive = false;
+            pre.gitparActive = false;
             context.inHeader = false;
         } else if (c == 'd') {
             context.inHeader = true;
@@ -3287,14 +3287,14 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             var current = right;
             var other = left;
         }
-        if (current.webuiPrevScrollTop != current.scrollTop) {
+        if (current.gitparPrevScrollTop != current.scrollTop) {
             // Vertical scrolling
             other.scrollTop = current.scrollTop;
-            other.webuiPrevScrollTop = current.webuiPrevScrollTop = current.scrollTop;
-        } else if (current.webuiPrevScrollLeft != current.scrollLeft) {
+            other.gitparPrevScrollTop = current.gitparPrevScrollTop = current.scrollTop;
+        } else if (current.gitparPrevScrollLeft != current.scrollLeft) {
             // Horizontal scrolling
             other.scrollLeft = current.scrollLeft;
-            other.webuiPrevScrollLeft = current.webuiPrevScrollLeft = current.scrollLeft;
+            other.gitparPrevScrollLeft = current.gitparPrevScrollLeft = current.scrollLeft;
         }
     }
 
@@ -3333,11 +3333,11 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         if (cmd == "+" || cmd == "-") {
             $(lineElt).toggleClass("active");
         } else if (cmd == "@") {
-            lineElt.webuiActive = !lineElt.webuiActive;
+            lineElt.gitparActive = !lineElt.gitparActive;
             for (var elt = lineElt.nextElementSibling; elt; elt = elt.nextElementSibling) {
                 cmd = self.lineText(elt)[0];
                 if (cmd == "+" || cmd == "-") {
-                    $(elt).toggleClass("active", lineElt.webuiActive);
+                    $(elt).toggleClass("active", lineElt.gitparActive);
                 } else if (cmd == "@") {
                     break;
                 }
@@ -3444,7 +3444,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
                 continue;
             }
 
-            var hunk = webui.parseHunkHeader(line);
+            var hunk = gitpar.parseHunkHeader(line);
             if (hunk) {
                 flushHunk();
                 hunkStart = hunk.oldStart;
@@ -3507,7 +3507,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         if (unified && reverse) {
             cmd += " -R";
         }
-        webui.git(cmd, patch, function (data) {
+        gitpar.git(cmd, patch, function (data) {
             parent.update();
         });
     }
@@ -3517,7 +3517,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             return;
         }
         var mainView = parent.historyView.mainView;
-        var commitExplorerView = new webui.CommitExplorerView(mainView, self.currentDiff);
+        var commitExplorerView = new gitpar.CommitExplorerView(mainView, self.currentDiff);
         commitExplorerView.show();
     };
     
@@ -3531,7 +3531,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
 
     self.buildDOM = function() {
         var html = '<div class="diff-view-container panel panel-default">';
-        if (! (parent instanceof webui.CommitExplorerView)) {
+        if (! (parent instanceof gitpar.CommitExplorerView)) {
             html +=
                 '<div class="panel-heading diff-toolbar" role="toolbar">' +
                     '<button type="button" class="diff-tool-btn diff-ignore-whitespace' + (self.ignoreWhitespace ? ' on' : '') + '" aria-pressed="' + !!self.ignoreWhitespace + '">Ignore whitespace</button>' +
@@ -3560,15 +3560,15 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
             panelBody.appendChild(left);
             leftLines = left.firstChild;
             $(left).scroll(self.diffViewScrolled);
-            left.webuiPrevScrollTop = 0;
-            left.webuiPrevScrollLeft = 0;
+            left.gitparPrevScrollTop = 0;
+            left.gitparPrevScrollLeft = 0;
             
             right = $('<div class="diff-view"><div class="diff-view-lines"></div></div>')[0];
             panelBody.appendChild(right);
             rightLines = right.firstChild;
             $(right).scroll(self.diffViewScrolled);
-            right.webuiPrevScrollTop = 0;
-            right.webuiPrevScrollLeft = 0;
+            right.gitparPrevScrollTop = 0;
+            right.gitparPrevScrollLeft = 0;
             
             if (hunkSelectionAllowed) {
                 $(left).click(self.handleClick);
@@ -3612,7 +3612,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
 /*
  * == TreeView ================================================================
  */
-webui.TreeView = function(commitView) {
+gitpar.TreeView = function(commitView) {
 
     var self = this;
 
@@ -3655,7 +3655,7 @@ webui.TreeView = function(commitView) {
     }
 
     self.update = function(treeRef, commitRef) {
-        self.stack = [ { name: webui.repo, object: treeRef } ];
+        self.stack = [ { name: gitpar.repo, object: treeRef } ];
         self.commitRef = commitRef;
         self.showTree();
     }
@@ -3683,7 +3683,7 @@ webui.TreeView = function(commitView) {
     }
 
     self.breadcrumbClicked = function(event) {
-        var to = webui.getNodeIndex(event.target.parentElement);
+        var to = gitpar.getNodeIndex(event.target.parentElement);
         self.stack = self.stack.slice(0, to + 1);
         self.showTree();
     }
@@ -3695,7 +3695,7 @@ webui.TreeView = function(commitView) {
         self.createBreadcrumb();
         var treeRef = self.stack[self.stack.length - 1].object;
         var parentTreeRef = self.stack.length > 1 ? self.stack[self.stack.length - 2].object : undefined;
-        webui.git("ls-tree -l " + treeRef, function(data) {
+        gitpar.git("ls-tree -l " + treeRef, function(data) {
             var blobs = [];
             var trees = [];
             if (parentTreeRef) {
@@ -3710,7 +3710,7 @@ webui.TreeView = function(commitView) {
                 });
                 elt.appendTo(treeViewTreeContent);
             }
-            webui.splitLines(data).forEach(function(line) {
+            gitpar.splitLines(data).forEach(function(line) {
                 var entry = new Entry(line);
                 var size = entry.formatedSize()
                 var elt =   $('<a href="#" class="list-group-item">' +
@@ -3757,7 +3757,7 @@ webui.TreeView = function(commitView) {
         $(self.element.lastElementChild).remove();
         var container = $(  '<div id="tree-view-blob-content">' +
                                 '<div class="tree-blob-toolbar"><button type="button" class="btn btn-default btn-xs tree-blame-toggle">Blame</button></div>' +
-                                '<iframe src="' + webui.withRepoParam("/git/cat-file/" + self.stack[self.stack.length - 1].object) + '"></iframe>' +
+                                '<iframe src="' + gitpar.withRepoParam("/git/cat-file/" + self.stack[self.stack.length - 1].object) + '"></iframe>' +
                             '</div>');
         container.appendTo(self.element);
         $(".tree-blame-toggle", container).click(self.toggleBlame);
@@ -3771,7 +3771,7 @@ webui.TreeView = function(commitView) {
             return;
         }
         var path = self.getCurrentPath();
-        webui.apiGet(
+        gitpar.apiGet(
             "/api/blame?path=" + encodeURIComponent(path) + "&rev=" + encodeURIComponent(self.commitRef || "HEAD"),
             function(data) {
                 $("#tree-view-blob-content iframe", self.element).hide();
@@ -3787,7 +3787,7 @@ webui.TreeView = function(commitView) {
                 $("#tree-view-blob-content", self.element).append(blameContent);
             },
             function(xhr) {
-                webui.showError(webui.parseApiError(xhr, "Unable to blame this file"));
+                gitpar.showError(gitpar.parseApiError(xhr, "Unable to blame this file"));
             }
         );
     }
@@ -3802,7 +3802,7 @@ webui.TreeView = function(commitView) {
 /*
  * == CommitExplorerView =============================================================
  */
-webui.CommitExplorerView = function(mainView, diff) {
+gitpar.CommitExplorerView = function(mainView, diff) {
 
     var self = this;
     var diffLines = diff.split("\n");
@@ -3865,9 +3865,9 @@ webui.CommitExplorerView = function(mainView, diff) {
 
     self.buildDiffSections(diff);
 
-    self.diffView = new webui.DiffView(true, false, self);
-    self.fileListView = new webui.FileListView(self, diffSections);
-    self.commitHeaderView = new webui.CommitHeaderView(self, diffHeaderLines.join("\n"));
+    self.diffView = new gitpar.DiffView(true, false, self);
+    self.fileListView = new gitpar.FileListView(self, diffSections);
+    self.commitHeaderView = new gitpar.CommitHeaderView(self, diffHeaderLines.join("\n"));
 
     self.displayDiffForSection(0);
 
@@ -3877,7 +3877,7 @@ webui.CommitExplorerView = function(mainView, diff) {
 
 }
 
-webui.FileListView = function(commitExplorerView, files){
+gitpar.FileListView = function(commitExplorerView, files){
     var self = this;
 
     self.fileSelected = function(event) {
@@ -3942,7 +3942,7 @@ webui.FileListView = function(commitExplorerView, files){
 /*
  * == CommitHeaderView ==============================================================
  */
-webui.CommitHeaderView = function(commitExplorerView, header) {
+gitpar.CommitHeaderView = function(commitExplorerView, header) {
     var self = this;
     self.element = $('<div class="panel panel-default">' +
                          '<div class="panel-heading">' +
@@ -3955,7 +3955,7 @@ webui.CommitHeaderView = function(commitExplorerView, header) {
 /*
  * == CommitView ==============================================================
  */
-webui.CommitView = function(historyView) {
+gitpar.CommitView = function(historyView) {
 
     var self = this;
 
@@ -3973,12 +3973,12 @@ webui.CommitView = function(historyView) {
     };
 
     self.showDiff = function() {
-        webui.detachChildren(commitViewContent);
+        gitpar.detachChildren(commitViewContent);
         commitViewContent.appendChild(diffView.element);
     };
 
     self.showTree = function() {
-        webui.detachChildren(commitViewContent);
+        gitpar.detachChildren(commitViewContent);
         commitViewContent.appendChild(treeView.element);
     };
 
@@ -3992,12 +3992,12 @@ webui.CommitView = function(historyView) {
         historyView.collapseCommit();
     });
     commitViewHeader.appendChild(collapseButton[0]);
-    var buttonBox = new webui.TabBox([["Commit", self.showDiff], ["Tree", self.showTree]]);
+    var buttonBox = new gitpar.TabBox([["Commit", self.showDiff], ["Tree", self.showTree]]);
     commitViewHeader.appendChild(buttonBox.element);
     var commitViewContent = $('<div id="commit-view-content">')[0];
     self.element.appendChild(commitViewContent);
-    var diffView = new webui.DiffView(false, false, self);
-    var treeView = new webui.TreeView(self);
+    var diffView = new gitpar.DiffView(false, false, self);
+    var treeView = new gitpar.TreeView(self);
 };
 
 /*
@@ -4005,7 +4005,7 @@ webui.CommitView = function(historyView) {
  * The full-view a commit expands into: its message across the top, then
  * a filterable list of the files it touched beside that file's diff.
  */
-webui.CommitDetailView = function(historyView) {
+gitpar.CommitDetailView = function(historyView) {
 
     var self = this;
     self.historyView = historyView;
@@ -4019,15 +4019,15 @@ webui.CommitDetailView = function(historyView) {
         self.filterText = "";
         $(".commit-detail-filter", self.element).val("");
         $(".commit-detail-avatar", self.element)
-            .text(webui.getInitials(entry.author.name))
-            .attr("style", "background:" + webui.colorForAuthor(entry.author.name));
+            .text(gitpar.getInitials(entry.author.name))
+            .attr("style", "background:" + gitpar.colorForAuthor(entry.author.name));
         $(".commit-detail-meta", self.element)
             .text(entry.author.date.toLocaleString() + " by " + entry.author.name + "  ")
             .append($('<button type="button" class="log-entry-card-hash">')
                 .text("(" + entry.abbrevCommitHash() + ")")
                 .attr("title", entry.commit)
                 .click(function() {
-                    webui.copyToClipboard(entry.commit, "Commit hash");
+                    gitpar.copyToClipboard(entry.commit, "Commit hash");
                 }));
         $(".commit-detail-message", self.element).text(entry.message);
         self.refreshNav();
@@ -4052,11 +4052,11 @@ webui.CommitDetailView = function(historyView) {
         var list = $(".commit-detail-file-list", self.element);
         list.text("Loading files…");
         var commit = self.entry.commit;
-        webui.git("diff-tree --no-commit-id --name-status -r -m --first-parent " + commit, function(data) {
+        gitpar.git("diff-tree --no-commit-id --name-status -r -m --first-parent " + commit, function(data) {
             if (!self.entry || self.entry.commit != commit) {
                 return;
             }
-            self.files = webui.parseNameStatus(data);
+            self.files = gitpar.parseNameStatus(data);
             self.renderFiles();
             if (self.files.length > 0) {
                 self.selectFile(self.files[0].path);
@@ -4138,7 +4138,7 @@ webui.CommitDetailView = function(historyView) {
                             '</div>' +
                         '</div>')[0];
 
-    self.diffView = new webui.DiffView(false, false, self);
+    self.diffView = new gitpar.DiffView(false, false, self);
     $(".commit-detail-diff", self.element)[0].appendChild(self.diffView.element);
     $(".commit-detail-filter", self.element).on("input", self.onFilterInput);
     $(".commit-detail-prev", self.element).click(function() { self.step(-1); });
@@ -4157,7 +4157,7 @@ webui.CommitDetailView = function(historyView) {
 /*
  * == HistoryView =============================================================
  */
-webui.HistoryView = function(mainView) {
+gitpar.HistoryView = function(mainView) {
 
     var self = this;
     // Which commits currently have their collapsed "+N" ref pill opened.
@@ -4172,15 +4172,15 @@ webui.HistoryView = function(mainView) {
         // up when a filter is narrowing what's shown - otherwise the
         // subtitle is filler competing with the actual content.
         var subtitle = "";
-        if (webui.historyAuthorFilter) {
-            subtitle = "Commits by " + webui.historyAuthorFilter;
-        } else if (webui.historyRef) {
-            subtitle = "Showing " + webui.historyRef + " only";
+        if (gitpar.historyAuthorFilter) {
+            subtitle = "Commits by " + gitpar.historyAuthorFilter;
+        } else if (gitpar.historyRef) {
+            subtitle = "Showing " + gitpar.historyRef + " only";
         }
         $(".history-view-title", self.element).text("Filtered");
         $(".history-view-subtitle", self.element).text(subtitle);
         $(".history-view-toolbar", self.element).toggle(!!subtitle);
-        $(".history-view-reset", self.element).prop("disabled", !webui.historyRef && !webui.historyAuthorFilter);
+        $(".history-view-reset", self.element).prop("disabled", !gitpar.historyRef && !gitpar.historyAuthorFilter);
         self.renderRefList();
     }
 
@@ -4188,11 +4188,11 @@ webui.HistoryView = function(mainView) {
         var container = $(".history-view-refs-layer", self.element);
         container.empty();
         self.refRows = [];
-        if (!webui.branches || webui.branches.length == 0) {
+        if (!gitpar.branches || gitpar.branches.length == 0) {
             container.append('<div class="toolbar-menu-empty">No branches yet.</div>');
             return;
         }
-        var groups = webui.groupRefsByCommit(webui.branches, webui.tags);
+        var groups = gitpar.groupRefsByCommit(gitpar.branches, gitpar.tags);
         groups.forEach(function(group) {
             var row = $('<div class="history-view-ref-row"></div>');
             var expanded = self.expandedRefCommits[group.commit];
@@ -4312,8 +4312,8 @@ webui.HistoryView = function(mainView) {
     }
 
     self.resetFilter = function() {
-        webui.historyRef = null;
-        webui.historyAuthorFilter = null;
+        gitpar.historyRef = null;
+        gitpar.historyAuthorFilter = null;
         if (mainView.repoChrome) {
             mainView.repoChrome.focusHistoryRef(null);
         } else {
@@ -4322,16 +4322,16 @@ webui.HistoryView = function(mainView) {
     }
 
     self.showCommitsByAuthor = function(authorName) {
-        webui.historyAuthorFilter = authorName;
-        self.update(webui.historyRef);
+        gitpar.historyAuthorFilter = authorName;
+        self.update(gitpar.historyRef);
     }
 
     self.update = function(ref) {
-        webui.historyRef = ref || null;
+        gitpar.historyRef = ref || null;
         self.show();
         self.refreshToolbar();
         self.logView.update(ref);
-        if (!webui.viewonly) {
+        if (!gitpar.viewonly) {
             self.uncommittedSummary.update();
         }
     };
@@ -4371,9 +4371,9 @@ webui.HistoryView = function(mainView) {
                      '</div>')[0];
     $(".history-view-reset", self.element).click(self.resetFilter);
     var historyMain = $(".history-view-main", self.element)[0];
-    self.uncommittedSummary = new webui.UncommittedSummaryView(mainView);
+    self.uncommittedSummary = new gitpar.UncommittedSummaryView(mainView);
     historyMain.appendChild(self.uncommittedSummary.element);
-    self.logView = new webui.LogView(self);
+    self.logView = new gitpar.LogView(self);
     historyMain.appendChild(self.logView.element);
     $(self.logView.element).scroll(self.syncRefScroll);
     $(window).resize(self.positionRefChips);
@@ -4394,8 +4394,8 @@ webui.HistoryView = function(mainView) {
             self.logView.collapseSelection();
         }
     });
-    self.commitView = new webui.CommitView(self);
-    self.commitDetailView = new webui.CommitDetailView(self);
+    self.commitView = new gitpar.CommitView(self);
+    self.commitDetailView = new gitpar.CommitDetailView(self);
     self.mainView = mainView;
     self.refreshToolbar();
 };
@@ -4404,7 +4404,7 @@ webui.HistoryView = function(mainView) {
  * == UncommittedSummaryView ===================================================
  * The "N changed files" card pinned above the commit list.
  */
-webui.UncommittedSummaryView = function(mainView) {
+gitpar.UncommittedSummaryView = function(mainView) {
 
     var self = this;
     self.expanded = false;
@@ -4438,9 +4438,9 @@ webui.UncommittedSummaryView = function(mainView) {
     }
 
     self.update = function() {
-        webui.git("status --porcelain", function(data) {
+        gitpar.git("status --porcelain", function(data) {
             self.files = [];
-            webui.splitLines(data).forEach(function(line) {
+            gitpar.splitLines(data).forEach(function(line) {
                 if (!line) {
                     return;
                 }
@@ -4470,12 +4470,12 @@ webui.UncommittedSummaryView = function(mainView) {
  * Shown above the diff/file lists whenever a merge or rebase is in progress
  * with unresolved conflicts, with Accept Ours/Theirs per file and Abort.
  */
-webui.ConflictBannerView = function(workspaceView) {
+gitpar.ConflictBannerView = function(workspaceView) {
 
     var self = this;
 
     self.update = function() {
-        webui.apiGet("/api/conflicts", function(data) {
+        gitpar.apiGet("/api/conflicts", function(data) {
             self.render(data);
         });
     }
@@ -4508,11 +4508,11 @@ webui.ConflictBannerView = function(workspaceView) {
     }
 
     self.resolve = function(path, resolution) {
-        webui.apiPost("/api/conflicts/resolve", {path: path, resolution: resolution}, function(data) {
+        gitpar.apiPost("/api/conflicts/resolve", {path: path, resolution: resolution}, function(data) {
             self.render(data);
             workspaceView.update("stage");
         }, function(xhr) {
-            webui.showError(webui.parseApiError(xhr, "Unable to resolve conflict"));
+            gitpar.showError(gitpar.parseApiError(xhr, "Unable to resolve conflict"));
         });
     }
 
@@ -4521,14 +4521,14 @@ webui.ConflictBannerView = function(workspaceView) {
             return;
         }
         var cmd = self.lastStatus && self.lastStatus.rebasing ? "rebase --abort" : "merge --abort";
-        webui.git(cmd, function() {
+        gitpar.git(cmd, function() {
             self.update();
             workspaceView.update("stage");
         });
     }
 
     self.onContinue = function() {
-        webui.git("rebase --continue", function() {
+        gitpar.git("rebase --continue", function() {
             self.update();
             workspaceView.update("stage");
         });
@@ -4550,7 +4550,7 @@ webui.ConflictBannerView = function(workspaceView) {
 /*
  * == WorkspaceView ===========================================================
  */
-webui.WorkspaceView = function(mainView) {
+gitpar.WorkspaceView = function(mainView) {
 
     var self = this;
 
@@ -4591,8 +4591,8 @@ webui.WorkspaceView = function(mainView) {
     self.stashChanges = function(selectedOnly) {
         var files = selectedOnly ? self.workingCopyView.getFileList() + self.stagingAreaView.getFileList() : "";
         var cmd = selectedOnly && files.trim().length > 0 ? "stash push -- " + files : "stash push";
-        webui.git(cmd, function(data) {
-            webui.showResult("Stash created", data || "Changes stashed");
+        gitpar.git(cmd, function(data) {
+            gitpar.showResult("Stash created", data || "Changes stashed");
             self.update("stage");
         });
     }
@@ -4605,7 +4605,7 @@ webui.WorkspaceView = function(mainView) {
             self.workingCopyView.cancel();
             self.stagingAreaView.cancel();
         } else {
-            webui.git("checkout -- .", function() {
+            gitpar.git("checkout -- .", function() {
                 self.update("stage");
             });
         }
@@ -4655,33 +4655,33 @@ webui.WorkspaceView = function(mainView) {
         }
     });
 
-    self.conflictBanner = new webui.ConflictBannerView(self);
+    self.conflictBanner = new gitpar.ConflictBannerView(self);
     $(".conflict-banner", self.element).replaceWith(self.conflictBanner.element);
     var workspaceDiffView = $("#workspace-diff-view", self.element)[0];
-    self.diffView = new webui.DiffView(true, true, self);
+    self.diffView = new gitpar.DiffView(true, true, self);
     workspaceDiffView.appendChild(self.diffView.element);
     var workspaceEditor = $("#workspace-editor", self.element)[0];
-    self.workingCopyView = new webui.ChangedFilesView(self, "working-copy", "Working Copy");
+    self.workingCopyView = new gitpar.ChangedFilesView(self, "working-copy", "Working Copy");
     workspaceEditor.appendChild(self.workingCopyView.element);
-    self.commitMessageView = new webui.CommitMessageView(self);
+    self.commitMessageView = new gitpar.CommitMessageView(self);
     workspaceEditor.appendChild(self.commitMessageView.element);
-    self.stagingAreaView = new webui.ChangedFilesView(self, "staging-area", "Staging Area");
+    self.stagingAreaView = new gitpar.ChangedFilesView(self, "staging-area", "Staging Area");
     workspaceEditor.appendChild(self.stagingAreaView.element);
 };
 
 /*
  * == ChangedFilesView ========================================================
  */
-webui.ChangedFilesView = function(workspaceView, type, label) {
+gitpar.ChangedFilesView = function(workspaceView, type, label) {
 
     var self = this;
 
     self.update = function() {
         $(fileList).empty()
         var col = type == "working-copy" ? 1 : 0;
-        webui.git("status --porcelain", function(data) {
+        gitpar.git("status --porcelain", function(data) {
             self.filesCount = 0;
-            webui.splitLines(data).forEach(function(line) {
+            gitpar.splitLines(data).forEach(function(line) {
                 var status = line[col];
                 if (col == 0 && status != " " && status != "?" || col == 1 && status != " ") {
                     ++self.filesCount;
@@ -4702,11 +4702,11 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
                         var ignoreModel = item.model;
                         ignoreBtn.click(function(event) {
                             event.stopPropagation();
-                            webui.apiPost("/api/gitignore/add", {pattern: ignoreModel}, function(data) {
-                                webui.showResult("Updated .gitignore", data.message);
+                            gitpar.apiPost("/api/gitignore/add", {pattern: ignoreModel}, function(data) {
+                                gitpar.showResult("Updated .gitignore", data.message);
                                 workspaceView.update("stage");
                             }, function(xhr) {
-                                webui.showError(webui.parseApiError(xhr, "Unable to update .gitignore"));
+                                gitpar.showError(gitpar.parseApiError(xhr, "Unable to update .gitignore"));
                             });
                         });
                         ignoreBtn.appendTo(item);
@@ -4735,7 +4735,7 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
         var clicked = event.target;
 
         if (event.shiftKey && selectedIndex !== null) {
-            var clickedIndex = webui.getNodeIndex(clicked);
+            var clickedIndex = gitpar.getNodeIndex(clicked);
             if (clickedIndex < selectedIndex) {
                 var from = clickedIndex;
                 var to = selectedIndex;
@@ -4749,13 +4749,13 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
             selectedIndex = clickedIndex;
         } else if (event.ctrlKey) {
             $(clicked).toggleClass("active");
-            selectedIndex = webui.getNodeIndex(clicked);
+            selectedIndex = gitpar.getNodeIndex(clicked);
         } else {
             for (var i = 0; i < fileList.childElementCount; ++i) {
                 $(fileList.children[i]).removeClass("active");
             }
             $(clicked).addClass("active");
-            selectedIndex = webui.getNodeIndex(clicked);
+            selectedIndex = gitpar.getNodeIndex(clicked);
         }
         if (type == "working-copy") {
             workspaceView.stagingAreaView.unselect();
@@ -4801,9 +4801,9 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
         var rmFiles = self.getFileList("D");
         if (files.length != 0) {
             var cmd = type == "working-copy" ? "add" : "reset";
-            webui.git(cmd + " -- " + files, function(data) {
+            gitpar.git(cmd + " -- " + files, function(data) {
                 if (rmFiles.length != 0) {
-                    webui.git("rm -- " + rmFiles, function(data) {
+                    gitpar.git("rm -- " + rmFiles, function(data) {
                         workspaceView.update(type == "working-copy" ? "stage" : "unstage");
                     });
                 } else {
@@ -4812,7 +4812,7 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
             });
         } else if (rmFiles.length != 0) {
             var cmd = type == "working-copy" ? "rm" : "reset";
-            webui.git(cmd + " -- " + rmFiles, function(data) {
+            gitpar.git(cmd + " -- " + rmFiles, function(data) {
                 workspaceView.update(type == "working-copy" ? "stage" : "unstage");
             });
         }
@@ -4822,7 +4822,7 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
         prevScrollTop = fileListContainer.scrollTop;
         var files = self.getFileList();
         if (files.length != 0) {
-            webui.git("checkout -- " + files, function(data) {
+            gitpar.git("checkout -- " + files, function(data) {
                 workspaceView.update("stage");
             });
         }
@@ -4899,13 +4899,13 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
 /*
  * == CommitMessageView =======================================================
  */
-webui.CommitMessageView = function(workspaceView) {
+gitpar.CommitMessageView = function(workspaceView) {
 
     var self = this;
 
     self.onAmend = function() {
         if (!amend.hasClass("active") && textArea.value.length == 0) {
-            webui.git("log --pretty=format:%B -n 1", function(data) {
+            gitpar.git("log --pretty=format:%B -n 1", function(data) {
                 textArea.value = data;
             });
         }
@@ -4913,16 +4913,16 @@ webui.CommitMessageView = function(workspaceView) {
 
     self.onCommit = function() {
         if (workspaceView.stagingAreaView.filesCount == 0 && !amend.hasClass("active")) {
-            webui.showError("No files staged for commit");
+            gitpar.showError("No files staged for commit");
         } else if (textArea.value.length == 0) {
-            webui.showError("Enter a commit message first");
+            gitpar.showError("Enter a commit message first");
         } else {
             var cmd = "commit ";
             if (amend.hasClass("active")) {
                 cmd += "--amend ";
             }
             cmd += "--file=-";
-            webui.git(cmd, textArea.value, function(data) {
+            gitpar.git(cmd, textArea.value, function(data) {
                 textArea.value = "";
                 workspaceView.update("stage");
                 amend.removeClass("active");
@@ -4931,13 +4931,13 @@ webui.CommitMessageView = function(workspaceView) {
     }
 
     self.update = function() {
-        if (webui.gitUserName) {
-            $(".commit-message-commit", self.element).text("Commit as " + webui.gitUserName);
+        if (gitpar.gitUserName) {
+            $(".commit-message-commit", self.element).text("Commit as " + gitpar.gitUserName);
             return;
         }
-        webui.git("config user.name", function(data) {
-            webui.gitUserName = data.trim() || "you";
-            $(".commit-message-commit", self.element).text("Commit as " + webui.gitUserName);
+        gitpar.git("config user.name", function(data) {
+            gitpar.gitUserName = data.trim() || "you";
+            $(".commit-message-commit", self.element).text("Commit as " + gitpar.gitUserName);
         });
     }
 
@@ -4967,7 +4967,7 @@ webui.CommitMessageView = function(workspaceView) {
  * == BranchesView =============================================================
  * A dedicated Local / Remote branch list.
  */
-webui.BranchesView = function(mainView) {
+gitpar.BranchesView = function(mainView) {
 
     var self = this;
     self.branches = [];
@@ -5060,7 +5060,7 @@ webui.BranchesView = function(mainView) {
 
     self.update = function() {
         self.show();
-        webui.apiGet("/api/branches", function(data) {
+        gitpar.apiGet("/api/branches", function(data) {
             self.branches = data.branches || [];
             self.render();
         });
@@ -5092,46 +5092,46 @@ function MainUi() {
     var self = this;
 
     self.switchTo = function(element) {
-        webui.detachChildren(self.mainView);
+        gitpar.detachChildren(self.mainView);
         self.mainView.appendChild(element);
     }
 
     self.bootstrap = function(context) {
-        var postAction = sessionStorage.getItem("git-webui-post-action");
+        var postAction = sessionStorage.getItem("gitpar-post-action");
         if (postAction) {
-            sessionStorage.removeItem("git-webui-post-action");
+            sessionStorage.removeItem("gitpar-post-action");
         }
-        var flashMessage = webui.consumeFlashMessage();
+        var flashMessage = gitpar.consumeFlashMessage();
 
-        webui.repo = context.repo_name || "/";
-        webui.repoPath = context.repo_path;
-        webui.recentRepos = context.recent_repos || [];
-        webui.activeRepoId = context.repo_id || null;
-        webui.openRepos = context.open_repos || [];
-        webui.workspacePath = context.workspace_path;
-        webui.recentWorkspaces = context.recent_workspaces || [];
-        webui.workspaceRepos = context.workspace_repos || [];
-        webui.viewonly = context.view_only;
+        gitpar.repo = context.repo_name || "/";
+        gitpar.repoPath = context.repo_path;
+        gitpar.recentRepos = context.recent_repos || [];
+        gitpar.activeRepoId = context.repo_id || null;
+        gitpar.openRepos = context.open_repos || [];
+        gitpar.workspacePath = context.workspace_path;
+        gitpar.recentWorkspaces = context.recent_workspaces || [];
+        gitpar.workspaceRepos = context.workspace_repos || [];
+        gitpar.viewonly = context.view_only;
 
         var title = $("title")[0];
-        title.textContent = context.has_repo ? "Git - " + webui.repo : "Git WebUI";
+        title.textContent = context.has_repo ? "Git - " + gitpar.repo : "GitPar";
 
         var body = $("body")[0];
         $('<div id="message-box">').appendTo(body);
 
-        self.repoPicker = new webui.RepoPicker(self);
+        self.repoPicker = new gitpar.RepoPicker(self);
         body.appendChild(self.repoPicker.element);
-        self.refActionMenu = new webui.RefActionMenu(self);
-        self.commitActionMenu = new webui.CommitActionMenu(self);
-        self.searchOverlay = new webui.SearchOverlay(self);
-        self.configureRemotesView = new webui.ConfigureRemotesView();
-        self.worktreesView = new webui.WorktreesView(self);
-        self.stashesView = new webui.StashesView(self);
-        self.reflogView = new webui.ReflogView(self);
-        self.submodulesView = new webui.SubmodulesView(self);
-        self.interactiveRebaseView = new webui.InteractiveRebaseView(self);
+        self.refActionMenu = new gitpar.RefActionMenu(self);
+        self.commitActionMenu = new gitpar.CommitActionMenu(self);
+        self.searchOverlay = new gitpar.SearchOverlay(self);
+        self.configureRemotesView = new gitpar.ConfigureRemotesView();
+        self.worktreesView = new gitpar.WorktreesView(self);
+        self.stashesView = new gitpar.StashesView(self);
+        self.reflogView = new gitpar.ReflogView(self);
+        self.submodulesView = new gitpar.SubmodulesView(self);
+        self.interactiveRebaseView = new gitpar.InteractiveRebaseView(self);
 
-        self.repoChrome = new webui.Toolbar(self);
+        self.repoChrome = new gitpar.Toolbar(self);
         body.appendChild(self.repoChrome.element);
         self.repoChrome.update();
 
@@ -5140,26 +5140,26 @@ function MainUi() {
         globalContainer.appendChild(self.mainView);
 
         if (context.has_repo) {
-            self.historyView = new webui.HistoryView(self);
-            self.branchesView = new webui.BranchesView(self);
-            if (!webui.viewonly) {
-                self.workspaceView = new webui.WorkspaceView(self);
+            self.historyView = new gitpar.HistoryView(self);
+            self.branchesView = new gitpar.BranchesView(self);
+            if (!gitpar.viewonly) {
+                self.workspaceView = new gitpar.WorkspaceView(self);
             }
             if (postAction == "workspace" && self.workspaceView) {
                 self.workspaceView.update("stage");
                 self.repoChrome.activateSection("workspace");
             } else if (postAction == "history") {
-                self.historyView.update(webui.historyRef);
+                self.historyView.update(gitpar.historyRef);
                 self.repoChrome.activateSection("history");
             } else {
-                self.historyView.update(webui.historyRef);
+                self.historyView.update(gitpar.historyRef);
             }
         } else {
-            self.switchTo(new webui.NoRepoView(self).element);
+            self.switchTo(new gitpar.NoRepoView(self).element);
         }
 
         if (flashMessage) {
-            webui.showModal(
+            gitpar.showModal(
                 flashMessage.title || (flashMessage.type == "error" ? "Error" : "Result"),
                 flashMessage.message || "",
                 flashMessage.type == "error" ? "error" : "info"
@@ -5167,7 +5167,7 @@ function MainUi() {
         }
     }
 
-    webui.apiGet("/api/context", self.bootstrap);
+    gitpar.apiGet("/api/context", self.bootstrap);
 }
 
 $(document).ready(function () {

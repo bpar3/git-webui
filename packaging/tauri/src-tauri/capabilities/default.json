@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the git-webui desktop shell's single window",
+  "description": "Capabilities for the GitPar desktop shell's single window",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -9,7 +9,7 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "git-webui-server",
+          "name": "gitpar-server",
           "sidecar": true,
           "args": true
         }

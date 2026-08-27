@@ -47,7 +47,7 @@ IS_WINDOWS = platform.system() == "Windows"
 
 
 
-class WebUiHttpServer(HTTPServer):
+class GitParHttpServer(HTTPServer):
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate = True):
         if not isinstance(server_address, tuple) or len(server_address) < 2:
             raise TypeError("server_address must be a tuple (address,port)")
@@ -63,7 +63,7 @@ class WebUiHttpServer(HTTPServer):
 
 
 
-class WebUiRequestHandler(SimpleHTTPRequestHandler):
+class GitParRequestHandler(SimpleHTTPRequestHandler):
 
     # SimpleHTTPRequestHandler falls back to the stdlib mimetypes module
     # for anything not listed here, which in turn depends on OS-provided
@@ -101,16 +101,16 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
 
     @classmethod
     def initialize(cls, repo_root):
-        WebUiRequestHandler.WEB_ROOT = resolve_web_root()
-        WebUiRequestHandler.APP_STATE_PATH = os.path.join(get_app_state_dir(), "state.json")
-        WebUiRequestHandler.load_state()
-        for restored_repo in list(WebUiRequestHandler.OPEN_REPOS):
+        GitParRequestHandler.WEB_ROOT = resolve_web_root()
+        GitParRequestHandler.APP_STATE_PATH = os.path.join(get_app_state_dir(), "state.json")
+        GitParRequestHandler.load_state()
+        for restored_repo in list(GitParRequestHandler.OPEN_REPOS):
             if not os.path.isdir(restored_repo):
-                WebUiRequestHandler.OPEN_REPOS.remove(restored_repo)
+                GitParRequestHandler.OPEN_REPOS.remove(restored_repo)
         if repo_root:
-            WebUiRequestHandler.open_repo(repo_root)
-        elif WebUiRequestHandler.OPEN_REPOS:
-            WebUiRequestHandler.REPO_ROOT = WebUiRequestHandler.OPEN_REPOS[0]
+            GitParRequestHandler.open_repo(repo_root)
+        elif GitParRequestHandler.OPEN_REPOS:
+            GitParRequestHandler.REPO_ROOT = GitParRequestHandler.OPEN_REPOS[0]
 
     @classmethod
     def load_state(cls):
@@ -118,10 +118,20 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
         cls.RECENT_WORKSPACES = []
         cls.WORKSPACE_ROOT = None
         cls.OPEN_REPOS = []
-        if not cls.APP_STATE_PATH or not os.path.exists(cls.APP_STATE_PATH):
+        state_path = cls.APP_STATE_PATH
+        if not state_path:
             return
+        if not os.path.exists(state_path):
+            # The config directory was renamed along with the app. Fall
+            # back to the old one once, so an existing install keeps its
+            # open repos instead of starting empty. Nothing is written
+            # back there - the next save lands in the new location.
+            legacy_path = legacy_app_state_path()
+            if not legacy_path or not os.path.exists(legacy_path):
+                return
+            state_path = legacy_path
         try:
-            with open(cls.APP_STATE_PATH, "r") as state_file:
+            with open(state_path, "r") as state_file:
                 state = json.load(state_file)
             recent_repos = state.get("recent_repos", [])
             cls.RECENT_REPOS = [repo for repo in recent_repos if os.path.isdir(repo)]
@@ -227,9 +237,9 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
         return entries
 
     def get_repo_context(self):
-        repo_root = WebUiRequestHandler.REPO_ROOT
+        repo_root = GitParRequestHandler.REPO_ROOT
         repo_name = os.path.basename(repo_root) if repo_root else ""
-        workspace_root = WebUiRequestHandler.WORKSPACE_ROOT
+        workspace_root = GitParRequestHandler.WORKSPACE_ROOT
         workspace_repos = []
         if not self.is_view_only() and workspace_root:
             workspace_repos = scan_workspace_repos(workspace_root, repo_root)
@@ -238,10 +248,10 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             "repo_name": repo_name,
             "repo_path": repo_root if not self.is_view_only() else None,
             "has_repo": repo_root is not None,
-            "recent_repos": [] if self.is_view_only() else WebUiRequestHandler.get_recent_repo_entries(),
-            "open_repos": [] if self.is_view_only() else WebUiRequestHandler.get_open_repo_entries(),
+            "recent_repos": [] if self.is_view_only() else GitParRequestHandler.get_recent_repo_entries(),
+            "open_repos": [] if self.is_view_only() else GitParRequestHandler.get_open_repo_entries(),
             "workspace_path": workspace_root if not self.is_view_only() else None,
-            "recent_workspaces": [] if self.is_view_only() else WebUiRequestHandler.get_recent_workspace_entries(),
+            "recent_workspaces": [] if self.is_view_only() else GitParRequestHandler.get_recent_workspace_entries(),
             "workspace_repos": workspace_repos,
             "view_only": self.is_view_only(),
             "hostname": socket.gethostname(),
@@ -252,15 +262,15 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
     def apply_request_repo_context(self):
         """Resolve which open repo this request targets from a `repo` query
         param (present on every API call once more than one repo is open)
-        and make it the active WebUiRequestHandler.REPO_ROOT for the
+        and make it the active GitParRequestHandler.REPO_ROOT for the
         duration of this request. Falls back to whatever REPO_ROOT already
         is when no `repo` param is given, or when it doesn't name a
         currently open repo."""
         parsed = urlparse(self.path)
         self.request_path = parsed.path
         requested = parse_qs(parsed.query).get("repo", [None])[0]
-        if requested and requested in WebUiRequestHandler.OPEN_REPOS:
-            WebUiRequestHandler.REPO_ROOT = requested
+        if requested and requested in GitParRequestHandler.OPEN_REPOS:
+            GitParRequestHandler.REPO_ROOT = requested
 
 
     def translate_path(self, path):
@@ -272,7 +282,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
         path = posixpath.normpath(unquote(path))
         words = path.split('/')
         words = filter(None, words)
-        path = WebUiRequestHandler.WEB_ROOT
+        path = GitParRequestHandler.WEB_ROOT
         for word in words:
             drive, word = os.path.splitdrive(word)
             head, word = os.path.split(word)
@@ -293,41 +303,41 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 return
             parsed_path = urlparse(self.path)
             requested_path = parse_qs(parsed_path.query).get("path", [None])[0]
-            self.send_json(200, list_directory_entries(requested_path, WebUiRequestHandler.REPO_ROOT))
+            self.send_json(200, list_directory_entries(requested_path, GitParRequestHandler.REPO_ROOT))
         elif self.request_path == "/api/workspaces/current":
             if self.is_view_only():
                 self.send_error(403)
                 return
-            self.send_json(200, get_workspace_payload(WebUiRequestHandler.WORKSPACE_ROOT, WebUiRequestHandler.REPO_ROOT))
+            self.send_json(200, get_workspace_payload(GitParRequestHandler.WORKSPACE_ROOT, GitParRequestHandler.REPO_ROOT))
         elif self.request_path == "/api/branches":
             if not self.ensure_repo_selected():
                 return
             self.send_json(200, {
-                "branches": get_branch_entries(WebUiRequestHandler.REPO_ROOT),
-                "tags": get_tag_entries(WebUiRequestHandler.REPO_ROOT),
-                "stashes": get_stash_entries(WebUiRequestHandler.REPO_ROOT),
+                "branches": get_branch_entries(GitParRequestHandler.REPO_ROOT),
+                "tags": get_tag_entries(GitParRequestHandler.REPO_ROOT),
+                "stashes": get_stash_entries(GitParRequestHandler.REPO_ROOT),
             })
         elif self.request_path == "/api/remotes":
             if not self.ensure_repo_selected():
                 return
-            result = list_remotes(WebUiRequestHandler.REPO_ROOT)
+            result = list_remotes(GitParRequestHandler.REPO_ROOT)
             self.send_json(result["status"], result["payload"])
         elif self.request_path.startswith("/api/commits/") and self.request_path.endswith("/is-ancestor"):
             if not self.ensure_repo_selected():
                 return
             commit = self.request_path[len("/api/commits/"):-len("/is-ancestor")]
-            self.send_json(200, {"is_ancestor": is_ancestor_of_head(WebUiRequestHandler.REPO_ROOT, commit)})
+            self.send_json(200, {"is_ancestor": is_ancestor_of_head(GitParRequestHandler.REPO_ROOT, commit)})
         elif self.request_path == "/api/worktrees":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
-            result = list_worktrees(WebUiRequestHandler.REPO_ROOT)
+            result = list_worktrees(GitParRequestHandler.REPO_ROOT)
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/stashes":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
-            result = list_stashes(WebUiRequestHandler.REPO_ROOT)
+            result = list_stashes(GitParRequestHandler.REPO_ROOT)
             self.send_json(result["status"], result["payload"])
         elif self.path.startswith("/api/reflog"):
             if self.is_view_only() or not self.ensure_repo_selected():
@@ -335,19 +345,19 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 return
             parsed_path = urlparse(self.path)
             ref = parse_qs(parsed_path.query).get("ref", [None])[0]
-            result = list_reflog(WebUiRequestHandler.REPO_ROOT, ref)
+            result = list_reflog(GitParRequestHandler.REPO_ROOT, ref)
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/submodules":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
-            result = list_submodules(WebUiRequestHandler.REPO_ROOT)
+            result = list_submodules(GitParRequestHandler.REPO_ROOT)
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/conflicts":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
-            result = get_conflict_status(WebUiRequestHandler.REPO_ROOT)
+            result = get_conflict_status(GitParRequestHandler.REPO_ROOT)
             self.send_json(result["status"], result["payload"])
         elif self.path.startswith("/api/blame"):
             if self.is_view_only() or not self.ensure_repo_selected():
@@ -356,7 +366,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             parsed_path = urlparse(self.path)
             query = parse_qs(parsed_path.query)
             result = get_blame(
-                WebUiRequestHandler.REPO_ROOT,
+                GitParRequestHandler.REPO_ROOT,
                 query.get("path", [None])[0],
                 query.get("rev", [None])[0],
             )
@@ -367,7 +377,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             obj = self.request_path[14:]
             self.process(["git", "-c", "color.ui=false", "cat-file", "-p", obj], b"", True, False)
         elif self.request_path == "/dirname":
-            wc = os.path.split(WebUiRequestHandler.REPO_ROOT)[1] if WebUiRequestHandler.REPO_ROOT else ""
+            wc = os.path.split(GitParRequestHandler.REPO_ROOT)[1] if GitParRequestHandler.REPO_ROOT else ""
             self.send_text(200, codecs.encode(wc, "utf-8"))
         elif self.request_path == "/hostname":
             self.send_text(200, codecs.encode(socket.gethostname(), "utf-8"))
@@ -390,7 +400,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             if repo_root is None:
                 self.send_json(400, {"error": "No git repository found at the selected path."})
                 return
-            WebUiRequestHandler.open_repo(repo_root)
+            GitParRequestHandler.open_repo(repo_root)
             self.send_json(200, self.get_repo_context())
         elif self.request_path == "/api/repos/close":
             if self.is_view_only():
@@ -401,7 +411,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             if not repo_root:
                 self.send_json(400, {"error": "A repo_id is required."})
                 return
-            WebUiRequestHandler.close_repo(repo_root)
+            GitParRequestHandler.close_repo(repo_root)
             self.send_json(200, self.get_repo_context())
         elif self.request_path == "/api/fs/pick-directory":
             if self.is_view_only():
@@ -411,7 +421,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             result = pick_directory_path(
                 payload.get("path"),
                 payload.get("title"),
-                WebUiRequestHandler.REPO_ROOT,
+                GitParRequestHandler.REPO_ROOT,
             )
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/workspaces/select":
@@ -424,10 +434,10 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             if workspace_root is None or not os.path.isdir(workspace_root):
                 self.send_json(400, {"error": "No directory found at the selected path."})
                 return
-            WebUiRequestHandler.set_workspace_root(workspace_root)
-            workspace_repos = scan_workspace_repos(workspace_root, WebUiRequestHandler.REPO_ROOT)
+            GitParRequestHandler.set_workspace_root(workspace_root)
+            workspace_repos = scan_workspace_repos(workspace_root, GitParRequestHandler.REPO_ROOT)
             if len(workspace_repos) > 0 and not any(repo["active"] for repo in workspace_repos):
-                WebUiRequestHandler.set_repo_root(workspace_repos[0]["path"])
+                GitParRequestHandler.set_repo_root(workspace_repos[0]["path"])
             self.send_json(200, self.get_repo_context())
         elif self.request_path == "/api/branches/checkout":
             if self.is_view_only():
@@ -436,7 +446,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             if not self.ensure_repo_selected():
                 return
             payload = self.read_json_body()
-            result = checkout_branch(WebUiRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("remote_name"))
+            result = checkout_branch(GitParRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("remote_name"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/branches/create":
             if self.is_view_only():
@@ -446,7 +456,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 return
             payload = self.read_json_body()
             result = create_branch(
-                WebUiRequestHandler.REPO_ROOT,
+                GitParRequestHandler.REPO_ROOT,
                 payload.get("name"),
                 payload.get("start_point"),
                 payload.get("checkout", True),
@@ -459,14 +469,14 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             if not self.ensure_repo_selected():
                 return
             payload = self.read_json_body()
-            result = delete_branch(WebUiRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("force", False))
+            result = delete_branch(GitParRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("force", False))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/branches/compare":
             if not self.ensure_repo_selected():
                 return
             payload = self.read_json_body()
             result = compare_branches(
-                WebUiRequestHandler.REPO_ROOT,
+                GitParRequestHandler.REPO_ROOT,
                 payload.get("source_ref"),
                 payload.get("target_ref"),
             )
@@ -479,7 +489,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 return
             payload = self.read_json_body()
             result = merge_branch(
-                WebUiRequestHandler.REPO_ROOT,
+                GitParRequestHandler.REPO_ROOT,
                 payload.get("source_ref"),
                 payload.get("target_ref"),
                 False,
@@ -493,7 +503,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 return
             payload = self.read_json_body()
             result = merge_branch(
-                WebUiRequestHandler.REPO_ROOT,
+                GitParRequestHandler.REPO_ROOT,
                 payload.get("source_ref"),
                 payload.get("target_ref"),
                 True,
@@ -506,7 +516,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             if not self.ensure_repo_selected():
                 return
             payload = self.read_json_body()
-            result = add_remote(WebUiRequestHandler.REPO_ROOT, payload.get("name"), payload.get("url"))
+            result = add_remote(GitParRequestHandler.REPO_ROOT, payload.get("name"), payload.get("url"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/remotes/remove":
             if self.is_view_only():
@@ -515,7 +525,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             if not self.ensure_repo_selected():
                 return
             payload = self.read_json_body()
-            result = remove_remote(WebUiRequestHandler.REPO_ROOT, payload.get("name"))
+            result = remove_remote(GitParRequestHandler.REPO_ROOT, payload.get("name"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/repos/clone":
             if self.is_view_only():
@@ -524,7 +534,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             result = clone_repo(payload.get("url"), payload.get("destination"), payload.get("directory_name"))
             if result["status"] == 200:
-                WebUiRequestHandler.open_repo(result["payload"]["path"])
+                GitParRequestHandler.open_repo(result["payload"]["path"])
                 self.send_json(200, self.get_repo_context())
             else:
                 self.send_json(result["status"], result["payload"])
@@ -535,7 +545,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             result = create_repo(payload.get("destination"), payload.get("directory_name"))
             if result["status"] == 200:
-                WebUiRequestHandler.open_repo(result["payload"]["path"])
+                GitParRequestHandler.open_repo(result["payload"]["path"])
                 self.send_json(200, self.get_repo_context())
             else:
                 self.send_json(result["status"], result["payload"])
@@ -545,7 +555,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 return
             payload = self.read_json_body()
             result = add_worktree(
-                WebUiRequestHandler.REPO_ROOT,
+                GitParRequestHandler.REPO_ROOT,
                 payload.get("path"),
                 payload.get("branch"),
                 payload.get("create_branch", False),
@@ -557,49 +567,49 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = remove_worktree(WebUiRequestHandler.REPO_ROOT, payload.get("path"), payload.get("force", False))
+            result = remove_worktree(GitParRequestHandler.REPO_ROOT, payload.get("path"), payload.get("force", False))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/stashes/apply":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = apply_stash(WebUiRequestHandler.REPO_ROOT, payload.get("ref"), payload.get("pop", False))
+            result = apply_stash(GitParRequestHandler.REPO_ROOT, payload.get("ref"), payload.get("pop", False))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/stashes/drop":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = drop_stash(WebUiRequestHandler.REPO_ROOT, payload.get("ref"))
+            result = drop_stash(GitParRequestHandler.REPO_ROOT, payload.get("ref"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/submodules/update":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = update_submodules(WebUiRequestHandler.REPO_ROOT, payload.get("init", True))
+            result = update_submodules(GitParRequestHandler.REPO_ROOT, payload.get("init", True))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/gitignore/add":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = add_to_gitignore(WebUiRequestHandler.REPO_ROOT, payload.get("pattern"))
+            result = add_to_gitignore(GitParRequestHandler.REPO_ROOT, payload.get("pattern"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/conflicts/resolve":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = resolve_conflict(WebUiRequestHandler.REPO_ROOT, payload.get("path"), payload.get("resolution"))
+            result = resolve_conflict(GitParRequestHandler.REPO_ROOT, payload.get("path"), payload.get("resolution"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/rebase/plan":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = run_interactive_rebase_plan(WebUiRequestHandler.REPO_ROOT, payload.get("base"), payload.get("actions"))
+            result = run_interactive_rebase_plan(GitParRequestHandler.REPO_ROOT, payload.get("base"), payload.get("actions"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/git":
             if not self.ensure_repo_selected():
@@ -627,14 +637,14 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
 
 
     def is_view_only(self):
-        # git-webui only ever binds to the loopback interface (see main()
+        # GitPar only ever binds to the loopback interface (see main()
         # below), so every connection is local by construction. There is no
         # remote/view-only mode any more.
         return False
 
 
     def ensure_repo_selected(self):
-        if WebUiRequestHandler.REPO_ROOT is not None:
+        if GitParRequestHandler.REPO_ROOT is not None:
             return True
         self.send_json(409, {"error": "No repository is currently selected."})
         return False
@@ -648,7 +658,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
         # Finially we add footers: a blank line followed by key / value pairs as in HTTP headers
         if IS_WINDOWS:
             # On windows we cannot pipe the process output directly to the socket.
-            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, cwd = WebUiRequestHandler.REPO_ROOT, env = env)
+            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, cwd = GitParRequestHandler.REPO_ROOT, env = env)
             git.stdin.write(stdin)
             git.stdin.close()
             bufferlen = 64 * 1024
@@ -660,7 +670,7 @@ class WebUiRequestHandler(SimpleHTTPRequestHandler):
             stderr = git.stderr.read()
             git.wait()
         else:
-            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = self.wfile, stderr = subprocess.PIPE, cwd = WebUiRequestHandler.REPO_ROOT, env = env)
+            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = self.wfile, stderr = subprocess.PIPE, cwd = GitParRequestHandler.REPO_ROOT, env = env)
             stdout, stderr = git.communicate(stdin)
         if add_footers:
             self.wfile.write(stderr)
@@ -733,7 +743,7 @@ def auto_update():
 
 
 def read_config_string(name, default=None):
-    git = subprocess.Popen(["git", "-c", "color.ui=false", "config", "--get", "webui.{}".format(name)], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+    git = subprocess.Popen(["git", "-c", "color.ui=false", "config", "--get", "gitpar.{}".format(name)], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     out =  codecs.decode(git.communicate()[0], "utf-8")
     if git.returncode != 0:
         # The key doesn't exist
@@ -752,27 +762,39 @@ def read_config_boolean(name, default=False):
 
 def get_app_state_dir():
     if IS_WINDOWS:
-        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "git-webui")
-    return os.path.join(os.path.expanduser("~"), ".config", "git-webui")
+        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "gitpar")
+    return os.path.join(os.path.expanduser("~"), ".config", "gitpar")
+
+
+def legacy_app_state_path():
+    """Where state lived before the app was renamed to GitPar.
+
+    Read once, on first run, so an existing install doesn't lose its
+    open repos to the rename. Never written to.
+    """
+    if IS_WINDOWS:
+        base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "git-webui")
+    else:
+        base = os.path.join(os.path.expanduser("~"), ".config", "git-webui")
+    return os.path.join(base, "state.json")
 
 
 def resolve_web_root():
-    """Locate the share/git-webui/webui static asset directory.
+    """Locate the share/gitpar/web static asset directory.
 
-    Normal (unfrozen) layout: this script lives at
-    <root>/libexec/git-core/git-webui, so the assets are three
-    directories up, under share/git-webui/webui.
+    Normal (unfrozen) layout: this script lives at <root>/bin/gitpar, so
+    the assets are two directories up, under share/gitpar/web.
 
-    PyInstaller onefile layout: there is no "three directories up" -
+    PyInstaller onefile layout: there is no "two directories up" -
     everything is extracted to a temp dir (sys._MEIPASS) at startup.
-    packaging/git-webui.spec bundles the same share/git-webui/webui
+    packaging/pyinstaller/gitpar.spec bundles the same share/gitpar/web
     tree into that temp dir, so it's found the same way, just rooted
     differently. See packaging/README.md.
     """
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return os.path.join(sys._MEIPASS, "share", "git-webui", "webui")
-    web_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[0]))))
-    return os.path.join(web_root, "share", "git-webui", "webui")
+        return os.path.join(sys._MEIPASS, "share", "gitpar", "web")
+    web_root = os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[0])))
+    return os.path.join(web_root, "share", "gitpar", "web")
 
 
 def decode_output(data):
@@ -1714,7 +1736,7 @@ def run_interactive_rebase_plan(repo_root, base, actions):
         return {"status": 400, "payload": {"error": "The rebase plan cannot drop every commit."}}
     todo_content = "\n".join(lines) + "\n"
 
-    fd, todo_path = tempfile.mkstemp(prefix="git-webui-rebase-todo-")
+    fd, todo_path = tempfile.mkstemp(prefix="gitpar-rebase-todo-")
     try:
         with os.fdopen(fd, "w") as f:
             f.write(todo_content)
@@ -1888,7 +1910,7 @@ def get_setting_boolean(args, name, default=False):
 
 if __name__ == '__main__':
     auto_update()
-    parser = argparse.ArgumentParser(description = "Simple HTTP server for git webui")
+    parser = argparse.ArgumentParser(description = "Simple HTTP server for GitPar")
     parser.add_argument("--port", type = int, help = "server port")
     parser.add_argument("--repo-root", help = "repository root path. By default goes up a dir until a '.git' directory is found")
     parser.add_argument("--no-browser", dest = "nobrowser", action = 'store_const', const = True, help = "do not start web browser")
@@ -1900,17 +1922,17 @@ if __name__ == '__main__':
     else:
         args.repo_root = resolve_repo_root(os.path.abspath(args.repo_root))
 
-    WebUiRequestHandler.initialize(args.repo_root)
+    GitParRequestHandler.initialize(args.repo_root)
 
     args.port = get_setting_string(args, 'port', None)
     port = int(args.port) if args.port is not None else 8000
-    # Always bind to loopback only: git-webui has no remote-access mode, so
+    # Always bind to loopback only: GitPar has no remote-access mode, so
     # nothing other than processes on this machine should ever reach it.
     host = "127.0.0.1"
     httpd = None
     while httpd is None:
         try:
-            httpd = WebUiHttpServer((host, port), WebUiRequestHandler)
+            httpd = GitParHttpServer((host, port), GitParRequestHandler)
         except socket.error as e:
             if args.port is not None:
                 sys.stderr.write("Port {} is already in use, try another one\n".format(port))
