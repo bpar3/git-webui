@@ -28,12 +28,16 @@ npx grunt
 ./dist/bin/gitpar
 ```
 
-To install it on the system, `grunt release` produces a `release/` tree
-whose layout mirrors `/usr`:
+To install it system-wide, `grunt release` stages a tree whose layout
+mirrors `/usr`:
 
 ```
-cp -rf release/* /usr
+npx grunt release
+sudo cp -rf release/* /usr
 ```
+
+Neither `dist/` nor `release/` is committed - both are build output, so
+a clone has to be built before it can run.
 
 ### Standalone builds
 
@@ -91,10 +95,24 @@ branch, with ahead/behind counts.
 Run `npm test` for the frontend tests and `pytest` for the backend ones.
 Both must pass before committing. See `AGENTS.md`.
 
+### Installer script
+
+`install/installer.sh` does the above unattended: it clones into
+`$HOME/.gitpar`, builds, and links `$HOME/.local/bin/gitpar`. It needs
+git, Node.js and Python on the machine, and checks for them before it
+clones. It also turns on auto-update, which pulls and rebuilds when the
+clone is more than a fortnight behind.
+
 ## Uninstallation
 
 ```
-rm -rf <gitpar-clone-path>
+install/uninstaller.sh
+```
+
+or by hand:
+
+```
+rm -rf "$HOME/.gitpar"
 rm -f "$HOME/.local/bin/gitpar"
 git config --global --remove-section gitpar
 ```

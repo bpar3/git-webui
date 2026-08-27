@@ -13,3 +13,6 @@ packaging/tauri/src-tauri/target/
 packaging/tauri/src-tauri/binaries/*
 !packaging/tauri/src-tauri/binaries/.gitkeep
 packaging/tauri/src-tauri/gen/
+
+# Built by `grunt release` - a staging tree for system installs.
+release/

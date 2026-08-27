@@ -17,6 +17,7 @@
 cd $HOME
 echo "Removing \$HOME/.gitpar"
 rm -rf .gitpar > /dev/null 2>&1
-echo "Cleaning up global gitconfig file"
+echo "Removing the 'gitpar' command"
 rm -f "$HOME/.local/bin/gitpar"
-git config --global --remove-section gitpar
+echo "Cleaning up global gitconfig file"
+git config --global --remove-section gitpar 2>/dev/null || true

@@ -14,6 +14,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -e
+
+# The built app isn't committed, so this clones the source and builds it.
+# That needs Node alongside git and Python - check before touching
+# anything, rather than cloning and failing halfway.
+missing=""
+for tool in git node npm; do
+    command -v "$tool" > /dev/null 2>&1 || missing="$missing $tool"
+done
+if [ -n "$missing" ]; then
+    echo "Missing required tool(s):$missing" >&2
+    echo >&2
+    echo "GitPar is built from source on install, which needs git and Node.js" >&2
+    echo "(node and npm). Install them and re-run this script." >&2
+    exit 1
+fi
+
 if [ "$OS" = "Windows_NT" ]; then
     # We are on windows, check if Python is installed
     python -V > /dev/null 2>&1
@@ -36,10 +53,25 @@ cd $HOME
 rm -rf .gitpar > /dev/null 2>&1
 echo "Cloning GitPar repository"
 GITPAR_REPO="${GITPAR_REPO:-https://github.com/bpar3/git-webui.git}"
-git clone --depth 1 "$GITPAR_REPO" .gitpar
+# Not --depth 1: auto-update pulls in this clone later, and a shallow
+# one makes that fail once the remote has moved on.
+git clone "$GITPAR_REPO" .gitpar
+
+cd "$HOME/.gitpar"
+echo "Building GitPar (this takes a minute)"
+npm install --no-audit --no-fund
+npx --yes bower install --allow-root
+npx --yes grunt-cli
+
+if [ ! -x "$HOME/.gitpar/dist/bin/gitpar" ]; then
+    echo "Build finished but dist/bin/gitpar is missing - not installing." >&2
+    exit 1
+fi
+
 echo "Enabling auto update"
 git config --global --replace-all gitpar.autoupdate true
 echo "Linking the 'gitpar' command"
 mkdir -p "$HOME/.local/bin"
-ln -sf "$HOME/.gitpar/release/bin/gitpar" "$HOME/.local/bin/gitpar"
+ln -sf "$HOME/.gitpar/dist/bin/gitpar" "$HOME/.local/bin/gitpar"
+echo
 echo "Installed to \$HOME/.local/bin/gitpar - make sure it is on your PATH."

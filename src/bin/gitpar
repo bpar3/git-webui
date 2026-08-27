@@ -716,8 +716,39 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
 
 
 
+def rebuild_after_update(repo_root):
+    """Rebuild the tree a pull just moved.
+
+    The built app isn't committed, so pulling only updates source - the
+    files actually being served would otherwise stay on the old version.
+    Returns False if the build can't be done, in which case the caller
+    keeps running what's already there rather than restarting into a
+    half-updated tree.
+    """
+    if not os.path.exists(os.path.join(repo_root, "package.json")):
+        return False
+    steps = [
+        ["npm", "install", "--no-audit", "--no-fund"],
+        ["npx", "--yes", "bower", "install", "--allow-root"],
+        ["npx", "--yes", "grunt-cli"],
+    ]
+    print("Rebuilding after update...")
+    for step in steps:
+        try:
+            if subprocess.call(step, cwd=repo_root) != 0:
+                print("Update fetched but the rebuild failed at: %s" % " ".join(step))
+                print("Continuing with the previous build.")
+                return False
+        except OSError:
+            print("Update fetched but '%s' isn't available, so it can't be built." % step[0])
+            print("Continuing with the previous build.")
+            return False
+    return True
+
+
 def auto_update():
-    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0])))))
+    # <repo>/dist/bin/gitpar - three levels up is the clone.
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0]))))
     dot_git = os.path.join(repo_root, ".git")
     if not os.path.exists(dot_git):
         return
@@ -735,7 +766,10 @@ def auto_update():
 
         print("Checking for update...")
         # Update the repository
-        subprocess.call(["git", "-c", "color.ui=false", "pull"], cwd = repo_root)
+        if subprocess.call(["git", "-c", "color.ui=false", "pull"], cwd = repo_root) != 0:
+            return
+        if not rebuild_after_update(repo_root):
+            return
         # Replace the current process with the updated one
         os.execl(sys.executable, os.path.split(sys.executable)[1], *sys.argv)
 
