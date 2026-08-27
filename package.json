@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@github.com:alberthier/git-webui.git"
+    "url": "https://github.com/bpar3/git-webui.git"
   },
   "keywords": [
     "git",

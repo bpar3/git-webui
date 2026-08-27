@@ -35,10 +35,7 @@ fi
 cd $HOME
 rm -rf .gitpar > /dev/null 2>&1
 echo "Cloning GitPar repository"
-# TODO: still points at the upstream project GitPar was forked from.
-# Repoint at GitPar's own remote before publishing this installer, or it
-# will install the old app under the new name.
-GITPAR_REPO="${GITPAR_REPO:-https://github.com/alberthier/git-webui.git}"
+GITPAR_REPO="${GITPAR_REPO:-https://github.com/bpar3/git-webui.git}"
 git clone --depth 1 "$GITPAR_REPO" .gitpar
 echo "Enabling auto update"
 git config --global --replace-all gitpar.autoupdate true

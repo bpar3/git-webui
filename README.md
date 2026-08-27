@@ -16,7 +16,7 @@ It has very few dependencies: git, python, and a web browser.
 ### From a clone
 
 ```
-git clone <gitpar-repo-url>
+git clone https://github.com/bpar3/git-webui.git gitpar
 cd gitpar
 npm install && npx bower install
 npx grunt
