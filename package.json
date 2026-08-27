@@ -9,7 +9,9 @@
     "release": "node tools/run-grunt.js release",
     "test": "jest",
     "test:py": "pytest tests/python",
-    "package": "bash packaging/build.sh"
+    "package": "bash packaging/build.sh",
+    "clean": "bash packaging/build.sh --clean",
+    "clean:all": "bash packaging/build.sh --clean-all"
   },
   "repository": {
     "type": "git",
