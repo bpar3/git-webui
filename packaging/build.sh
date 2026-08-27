@@ -262,6 +262,13 @@ echo "Building bundle format(s): $FORMAT"
 # and run instead of mounting via FUSE - works even when /dev/fuse isn't
 # usable (common in containers/sandboxes) regardless of whether the
 # fuse/libfuse2 package above actually got installed.
+# Bundles from previous runs stay in the output directory - a rename or
+# a version change leaves the old file sitting next to the new one. This
+# marker makes "produced by this run" answerable, so neither the success
+# check nor the install step can pick up a leftover.
+BUILD_MARKER="$(mktemp)"
+trap 'rm -f "$BUILD_MARKER"' EXIT
+
 set +e
 (cd packaging/tauri/src-tauri && APPIMAGE_EXTRACT_AND_RUN=1 cargo tauri build "${BUNDLE_ARGS[@]}")
 BUILD_STATUS=$?
@@ -269,7 +276,7 @@ set -e
 
 BUNDLE_DIR="packaging/tauri/src-tauri/target/release/bundle"
 if [ "$BUILD_STATUS" -ne 0 ]; then
-    if find "$BUNDLE_DIR" -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.app' -o -name '*.msi' -o -name '*.exe' \) 2>/dev/null | grep -q .; then
+    if find "$BUNDLE_DIR" -type f -newer "$BUILD_MARKER" \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' -o -name '*.app' -o -name '*.msi' -o -name '*.exe' \) 2>/dev/null | grep -q .; then
         echo
         echo "cargo tauri build exited non-zero, but at least one installable bundle was produced under $BUNDLE_DIR - see the build output above for which format(s) failed (commonly just AppImage, if FUSE still isn't usable here). Not treating this as a hard failure." >&2
     else
@@ -281,12 +288,31 @@ fi
 echo
 echo "Desktop app built under $BUNDLE_DIR/"
 
+# Returns the bundle this run produced, and says so when older ones are
+# sitting alongside it - `find | head` used to pick whichever came first,
+# which after a rename meant installing the previous build.
+built_bundle() {
+    local dir="$1" pattern="$2" newest all
+    newest="$(find "$dir" -maxdepth 1 -type f -name "$pattern" -newer "$BUILD_MARKER" 2>/dev/null | head -n1)"
+    all="$(find "$dir" -maxdepth 1 -type f -name "$pattern" 2>/dev/null | wc -l)"
+    if [ -n "$newest" ] && [ "$all" -gt 1 ]; then
+        echo "Note: $dir holds $all bundles; using the one this run built." >&2
+        echo "      Older ones are left in place - delete them if unwanted." >&2
+    fi
+    if [ -z "$newest" ]; then
+        # Nothing new: fall back to the most recently modified, so a
+        # re-run with an unchanged build still has something to install.
+        newest="$(ls -t "$dir"/$pattern 2>/dev/null | head -n1)"
+    fi
+    printf '%s' "$newest"
+}
+
 if [ "$DO_INSTALL" = "1" ]; then
     echo
     echo "=== 5. Installing the desktop app (--install) ==="
     case "$FORMAT" in
         rpm)
-            RPM_FILE="$(find "$BUNDLE_DIR/rpm" -name '*.rpm' 2>/dev/null | head -n1)"
+            RPM_FILE="$(built_bundle "$BUNDLE_DIR/rpm" '*.rpm')"
             if [ -z "$RPM_FILE" ]; then
                 echo "No .rpm found under $BUNDLE_DIR/rpm - nothing to install." >&2
                 exit 1
@@ -314,7 +340,7 @@ if [ "$DO_INSTALL" = "1" ]; then
             fi
             ;;
         deb)
-            DEB_FILE="$(find "$BUNDLE_DIR/deb" -name '*.deb' 2>/dev/null | head -n1)"
+            DEB_FILE="$(built_bundle "$BUNDLE_DIR/deb" '*.deb')"
             if [ -z "$DEB_FILE" ]; then
                 echo "No .deb found under $BUNDLE_DIR/deb - nothing to install." >&2
                 exit 1
@@ -328,7 +354,7 @@ if [ "$DO_INSTALL" = "1" ]; then
             fi
             ;;
         appimage)
-            APPIMAGE_FILE="$(find "$BUNDLE_DIR/appimage" -name '*.AppImage' 2>/dev/null | head -n1)"
+            APPIMAGE_FILE="$(built_bundle "$BUNDLE_DIR/appimage" '*.AppImage')"
             if [ -z "$APPIMAGE_FILE" ]; then
                 echo "No .AppImage found under $BUNDLE_DIR/appimage - nothing to mark executable." >&2
                 exit 1
