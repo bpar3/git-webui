@@ -1208,6 +1208,7 @@ body {
   top: 0;
   left: 0;
   pointer-events: none;
+  z-index: 1;
 }
 #log-view svg path {
   stroke-width: 2;
@@ -1355,7 +1356,7 @@ body {
   color: var(--gf-accent);
 }
 #log-view .log-entry-card {
-  margin: 6px 0 8px 0;
+  margin: 6px var(--log-graph-inset, 0px) 8px 0;
   border: 1px solid var(--gf-border);
   border-radius: 6px;
   background: var(--gf-panel-bg);

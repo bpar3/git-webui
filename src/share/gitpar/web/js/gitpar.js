@@ -2534,9 +2534,19 @@ gitpar.LogView = function(historyView) {
         if (!gutter) {
             return;
         }
-        var left = gutter.getBoundingClientRect().left - content.getBoundingClientRect().left;
+        var gutterRect = gutter.getBoundingClientRect();
+        var left = gutterRect.left - content.getBoundingClientRect().left;
         svg.style.left = left + "px";
         svg.setAttribute("width", graphWidth);
+
+        // How much of the right-hand side the graph and the date occupy.
+        // An expanded card is held back by this so it stops short of the
+        // gutter instead of covering the lanes beside it.
+        var header = gutter.parentElement;
+        if (header) {
+            var inset = Math.max(0, header.getBoundingClientRect().right - gutterRect.left);
+            self.element.style.setProperty("--log-graph-inset", inset + "px");
+        }
     }
 
     // Expanding or collapsing a card moves every row below it, so the

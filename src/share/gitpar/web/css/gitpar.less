@@ -1272,6 +1272,11 @@ body {
         // left is set from JS, to sit over the gutter the rows reserve.
         left: 0;
         pointer-events: none;
+        // Above the rows. Both are positioned with z-index auto, so DOM
+        // order decided, and the rows won - a row's hover or selection
+        // fill painted straight over the lanes. The gutter holds no row
+        // content, so nothing is covered by lifting the graph instead.
+        z-index: 1;
 
         path {
             stroke-width: 2;
@@ -1453,7 +1458,10 @@ body {
     }
 
     .log-entry-card {
-        margin: 6px 0 8px 0;
+        // Stops short of the graph gutter - the inset is measured from
+        // the laid-out row - so the lanes stay visible beside an open
+        // commit rather than being covered by it.
+        margin: 6px var(--log-graph-inset, 0px) 8px 0;
         border: 1px solid var(--gf-border);
         border-radius: 6px;
         background: var(--gf-panel-bg);
