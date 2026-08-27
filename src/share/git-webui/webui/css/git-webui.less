@@ -26,16 +26,16 @@
 @separator-line:     @list-group-border;
 @log-view-opacity:   0.9;
 
-// GitFiend-style theme tokens, as CSS custom properties (not LESS
-// variables) so `body.dark-mode` can override them at runtime instead
-// of baking one palette into the compiled CSS. The titlebar stays dark
-// in both themes (matching a desktop app's OS chrome).
+// Theme tokens, as CSS custom properties (not LESS variables) so
+// `body.dark-mode` can override them at runtime instead of baking one
+// palette into the compiled CSS. The titlebar stays dark in both
+// themes, matching a desktop app's OS chrome.
 :root {
     // system-ui leads so the app renders in the desktop's own UI font -
     // Adwaita Sans / Cantarell under GNOME, SF Pro on macOS, Segoe UI on
-    // Windows - which is what GitFiend picks up. Without it the stack
-    // fell through to Helvetica/Arial and landed on Liberation Sans,
-    // noticeably narrower than the surrounding desktop.
+    // Windows - so the app sits with the rest of the desktop. Without
+    // it the stack fell through to Helvetica/Arial and landed on
+    // Liberation Sans, noticeably narrower than everything around it.
     --gf-font-family:      system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --gf-font-size:         12.5px;
     --gf-titlebar-bg:       #1e1e1e;
@@ -64,8 +64,8 @@
     --gf-chip-yellow-border:#f0e0a6;
     --gf-danger:            #d1453b;
     --gf-diff-selected-bg:  #337ab7;
-    // GitFiend's diff sits on a warm off-white, with pastel add/remove
-    // fills rather than the saturated blocks Bootstrap's palette gave.
+    // The diff sits on a warm off-white, with pastel add/remove fills
+    // rather than the saturated blocks Bootstrap's palette gave.
     --gf-diff-line-bg:      #fdfbf6;
     --gf-diff-header-bg:    #ffffff;
     --gf-diff-added-bg:     #d9f5e1;
@@ -80,9 +80,9 @@
 }
 
 body.dark-mode {
-    // Sampled against GitFiend's dark theme: a true near-black page
-    // with a slightly lifted toolbar, and row dividers light enough to
-    // read as lines rather than disappearing into the background.
+    // A true near-black page with a slightly lifted toolbar, and row
+    // dividers light enough to read as lines rather than disappearing
+    // into the background.
     --gf-titlebar-bg:       #101010;
     --gf-toolbar-bg:        #262626;
     --gf-toolbar-border:    #3d3d3d;
@@ -1277,8 +1277,8 @@ body {
         background-color: transparent;
         margin: 0;
         border-top-width: 0;
-        // A hairline under each commit, as GitFiend has - it keeps long
-        // lists scannable without boxing every row.
+        // A hairline under each commit keeps long lists scannable
+        // without boxing every row.
         border-bottom: 1px solid var(--gf-border);
 
         // Both of these used to be derived from Bootstrap's light-theme
@@ -1410,9 +1410,9 @@ body {
         }
     }
 
-    // A selected commit opens inline, GitFiend-style, instead of in a
-    // docked side pane. The row becomes a column so the card stacks
-    // under the header line it belongs to.
+    // A selected commit opens inline rather than in a docked side
+    // pane. The row becomes a column so the card stacks under the
+    // header line it belongs to.
     .log-entry.expanded {
         .display-flex();
         .flex-direction(column);
@@ -2070,8 +2070,8 @@ body {
 
                 // Each line is a flex row: fixed-width number gutters,
                 // then the code. The gutters carry the old and new line
-                // numbers the way GitFiend shows them, so the +/- in the
-                // text no longer has to do that job alone.
+                // numbers, so a line's position is readable without
+                // counting from the hunk header.
                 .diff-view-line {
                     .display-flex();
                     margin: 0;
@@ -2198,9 +2198,9 @@ body {
                 }
 
                 // A staged-for-selection line keeps its add/remove
-                // colour and is marked by the tick in the gutter, the
-                // way GitFiend does it - overpainting it solid blue
-                // hid whether the line was an addition or a removal.
+                // colour and is marked by the tick in the gutter.
+                // Overpainting it solid blue hid whether the line was
+                // an addition or a removal.
                 .diff-line-add.active,
                 .diff-line-del.active {
                     color: var(--gf-text);
@@ -2221,8 +2221,8 @@ body {
                     border-right-color: var(--gf-diff-gutter-border);
                 }
 
-                // Hunk boundary: GitFiend rules it off above and below
-                // with a dashed line rather than filling the row.
+                // Hunk boundary: ruled off above and below with a
+                // dashed line rather than filling the row.
                 .diff-line-offset {
                     background-color: var(--gf-diff-offset-bg);
                     color: var(--gf-text-muted);

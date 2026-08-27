@@ -316,7 +316,7 @@ webui.colorForAuthor = function(name) {
     return webui.COLORS[webui.hashString(name) % webui.COLORS.length];
 }
 
-// Turns git's own stash subject into the label GitFiend shows.
+// Turns git's own stash subject into a compact label.
 // Auto-created stashes read "WIP on <branch>: <sha> <subject>", which is
 // mostly noise once the row is marked as a stash; an explicit
 // `git stash push -m` reads "On <branch>: <message>" and that message is
@@ -2693,7 +2693,7 @@ webui.LogView = function(historyView) {
                 svgNode.setAttribute("cy", currentY);
                 svgNode.setAttribute("r", 4);
                 if (entry.parents.length > 1 && nodeColor) {
-                    // Hollow ring for merge commits, matching GitFiend's graph style.
+                    // Hollow ring marks a merge commit.
                     svgNode.setAttribute("style", "fill:#fff;stroke:" + nodeColor + ";stroke-width:2");
                 } else if (nodeColor) {
                     svgNode.setAttribute("style", "fill:" + nodeColor);
@@ -2710,10 +2710,10 @@ webui.LogView = function(historyView) {
             // not yet laid out); measured rows overwrite this above.
             currentY += self.lineHeight;
         }
-        // The graph sits in a gutter to the right of the commit subject,
-        // the way GitFiend lays it out, so every row reserves the same
-        // width and the SVG is parked over that column. A per-row width
-        // would make the lanes zig-zag as the branch count changed.
+        // The graph sits in a gutter to the right of the commit
+        // subject, so every row reserves the same width and the SVG is
+        // parked over that column. A per-row width would make the lanes
+        // zig-zag as the branch count changed.
         var graphWidth = (Math.max(maxLeft, 1) + 1) * xOffset;
         for (var i = startAt; i < content.children.length; ++i) {
             var element = content.children[i];
@@ -2760,8 +2760,8 @@ webui.LogView = function(historyView) {
 
         self.createElement = function() {
             // A stash isn't authored work, so it gets a stash marker
-            // rather than the author's initials, the way GitFiend sets
-            // stash rows apart from commits.
+            // rather than the author's initials - it reads as something
+            // set aside rather than a commit.
             var marker = self.stash
                 ? '<span class="log-entry-avatar log-entry-stash-mark" title="' + webui.escapeHtml(self.stash.ref || "stash") + '">&#9707;</span>'
                 : '<span class="log-entry-avatar" style="background:' + webui.colorForAuthor(self.author.name) + '" title="' + webui.escapeHtml(self.author.name) + ' &lt;' + webui.escapeHtml(self.author.email) + '&gt;">' + webui.escapeHtml(webui.getInitials(self.author.name)) + '</span>';
@@ -2806,9 +2806,9 @@ webui.LogView = function(historyView) {
             }
         };
 
-        // GitFiend shows a selected commit inline - the row grows to
-        // hold its message and file list - rather than in a permanently
-        // docked side pane.
+        // A selected commit opens inline - the row grows to hold its
+        // message and file list - rather than in a permanently docked
+        // side pane.
         self.openCard = function() {
             if (self.card) {
                 return;
@@ -2931,7 +2931,7 @@ webui.LogView = function(historyView) {
 
         // Only label the first commit in a run that shares the same
         // relative-time bucket ("2 days ago", ...) - repeating it on
-        // every row is noisy, matching GitFiend's commit list.
+        // every row is noise.
         var formatted = webui.formatRelativeTime(self.author.date);
         if (formatted != logView.lastShownDate) {
             self.relativeDate = formatted;
@@ -3155,7 +3155,7 @@ webui.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         }
         $('<span class="diff-line-text">').text(line).appendTo(pre);
 
-        // Per-hunk discard, matching GitFiend's hunk header row.
+        // Per-hunk discard, sitting on the hunk header row.
         if (hunkSelectionAllowed && c == '@' && !context.inHeader && gitApplyType == "stage") {
             var discard = $('<button type="button" class="diff-hunk-discard">Discard</button>');
             discard.click(function(event) {
@@ -4003,8 +4003,7 @@ webui.CommitView = function(historyView) {
 /*
  * == CommitDetailView ========================================================
  * The full-view a commit expands into: its message across the top, then
- * a filterable list of the files it touched beside that file's diff -
- * GitFiend's expanded-commit layout.
+ * a filterable list of the files it touched beside that file's diff.
  */
 webui.CommitDetailView = function(historyView) {
 
@@ -4145,9 +4144,9 @@ webui.CommitDetailView = function(historyView) {
     $(".commit-detail-prev", self.element).click(function() { self.step(-1); });
     $(".commit-detail-next", self.element).click(function() { self.step(1); });
     $(".commit-detail-collapse", self.element).click(function() { historyView.collapseCommit(); });
-    // Tree browsing is a git-webui feature GitFiend has no equivalent
-    // for, so it keeps a way in from here rather than being dropped
-    // along with the old Commit/Tree tab pair.
+    // Tree browsing has no place in the file-list layout, so it keeps
+    // an explicit way in from here rather than being dropped along with
+    // the old Commit/Tree tab pair.
     $(".commit-detail-tree", self.element).click(function() { historyView.showTreeForCommit(self.entry); });
     $(".commit-detail-menu", self.element).click(function(event) {
         event.stopPropagation();
@@ -4254,9 +4253,9 @@ webui.HistoryView = function(mainView) {
         self.positionRefChips();
     }
 
-    // GitFiend puts each branch label beside the commit it points at
-    // rather than in one list at the top, so a local branch and its
-    // upstream visibly sit apart when one is ahead of the other. The
+    // Each branch label sits beside the commit it points at rather
+    // than in one list at the top, so a local branch and its upstream
+    // visibly sit apart when one is ahead of the other. The
     // chips are absolutely positioned against the log's own geometry
     // and the column is scrolled in step with it.
     self.positionRefChips = function() {
@@ -4403,8 +4402,7 @@ webui.HistoryView = function(mainView) {
 
 /*
  * == UncommittedSummaryView ===================================================
- * The "N changed files" card pinned above the commit list, matching
- * GitFiend's Commits tab.
+ * The "N changed files" card pinned above the commit list.
  */
 webui.UncommittedSummaryView = function(mainView) {
 
@@ -4834,8 +4832,8 @@ webui.ChangedFilesView = function(workspaceView, type, label) {
         return $(".active", fileList).length;
     }
 
-    // "N/M" next to a tick, the way GitFiend heads its file list, and a
-    // click target that selects or clears the whole list at once.
+    // "N/M" next to a tick heading the file list, doubling as a click
+    // target that selects or clears the whole list at once.
     self.refreshCounter = function() {
         var total = fileList.childElementCount;
         var selected = self.getSelectedItemsCount();
@@ -4967,7 +4965,7 @@ webui.CommitMessageView = function(workspaceView) {
 
 /*
  * == BranchesView =============================================================
- * A dedicated Local / Remote branch list, similar to GitFiend's Branches tab.
+ * A dedicated Local / Remote branch list.
  */
 webui.BranchesView = function(mainView) {
 
