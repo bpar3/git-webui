@@ -13,36 +13,52 @@ It has very few dependencies: git, python, and a web browser.
 
 ## Installation
 
-### From a clone
+Everything is built through one script, `packaging/build.sh`. Nothing is
+committed pre-built, so a clone has to be built before it can run.
+
+### A system package
+
+On Linux this produces, and optionally installs, a native package - rpm
+on dnf-based systems, deb on apt-based ones:
 
 ```
 git clone https://github.com/bpar3/git-webui.git gitpar
 cd gitpar
+packaging/build.sh --install
+```
+
+That builds the desktop app and installs it. `--reinstall` replaces an
+already-installed copy at the same version, which is what you want while
+developing, since the version only moves on a release.
+
+`--format=<name>` picks a different bundle (`deb`, `appimage`, `dmg`,
+`msi`, ...) and `--format=all` builds every one this machine supports.
+See `packaging/README.md`, or `packaging/build.sh -h`.
+
+### From a clone, without packaging
+
+To run it straight out of the source tree:
+
+```
 npm install && npx bower install
 npx grunt
-```
-
-`grunt` builds into `dist/`. Run it with:
-
-```
 ./dist/bin/gitpar
 ```
 
-To install it system-wide, `grunt release` stages a tree whose layout
-mirrors `/usr`:
+`grunt release` stages the same build as a `/usr`-shaped tree, if you
+would rather copy it into place yourself:
 
 ```
 npx grunt release
 sudo cp -rf release/* /usr
 ```
 
-Neither `dist/` nor `release/` is committed - both are build output, so
-a clone has to be built before it can run.
+### Removing a build
 
-### Standalone builds
-
-`packaging/build.sh` produces a single-file headless server and, if Rust
-is available, a standalone desktop app. See `packaging/README.md`.
+```
+npm run clean          # build output
+npm run clean:all      # ... and node_modules/, bower_components/
+```
 
 ## Usage
 
@@ -95,28 +111,15 @@ branch, with ahead/behind counts.
 Run `npm test` for the frontend tests and `pytest` for the backend ones.
 Both must pass before committing. See `AGENTS.md`.
 
-### Installer script
-
-`install/installer.sh` does the above unattended: it clones into
-`$HOME/.gitpar`, builds, and links `$HOME/.local/bin/gitpar`. It needs
-git, Node.js and Python on the machine, and checks for them before it
-clones. It also turns on auto-update, which pulls and rebuilds when the
-clone is more than a fortnight behind.
-
 ## Uninstallation
 
-```
-install/uninstaller.sh
-```
-
-or by hand:
+If it was installed as a package:
 
 ```
-rm -rf "$HOME/.gitpar"
-rm -f "$HOME/.local/bin/gitpar"
-git config --global --remove-section gitpar
+sudo dnf remove GitPar      # or: sudo apt-get remove gitpar
 ```
 
+Otherwise remove the clone, and the copied tree if you installed one.
 Settings live in `~/.config/gitpar`.
 
 ## Built on
