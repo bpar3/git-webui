@@ -54,6 +54,11 @@
     --gf-text-muted:        #6a737d;
     --gf-text-faint:        #8a8a8a;
     --gf-accent:            #2f7dd1;
+    // Text laid on --gf-accent. The dark theme's accent is a light
+    // blue - deliberately, since it has to carry against a near-black
+    // page - so white on it falls to about 2.6:1. Each theme names the
+    // foreground that actually reads against its own accent.
+    --gf-accent-fg:         #ffffff;
     --gf-accent-bg:         #eef5fc;
     --gf-row-hover:         #f6f8fa;
     --gf-row-height:         30px;
@@ -67,6 +72,14 @@
     --gf-chip-yellow-text:  #8a6d1d;
     --gf-chip-yellow-border:#f0e0a6;
     --gf-danger:            #d1453b;
+    // A surface for blocking states - a conflicted merge, a failed
+    // remote op. Tinted toward the danger hue rather than neutral, so
+    // the band reads as a state and not another panel, but kept close
+    // enough to the page that it doesn't shout. These were literal
+    // hex values on .conflict-banner, which is why that band stayed
+    // cream in dark mode while its text turned near-white.
+    --gf-danger-bg:         #fdf1ee;
+    --gf-danger-border:     #f3c8bd;
     --gf-diff-selected-bg:  #337ab7;
     // The diff sits on a warm off-white, with pastel add/remove fills
     // rather than the saturated blocks Bootstrap's palette gave.
@@ -99,6 +112,7 @@ body.dark-mode {
     --gf-text-muted:        #9a9a9a;
     --gf-text-faint:        #767676;
     --gf-accent:            #5b9bf0;
+    --gf-accent-fg:         #0f1c2b;
     --gf-accent-bg:         #1c2e42;
     --gf-row-hover:         #282828;
     --gf-chip-green-bg:     #1e3320;
@@ -111,6 +125,8 @@ body.dark-mode {
     --gf-chip-yellow-text:  #e0c674;
     --gf-chip-yellow-border:#524827;
     --gf-danger:            #e5675e;
+    --gf-danger-bg:         #2b1a18;
+    --gf-danger-border:     #4a2c27;
     --gf-diff-line-bg:      #1b1b1b;
     --gf-diff-header-bg:    #212121;
     --gf-diff-selected-bg:  #2f6fb0;
@@ -1310,8 +1326,12 @@ body {
 .conflict-banner {
     flex: 0 0 auto;
     padding: 10px 14px;
-    background: #fdf1ee;
-    border-bottom: 1px solid #f3c8bd;
+    background: var(--gf-danger-bg);
+    border-bottom: 1px solid var(--gf-danger-border);
+    // The band sets its own text colour. It inherited --gf-text, which
+    // in dark mode is near-white - and against the light surface this
+    // used to be, the file paths were invisible.
+    color: var(--gf-text);
 
     .conflict-banner-header {
         .display-flex();
@@ -1339,6 +1359,7 @@ body {
 
     .conflict-banner-file-path {
         .flex(1);
+        color: var(--gf-text);
         font-family: @font-family-monospace;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -2800,25 +2821,107 @@ body.dark-mode {
         border-color: var(--gf-border);
         color: var(--gf-text);
     }
-    .btn-default {
-        background-color: var(--gf-row-hover);
+}
+
+// Bootstrap's buttons and the app's own grew apart: .btn kept a 3px
+// radius, a 14px face on .btn-primary and Bootstrap's #428bca, while
+// everything built since uses 4px, 12px and --gf-accent. Two systems
+// sat side by side in the Changes view. Rather than restyle every call
+// site, .btn is brought onto the app's language here, once.
+//
+// Geometry only - sizes are left where they are, and the button group
+// rules that square a group's inner corners are more specific than
+// this, so groups still read as groups.
+.btn {
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.btn-default {
+    background: var(--gf-row-hover);
+    background-image: none;
+    color: var(--gf-text);
+    border-color: var(--gf-border-strong);
+    text-shadow: none;
+    box-shadow: none;
+
+    &:hover, &:focus {
+        background: var(--gf-border);
         color: var(--gf-text);
         border-color: var(--gf-border-strong);
-
-        &:hover, &:focus {
-            background-color: var(--gf-border);
-        }
-
-        &.active {
-            background-color: var(--gf-page-bg);
-            color: var(--gf-text);
-        }
     }
-    textarea, input {
-        background-color: var(--gf-page-bg);
+
+    &.active {
+        background: var(--gf-page-bg);
         color: var(--gf-text);
-        border: 1px solid var(--gf-border-strong);
     }
+}
+
+// The one committing action in the view, so it keeps its size and
+// fill - but in the app's accent, not Bootstrap's.
+.btn-primary {
+    background: var(--gf-accent);
+    background-image: none;
+    border-color: var(--gf-accent);
+    color: var(--gf-accent-fg);
+    text-shadow: none;
+    box-shadow: none;
+
+    &:hover, &:focus {
+        background: var(--gf-accent);
+        border-color: var(--gf-accent);
+        color: var(--gf-accent-fg);
+        filter: brightness(1.08);
+    }
+}
+
+.btn-danger {
+    background: var(--gf-danger);
+    background-image: none;
+    border-color: var(--gf-danger);
+    text-shadow: none;
+    box-shadow: none;
+
+    &:hover, &:focus {
+        background: var(--gf-danger);
+        border-color: var(--gf-danger);
+        filter: brightness(1.08);
+    }
+}
+
+textarea,
+input[type="text"],
+input[type="search"],
+input[type="password"] {
+    background-color: var(--gf-page-bg);
+    color: var(--gf-text);
+    border: 1px solid var(--gf-border-strong);
+}
+
+// Same fault as the conflict banner: Bootstrap's alert and modal
+// palettes are fixed light values, so an error dialog opened over the
+// dark theme showed pale pink panels and a near-white rule.
+.alert-danger {
+    background-color: var(--gf-danger-bg);
+    border-color: var(--gf-danger-border);
+    color: var(--gf-danger);
+}
+
+.alert-info {
+    background-color: var(--gf-accent-bg);
+    border-color: var(--gf-accent);
+    color: var(--gf-text);
+}
+
+.alert-warning {
+    background-color: var(--gf-chip-yellow-bg);
+    border-color: var(--gf-chip-yellow-border);
+    color: var(--gf-chip-yellow-text);
+}
+
+.modal-header,
+.modal-footer {
+    border-color: var(--gf-border);
 }
 
 @media (max-width: 768px) {
