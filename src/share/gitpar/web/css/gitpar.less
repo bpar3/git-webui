@@ -461,6 +461,17 @@ body {
         color: var(--gf-text);
     }
 
+    &[disabled] {
+        opacity: 0.4;
+        cursor: default;
+
+        &:hover,
+        &:focus {
+            background: transparent;
+            color: var(--gf-text-muted);
+        }
+    }
+
     .toolbar-remote-btn-icon {
         font-size: 15px;
         line-height: 1;

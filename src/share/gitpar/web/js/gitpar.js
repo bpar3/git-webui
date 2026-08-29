@@ -923,6 +923,18 @@ gitpar.Toolbar = function(mainView) {
         $("title")[0].textContent = gitpar.repoPath ? "Git - " + gitpar.repo : "GitPar";
         var current = self.currentBranch();
         self.setBadge("#toolbar-push-badge", current && current.ahead);
+
+        // A branch with no upstream has nothing to pull from, and its
+        // push is the one that creates the remote branch - so the
+        // button says what it will do, and Pull is disabled rather
+        // than left to fail with "no tracking information".
+        var tracked = !!(current && current.upstream);
+        $("#toolbar-push span:not(.toolbar-remote-btn-icon):not(.toolbar-remote-btn-badge)", self.element)
+            .text(tracked ? "Push" : "Publish");
+        $("#toolbar-pull", self.element)
+            .prop("disabled", !tracked)
+            .attr("title", tracked ? "Left-click to pull, right-click for options"
+                                   : "Nothing to pull: this branch has no upstream");
     }
 
     self.setBadge = function(selector, count) {
