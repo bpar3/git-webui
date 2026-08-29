@@ -625,6 +625,15 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             result = delete_branch(GitParRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("force", False))
             self.send_json(result["status"], result["payload"])
+        elif self.request_path == "/api/branches/delete-remote":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected():
+                return
+            payload = self.read_json_body()
+            result = delete_remote_branch(GitParRequestHandler.REPO_ROOT, payload.get("remote_name"))
+            self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/branches/compare":
             if not self.ensure_repo_selected():
                 return
@@ -1516,6 +1525,19 @@ def delete_branch(repo_root, local_name, force):
     command = ["branch", "-D" if force else "-d", local_name.strip()]
     result = run_git_capture(repo_root, command)
     return build_branch_action_response(repo_root, result, "Deleted branch " + local_name.strip())
+
+
+def delete_remote_branch(repo_root, remote_name):
+    # remote_name is "<remote>/<branch>", the same shape get_branch_entries
+    # already reports it in - a remote name itself can't contain a slash,
+    # so splitting on the first one is unambiguous.
+    if not remote_name or "/" not in remote_name:
+        return {"status": 400, "payload": {"error": "A remote branch is required."}}
+    remote, branch = remote_name.split("/", 1)
+    if not remote or not branch:
+        return {"status": 400, "payload": {"error": "A remote branch is required."}}
+    result = run_git_capture(repo_root, ["push", remote, "--delete", branch])
+    return build_branch_action_response(repo_root, result, "Deleted " + remote_name + " from " + remote)
 
 
 def compare_branches(repo_root, source_ref, target_ref):

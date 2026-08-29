@@ -1334,6 +1334,16 @@ gitpar.Toolbar = function(mainView) {
         gitpar.apiPost("/api/branches/delete", {local_name: localName}, gitpar.reloadApp);
     }
 
+    self.removeRemoteBranch = function(remoteName) {
+        if (!remoteName) {
+            return;
+        }
+        if (!window.confirm("Delete '" + remoteName + "' from the remote? This cannot be undone.")) {
+            return;
+        }
+        gitpar.apiPost("/api/branches/delete-remote", {remote_name: remoteName}, gitpar.reloadApp);
+    }
+
     self.createBranchAtRef = function(startPoint, suggestedName) {
         var branchName = window.prompt("New branch name", suggestedName || "");
         if (!branchName) {
@@ -2698,6 +2708,16 @@ gitpar.RefActionMenu = function(mainView) {
             self.addAction("Delete local branch", function() {
                 mainView.repoChrome.removeBranch(refInfo.gitRef);
             }, gitpar.viewonly || !branch || !branch.can_delete, "danger");
+        } else if (refInfo.kind == "remote") {
+            // Not gated on branch.can_delete - that flag describes
+            // whether the paired *local* branch can be deleted (not the
+            // one currently checked out), which has nothing to do with
+            // deleting the remote ref. The only real constraint here is
+            // push access, which isn't known ahead of time; git reports
+            // it if the push --delete is rejected.
+            self.addAction("Delete " + refInfo.gitRef, function() {
+                mainView.repoChrome.removeRemoteBranch(refInfo.gitRef);
+            }, gitpar.viewonly, "danger");
         }
 
         if (refInfo.kind == "local" || refInfo.kind == "remote") {
