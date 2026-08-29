@@ -1373,6 +1373,7 @@ body {
     background: var(--gf-page-bg);
 
     .uncommitted-summary-header {
+        position: relative;
         .display-flex();
         .align-items(center);
         gap: 8px;
@@ -1382,6 +1383,77 @@ body {
 
         &:hover {
             background: var(--gf-row-hover);
+        }
+    }
+
+    .uncommitted-summary-spacer {
+        .flex(1);
+    }
+
+    // What is waiting, by kind: the counts a status column would give,
+    // folded onto one line so the header answers "how much, and of
+    // what" without the card being opened.
+    .uncommitted-summary-counts {
+        .display-flex();
+        .align-items(center);
+        gap: 10px;
+        flex: 0 0 auto;
+        font-size: 11.5px;
+        color: var(--gf-text-muted);
+    }
+
+    .uncommitted-summary-tally-count {
+        margin-right: 4px;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .uncommitted-summary-tally-status {
+        font-weight: bold;
+    }
+
+    .uncommitted-summary-menu-btn,
+    .uncommitted-summary-expand {
+        flex: 0 0 auto;
+        border: 0;
+        background: transparent;
+        color: var(--gf-text-faint);
+        font-size: 13px;
+        line-height: 1;
+        padding: 2px 4px;
+        border-radius: 3px;
+
+        &:hover,
+        &:focus {
+            color: var(--gf-text);
+            background: var(--gf-border);
+        }
+    }
+
+    .uncommitted-summary-menu {
+        display: none;
+        position: absolute;
+        top: 100%;
+        right: 34px;
+        z-index: 30;
+        cursor: default;
+    }
+
+    // A merge that stopped is a blocking state, not a pile of edits, so
+    // the card takes the same tint the conflict banner does.
+    &.uncommitted-summary-conflicted {
+        background: var(--gf-danger-bg);
+        border-bottom-color: var(--gf-danger-border);
+
+        .uncommitted-summary-count {
+            color: var(--gf-danger);
+        }
+
+        .uncommitted-summary-dot {
+            border-color: var(--gf-danger);
+        }
+
+        .uncommitted-summary-header:hover {
+            background: transparent;
         }
     }
 
@@ -1408,9 +1480,25 @@ body {
         .display-flex();
         justify-content: space-between;
         gap: 12px;
-        padding: 3px 0;
+        padding: 3px 6px;
+        margin: 0 -6px;
+        border-radius: 3px;
         font-size: 11.5px;
         color: var(--gf-text-muted);
+        cursor: pointer;
+
+        &:hover {
+            background: var(--gf-row-hover);
+            color: var(--gf-text);
+        }
+    }
+
+    // The row clips rather than wraps, so a long path ends in an
+    // ellipsis and the whole of it lives in the row's tooltip.
+    .uncommitted-summary-file-path {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .uncommitted-summary-file-status {
@@ -1419,6 +1507,7 @@ body {
         &.uncommitted-status-A { color: var(--gf-chip-green-text); }
         &.uncommitted-status-M { color: var(--gf-chip-yellow-text); }
         &.uncommitted-status-D { color: var(--gf-danger); }
+        &.uncommitted-status-U { color: var(--gf-danger); }
         &.uncommitted-status-untracked { color: var(--gf-text-faint); }
     }
 }

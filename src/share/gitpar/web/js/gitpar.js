@@ -116,6 +116,50 @@ gitpar.adoptTheme = function(serverTheme) {
     gitpar.applyTheme(serverTheme, false);
 }
 
+// Porcelain status codes for a path git could not merge. Both columns
+// carry a letter for these, which is what separates "unmerged" from an
+// ordinary staged change - a plain "A" in the index is an added file,
+// but "AA" is both sides adding the same path.
+gitpar.UNMERGED_STATUS_CODES = ["DD", "AU", "UD", "UA", "DU", "AA", "UU"];
+
+// One entry per path in `git status --porcelain`, with the single
+// letter worth showing and whether the path is in conflict. The index
+// column wins when it has something to say, so a staged rename reads as
+// R rather than as whatever the working tree column happens to hold.
+gitpar.parseStatusLines = function(text) {
+    var files = [];
+    gitpar.splitLines(text || "").forEach(function(line) {
+        if (!line || line.length < 4) {
+            return;
+        }
+        var code = line.substr(0, 2);
+        var indexStatus = code[0];
+        var workTreeStatus = code[1];
+        var conflicted = gitpar.UNMERGED_STATUS_CODES.indexOf(code) != -1;
+        var status = conflicted ? "U"
+                   : (indexStatus != " " && indexStatus != "?" ? indexStatus : workTreeStatus);
+        files.push({ path: line.substr(3), status: status, conflicted: conflicted });
+    });
+    return files;
+}
+
+// "3 M", or "2 M 1 U" when the changes are not all of a kind - the
+// counts a status column would give, folded into one line.
+gitpar.summarizeStatusCounts = function(files) {
+    var order = [];
+    var counts = {};
+    (files || []).forEach(function(file) {
+        if (counts[file.status] === undefined) {
+            counts[file.status] = 0;
+            order.push(file.status);
+        }
+        ++counts[file.status];
+    });
+    return order.map(function(status) {
+        return { status: status, count: counts[status] };
+    });
+}
+
 gitpar.showModal = function(title, message, type) {
     var body = $("#error-modal .alert");
     $("#error-modal .modal-title").text(title);
@@ -1063,8 +1107,17 @@ gitpar.Toolbar = function(mainView) {
         }
     }
 
-    self.setChangesBadge = function(count) {
-        self.setBadge("#toolbar-changes-badge", count);
+    // The tab names the state the repo is actually in. A stopped merge
+    // is not a list of changes to review and commit - it is a set of
+    // decisions blocking everything else - so it says so, and counts
+    // the files still waiting rather than every changed file.
+    self.setChangesBadge = function(count, conflictCount) {
+        var conflicted = conflictCount > 0;
+        $(".toolbar-tab[data-section='workspace'] .toolbar-tab-text", self.element)
+            .text(conflicted ? "Conflicts" : "Changes");
+        $(".toolbar-tab[data-section='workspace']", self.element)
+            .toggleClass("toolbar-tab-conflicted", conflicted);
+        self.setBadge("#toolbar-changes-badge", conflicted ? conflictCount : count);
     }
 
     self.openPicker = function() {
@@ -3360,6 +3413,9 @@ gitpar.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         if (hunk) {
             context.oldLine = hunk.oldStart;
             context.newLine = hunk.newStart;
+            // Tagged so the toolbar's next/previous can step between
+            // changes without re-parsing the rendered diff.
+            $(pre).addClass("diff-view-hunk-start");
         }
 
         // Number the line before classifying it: a removal only consumes
@@ -3770,6 +3826,52 @@ gitpar.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         }
     };
 
+    // Walks between changes in a long diff. Which hunk counts as
+    // "current" is whichever one the scroll is sitting on, so stepping
+    // works from wherever the reader has scrolled to rather than from
+    // some remembered index that the last render invalidated.
+    self.stepHunk = function(direction) {
+        // The scroller is .diff-view, not the panel body - and in
+        // side-by-side there is one per side, each with its own copy of
+        // every hunk header. Stepping follows the first, and the sides
+        // are already scroll-linked, so both move.
+        var body = $(".diff-view", self.element)[0];
+        if (!body) {
+            return;
+        }
+        var hunks = $(".diff-view-hunk-start", body);
+        if (hunks.length == 0) {
+            return;
+        }
+        var bodyTop = body.getBoundingClientRect().top;
+        var offsets = [];
+        hunks.each(function() {
+            offsets.push(this.getBoundingClientRect().top - bodyTop + body.scrollTop);
+        });
+        // A small tolerance so the hunk already pinned to the top is
+        // treated as current rather than as the one just passed.
+        var current = body.scrollTop + 2;
+        var target = null;
+        if (direction > 0) {
+            for (var i = 0; i < offsets.length; ++i) {
+                if (offsets[i] > current) {
+                    target = offsets[i];
+                    break;
+                }
+            }
+        } else {
+            for (var j = offsets.length - 1; j >= 0; --j) {
+                if (offsets[j] < current - 4) {
+                    target = offsets[j];
+                    break;
+                }
+            }
+        }
+        if (target !== null) {
+            body.scrollTop = target;
+        }
+    }
+
     self.buildDOM = function() {
         var html = '<div class="diff-view-container panel panel-default">';
         if (! (parent instanceof gitpar.CommitExplorerView)) {
@@ -3788,6 +3890,10 @@ gitpar.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
                         '<button type="button" class="diff-tool-btn diff-unstage" style="display:none">Unstage</button>' +
                     '</div>' +
                     '<div class="diff-toolbar-spacer"></div>' +
+                    '<div class="diff-tool-group diff-hunk-nav">' +
+                        '<button type="button" class="diff-tool-step diff-hunk-prev" title="Previous change" aria-label="Previous change">&#8963;</button>' +
+                        '<button type="button" class="diff-tool-step diff-hunk-next" title="Next change" aria-label="Next change">&#8964;</button>' +
+                    '</div>' +
                     '<button type="button" class="diff-tool-btn diff-toggle-view' + (self.sideBySide ? ' on' : '') + '" aria-pressed="' + !!self.sideBySide + '">Side-by-side</button>' +
                     (!self.sideBySide ? '<button type="button" class="diff-tool-btn diff-explore">Explore</button>' : '') +
                 '</div>';
@@ -3836,6 +3942,8 @@ gitpar.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
 
         $(".diff-explore", newElement).click(function() { self.switchToExploreView(); });
         $(".diff-toggle-view", newElement).click(self.toggleSideBySide);
+        $(".diff-hunk-prev", newElement).click(function() { self.stepHunk(-1); });
+        $(".diff-hunk-next", newElement).click(function() { self.stepHunk(1); });
         
         if (self.element && self.element.parentNode) {
             self.element.parentNode.replaceChild(newElement, self.element);
@@ -4731,40 +4839,94 @@ gitpar.UncommittedSummaryView = function(mainView) {
         self.render();
     }
 
+    self.conflicted = function() {
+        return self.files.filter(function(file) { return file.conflicted; });
+    }
+
+    // What the header says. A merge that stopped is not "3 changed
+    // files" - the files are changed because git could not decide, and
+    // saying which branch it was merging into is what makes the state
+    // recognisable when you come back to it later.
+    self.summaryTitle = function() {
+        var conflicted = self.conflicted();
+        if (conflicted.length > 0) {
+            var current = mainView.repoChrome ? mainView.repoChrome.currentBranch() : null;
+            var into = current && current.display_name ? " when merging into " + current.display_name : "";
+            return conflicted.length + " conflicting file" + (conflicted.length == 1 ? "" : "s") + " found" + into;
+        }
+        return self.files.length + " changed file" + (self.files.length == 1 ? "" : "s");
+    }
+
+    // Where a file in this list should take you: a conflict needs
+    // deciding between two versions, anything else needs its diff.
+    self.openFile = function(file) {
+        if (file.conflicted) {
+            mainView.conflictResolveView.update(file.path);
+            return;
+        }
+        mainView.repoChrome.showWorkspace();
+        mainView.workspaceView.selectPath(file.path);
+    }
+
+    self.openFullView = function(event) {
+        if (event) {
+            event.stopPropagation();
+        }
+        var conflicted = self.conflicted();
+        if (conflicted.length > 0) {
+            mainView.conflictResolveView.update(conflicted[0].path);
+            return;
+        }
+        mainView.repoChrome.showWorkspace();
+    }
+
     self.render = function() {
         if (mainView.repoChrome) {
-            mainView.repoChrome.setChangesBadge(self.files.length);
+            mainView.repoChrome.setChangesBadge(self.files.length, self.conflicted().length);
         }
         if (self.files.length == 0) {
             $(self.element).hide();
             return;
         }
         $(self.element).show();
-        $(".uncommitted-summary-count", self.element).text(self.files.length + " changed file" + (self.files.length == 1 ? "" : "s"));
+        $(self.element).toggleClass("uncommitted-summary-expanded", self.expanded);
+        $(self.element).toggleClass("uncommitted-summary-conflicted", self.conflicted().length > 0);
+        $(".uncommitted-summary-count", self.element).text(self.summaryTitle());
+
+        // The same counts a status column would give, folded onto one
+        // line: what is waiting, and of what kind.
+        var counts = $(".uncommitted-summary-counts", self.element);
+        counts.empty();
+        gitpar.summarizeStatusCounts(self.files).forEach(function(entry) {
+            var statusClass = entry.status == "?" ? "untracked" : entry.status;
+            counts.append($('<span class="uncommitted-summary-tally">')
+                .append($('<span class="uncommitted-summary-tally-count">').text(entry.count))
+                .append($('<span class="uncommitted-summary-tally-status">')
+                    .text(entry.status).addClass("uncommitted-status-" + statusClass)));
+        });
+
         var fileList = $(".uncommitted-summary-files", self.element);
         fileList.empty();
         fileList.toggle(self.expanded);
         self.files.forEach(function(file) {
             var row = $('<div class="uncommitted-summary-file"><span class="uncommitted-summary-file-path"></span><span class="uncommitted-summary-file-status"></span></div>');
+            // The row clips long paths, so the whole path lives in the
+            // tooltip - a truncated path is often the half that matters.
+            row.attr("title", file.path);
             $(".uncommitted-summary-file-path", row).text(file.path);
             var statusClass = file.status == "?" ? "untracked" : file.status;
             $(".uncommitted-summary-file-status", row).text(file.status).addClass("uncommitted-status-" + statusClass);
+            row.click(function(event) {
+                event.stopPropagation();
+                self.openFile(file);
+            });
             fileList.append(row);
         });
     }
 
     self.update = function() {
         gitpar.git("status --porcelain", function(data) {
-            self.files = [];
-            gitpar.splitLines(data).forEach(function(line) {
-                if (!line) {
-                    return;
-                }
-                var indexStatus = line[0];
-                var workTreeStatus = line[1];
-                var status = indexStatus != " " && indexStatus != "?" ? indexStatus : workTreeStatus;
-                self.files.push({ path: line.substr(3), status: status });
-            });
+            self.files = gitpar.parseStatusLines(data);
             self.render();
         });
     }
@@ -4774,10 +4936,45 @@ gitpar.UncommittedSummaryView = function(mainView) {
                                 '<span class="uncommitted-summary-dot"></span>' +
                                 '<span class="uncommitted-summary-count"></span>' +
                                 '<span class="uncommitted-summary-spacer"></span>' +
+                                '<span class="uncommitted-summary-counts"></span>' +
+                                '<button type="button" class="uncommitted-summary-menu-btn" title="Show changes menu">&#8942;</button>' +
+                                '<button type="button" class="uncommitted-summary-expand" title="Open these changes">&#8599;</button>' +
+                                '<div class="uncommitted-summary-menu toolbar-menu">' +
+                                    '<button type="button" class="toolbar-menu-item" data-action="open-changes">Open Changes</button>' +
+                                    '<div class="toolbar-menu-divider"></div>' +
+                                    '<button type="button" class="toolbar-menu-item" data-action="summary-stash-all">Stash All Changes</button>' +
+                                    '<button type="button" class="toolbar-menu-item" data-action="summary-discard-all">Discard All Changes</button>' +
+                                '</div>' +
                             '</div>' +
                             '<div class="uncommitted-summary-files"></div>' +
                         '</div>')[0];
     $(".uncommitted-summary-header", self.element).click(self.toggleExpand);
+    $(".uncommitted-summary-expand", self.element).click(self.openFullView);
+    // The same actions the Changes toolbar offers, reachable without
+    // going there first. Discard is routed through the workspace view's
+    // own handler, which is the one that asks before throwing work away.
+    $(".uncommitted-summary-menu-btn", self.element).click(function(event) {
+        event.stopPropagation();
+        $(".uncommitted-summary-menu", self.element).toggle();
+    });
+    $(".uncommitted-summary-menu", self.element).click(function(event) {
+        event.stopPropagation();
+    });
+    $("[data-action='open-changes']", self.element).click(function() {
+        $(".uncommitted-summary-menu", self.element).hide();
+        self.openFullView();
+    });
+    $("[data-action='summary-stash-all']", self.element).click(function() {
+        $(".uncommitted-summary-menu", self.element).hide();
+        mainView.workspaceView.stashChanges(false);
+    });
+    $("[data-action='summary-discard-all']", self.element).click(function() {
+        $(".uncommitted-summary-menu", self.element).hide();
+        mainView.workspaceView.discardChanges(false);
+    });
+    $(document).on("click", function() {
+        $(".uncommitted-summary-menu", self.element).hide();
+    });
     $(self.element).hide();
 };
 
@@ -5280,6 +5477,29 @@ gitpar.WorkspaceView = function(mainView) {
         mainView.switchTo(self.element);
     };
 
+    // Opens the Changes view on one particular file. The two lists are
+    // rebuilt from a git call, so the selection is applied once they
+    // have been - and a staged-only file is looked for in the second
+    // list when the first does not hold it.
+    self.selectPath = function(path) {
+        self.show();
+        // Either list may hold the path and both are rebuilt from their
+        // own git call, so each tries as it finishes and the first to
+        // find it wins - which works whichever order they return in.
+        var found = false;
+        var tryIn = function(view) {
+            return function() {
+                if (!found) {
+                    found = view.selectPath(path);
+                }
+            };
+        };
+        self.workingCopyView.update(tryIn(self.workingCopyView));
+        self.stagingAreaView.update(tryIn(self.stagingAreaView));
+        self.commitMessageView.update();
+        self.conflictBanner.update();
+    }
+
     self.update = function(mode) {
         self.show();
         self.workingCopyView.update();
@@ -5398,7 +5618,7 @@ gitpar.ChangedFilesView = function(workspaceView, type, label) {
 
     var self = this;
 
-    self.update = function() {
+    self.update = function(onReady) {
         $(fileList).empty()
         var col = type == "working-copy" ? 1 : 0;
         gitpar.git("status --porcelain", function(data) {
@@ -5450,8 +5670,26 @@ gitpar.ChangedFilesView = function(workspaceView, type, label) {
             }
             fileListContainer.scrollTop = prevScrollTop;
             self.refreshCounter();
+            if (onReady) {
+                onReady();
+            }
         });
     };
+
+    // Selects the row for a path, if this list holds it. Used when
+    // arriving from somewhere that already knows which file it wants -
+    // clicking one in the changes card, say.
+    self.selectPath = function(path) {
+        for (var i = 0; i < fileList.children.length; ++i) {
+            var item = fileList.children[i];
+            if (item.model == path) {
+                $(item).click();
+                item.scrollIntoView({ block: "nearest" });
+                return true;
+            }
+        }
+        return false;
+    }
 
     self.select = function(event) {
         var clicked = event.target;
