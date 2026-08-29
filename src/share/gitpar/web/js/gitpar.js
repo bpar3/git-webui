@@ -2847,7 +2847,6 @@ gitpar.LogView = function(historyView) {
                                     '<button type="button" class="log-entry-menu-btn" title="Show commit menu">&#8942;</button>' +
                                     '<span class="log-entry-graph"></span>' +
                                     '<span class="log-entry-date" title="' + gitpar.escapeHtml(self.author.date.toLocaleString()) + '">' + gitpar.escapeHtml(self.relativeDate || "") + '</span>' +
-                                    '<span class="badge log-entry-hash">' + self.abbrevCommitHash() + '</span>' +
                                 '</header>' +
                              '</a>')[0];
             var subject = self.stash ? gitpar.formatStashSubject(self.stash.message) : self.abbrevMessage();

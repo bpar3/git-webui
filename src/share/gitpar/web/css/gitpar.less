@@ -1329,7 +1329,6 @@ body {
                 color: var(--gf-accent);
             }
 
-            .log-entry-hash,
             .log-entry-date {
                 color: var(--gf-accent);
                 opacity: 0.75;
@@ -1376,17 +1375,6 @@ body {
                 font-family: @font-family-monospace;
             }
 
-            // Reference data, not content: normal weight and muted, so
-            // it doesn't outweigh the commit message beside it. (It was
-            // bold monospace, which made every row read as heavy.)
-            .log-entry-hash {
-                flex: 0 0 auto;
-                color: var(--gf-text-faint);
-                background: transparent;
-                font-weight: normal;
-                font-size: 11px;
-                letter-spacing: 0.02em;
-            }
 
             .log-entry-menu-btn {
                 flex: 0 0 auto;
@@ -1479,7 +1467,6 @@ body {
 
             header .log-entry-avatar,
             header .list-group-item-text,
-            header .log-entry-hash,
             header .log-entry-menu-btn {
                 display: none;
             }
