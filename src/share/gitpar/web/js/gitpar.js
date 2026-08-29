@@ -1054,15 +1054,87 @@ gitpar.RepoPicker = function(mainView) {
     });
 };
 
-gitpar.PULL_STRATEGY_KEY = "gitpar-pull-strategy";
-gitpar.AUTO_FETCH_KEY = "gitpar-auto-fetch";
+// Pull strategy and auto-fetch, on the same footing as the theme: kept
+// on the server rather than in localStorage, for the same reason - the
+// port moves whenever the one below it is taken, localStorage is keyed
+// by origin, and two windows on different ports used to quietly hold
+// different settings.
+gitpar.PULL_STRATEGIES = ["ff", "rebase"];
+gitpar.pullStrategy = "ff";
+gitpar.autoFetchEnabled = false;
 
-gitpar.getPullStrategy = function() {
-    return localStorage.getItem(gitpar.PULL_STRATEGY_KEY) || "ff";
+gitpar.applyPullStrategy = function(strategy, persist) {
+    if (gitpar.PULL_STRATEGIES.indexOf(strategy) == -1) {
+        strategy = "ff";
+    }
+    gitpar.pullStrategy = strategy;
+    if (persist === false) {
+        return;
+    }
+    $.ajax({
+        url: "/api/settings/pull-strategy",
+        method: "POST",
+        data: JSON.stringify({ strategy: strategy }),
+        contentType: "application/json",
+    }).fail(function() {
+        console.log("Could not save the pull strategy.");
+    });
 }
 
-gitpar.isAutoFetchEnabled = function() {
-    return localStorage.getItem(gitpar.AUTO_FETCH_KEY) == "1";
+// Named applyAutoFetchPreference, not applyAutoFetch - gitpar.Toolbar
+// already has an instance method of that name which starts or stops the
+// fetch timer. This one only records the preference and persists it;
+// the toolbar re-reads gitpar.autoFetchEnabled to act on it.
+gitpar.applyAutoFetchPreference = function(enabled, persist) {
+    gitpar.autoFetchEnabled = !!enabled;
+    if (persist === false) {
+        return;
+    }
+    $.ajax({
+        url: "/api/settings/auto-fetch",
+        method: "POST",
+        data: JSON.stringify({ enabled: gitpar.autoFetchEnabled }),
+        contentType: "application/json",
+    }).fail(function() {
+        console.log("Could not save the auto-fetch preference.");
+    });
+}
+
+// Adopts what the server reported, migrating a value left behind in
+// localStorage by a version that stored it there - carried over once,
+// saved through the new endpoint, and cleared.
+gitpar.adoptPullStrategy = function(serverStrategy) {
+    var stored = null;
+    try {
+        stored = localStorage.getItem("gitpar-pull-strategy");
+    } catch (error) {
+    }
+    if (stored && stored != serverStrategy) {
+        gitpar.applyPullStrategy(stored);
+    } else {
+        gitpar.applyPullStrategy(serverStrategy, false);
+    }
+    try {
+        localStorage.removeItem("gitpar-pull-strategy");
+    } catch (error) {
+    }
+}
+
+gitpar.adoptAutoFetchPreference = function(serverEnabled) {
+    var stored = null;
+    try {
+        stored = localStorage.getItem("gitpar-auto-fetch");
+    } catch (error) {
+    }
+    if (stored !== null) {
+        gitpar.applyAutoFetchPreference(stored == "1");
+    } else {
+        gitpar.applyAutoFetchPreference(serverEnabled, false);
+    }
+    try {
+        localStorage.removeItem("gitpar-auto-fetch");
+    } catch (error) {
+    }
 }
 
 gitpar.Toolbar = function(mainView) {
@@ -1435,7 +1507,7 @@ gitpar.Toolbar = function(mainView) {
         panel.append(self.appMenuDivider());
         panel.append(self.appMenuItem("Auto fetch", null, function() {
             self.toggleAutoFetch();
-        }, { checked: gitpar.isAutoFetchEnabled() }));
+        }, { checked: gitpar.autoFetchEnabled }));
         panel.append(self.appMenuItem("Configure Remotes\u2026", null, function() {
             mainView.configureRemotesView.show();
         }, { disabled: noRepo }));
@@ -1643,7 +1715,7 @@ gitpar.Toolbar = function(mainView) {
         if (event) {
             event.preventDefault();
         }
-        var strategy = gitpar.getPullStrategy();
+        var strategy = gitpar.pullStrategy;
         var args = strategy == "rebase" ? "pull --rebase" : "pull";
         self.runRemoteAction("toolbar-pull", args, function(data) {
             self.loadBranches();
@@ -1681,30 +1753,34 @@ gitpar.Toolbar = function(mainView) {
     }
 
     self.toggleAutoFetch = function() {
-        var enabled = !gitpar.isAutoFetchEnabled();
-        localStorage.setItem(gitpar.AUTO_FETCH_KEY, enabled ? "1" : "0");
+        gitpar.applyAutoFetchPreference(!gitpar.autoFetchEnabled);
         self.applyAutoFetch();
     }
 
+    // Instance method: starts or stops this window's fetch timer to
+    // match gitpar.autoFetchEnabled. Distinct from the module-level
+    // gitpar.applyAutoFetchPreference, which only records the
+    // preference and persists it - this is the one that actually acts
+    // on it, and runs again after every toggle and at startup.
     self.applyAutoFetch = function() {
         if (self.autoFetchTimer) {
             clearInterval(self.autoFetchTimer);
             self.autoFetchTimer = null;
         }
-        if (gitpar.isAutoFetchEnabled()) {
+        if (gitpar.autoFetchEnabled) {
             self.autoFetchTimer = setInterval(self.onFetch, 5 * 60 * 1000);
         }
     }
 
     self.setPullStrategy = function(strategy) {
-        localStorage.setItem(gitpar.PULL_STRATEGY_KEY, strategy);
+        gitpar.applyPullStrategy(strategy);
     }
 
     self.renderRemoteMenu = function(kind) {
         var menu = $(".toolbar-menu[data-menu='" + kind + "']", self.element);
         menu.empty();
         if (kind == "pull") {
-            var strategy = gitpar.getPullStrategy();
+            var strategy = gitpar.pullStrategy;
             var ffItem = $('<button type="button" class="toolbar-menu-item' + (strategy != "rebase" ? " checked" : "") + '">Fast Forward When Possible</button>');
             ffItem.click(function() { self.setPullStrategy("ff"); });
             var rebaseItem = $('<button type="button" class="toolbar-menu-item' + (strategy == "rebase" ? " checked" : "") + '">Rebase</button>');
@@ -1715,7 +1791,7 @@ gitpar.Toolbar = function(mainView) {
             forceItem.click(self.onForcePush);
             menu.append(forceItem).append('<div class="toolbar-menu-divider"></div>');
         } else if (kind == "fetch") {
-            var autoItem = $('<button type="button" class="toolbar-menu-item' + (gitpar.isAutoFetchEnabled() ? " checked" : "") + '">Auto fetch</button>');
+            var autoItem = $('<button type="button" class="toolbar-menu-item' + (gitpar.autoFetchEnabled ? " checked" : "") + '">Auto fetch</button>');
             autoItem.click(self.toggleAutoFetch);
             menu.append(autoItem).append('<div class="toolbar-menu-divider"></div>');
         }
@@ -6311,6 +6387,8 @@ function MainUi() {
         gitpar.workspaceRepos = context.workspace_repos || [];
         gitpar.viewonly = context.view_only;
         gitpar.adoptTheme(context.theme);
+        gitpar.adoptPullStrategy(context.pull_strategy);
+        gitpar.adoptAutoFetchPreference(context.auto_fetch);
 
         var title = $("title")[0];
         title.textContent = context.has_repo ? "Git - " + gitpar.repo : "GitPar";

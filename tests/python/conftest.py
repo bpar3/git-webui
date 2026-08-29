@@ -87,6 +87,12 @@ def handler_state(backend, tmp_path):
         "WORKSPACE_ROOT": handler.WORKSPACE_ROOT,
         "RECENT_WORKSPACES": list(handler.RECENT_WORKSPACES),
         "OPEN_REPOS": list(handler.OPEN_REPOS),
+        # These three are class-level too, same as everything else here -
+        # a test that changes one and doesn't restore it leaks into
+        # whichever test runs next in the same process.
+        "THEME": handler.THEME,
+        "PULL_STRATEGY": handler.PULL_STRATEGY,
+        "AUTO_FETCH": handler.AUTO_FETCH,
     }
     handler.APP_STATE_PATH = str(tmp_path / "state.json")
     handler.REPO_ROOT = None
@@ -94,6 +100,9 @@ def handler_state(backend, tmp_path):
     handler.WORKSPACE_ROOT = None
     handler.RECENT_WORKSPACES = []
     handler.OPEN_REPOS = []
+    handler.THEME = "light"
+    handler.PULL_STRATEGY = "ff"
+    handler.AUTO_FETCH = False
     try:
         yield handler
     finally:

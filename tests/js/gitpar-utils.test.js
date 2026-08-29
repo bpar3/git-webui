@@ -117,6 +117,10 @@ describe("gitpar.parseDecoratedRefs", () => {
 });
 
 describe("gitpar pull strategy / auto-fetch preferences", () => {
+    // These moved off localStorage onto the server, on the same reasoning
+    // as the theme: localStorage is keyed by origin, and the origin
+    // includes the port, which moves whenever the one below it is taken -
+    // so two windows on different ports used to quietly disagree.
     let gitpar;
 
     beforeEach(() => {
@@ -124,24 +128,59 @@ describe("gitpar pull strategy / auto-fetch preferences", () => {
         gitpar.__testLocalStorage.clear();
     });
 
-    test("getPullStrategy defaults to fast-forward", () => {
-        expect(gitpar.getPullStrategy()).toBe("ff");
+    test("pullStrategy defaults to fast-forward", () => {
+        expect(gitpar.pullStrategy).toBe("ff");
     });
 
-    test("getPullStrategy reflects a stored rebase preference", () => {
-        gitpar.__testLocalStorage.setItem(gitpar.PULL_STRATEGY_KEY, "rebase");
-        expect(gitpar.getPullStrategy()).toBe("rebase");
+    test("applyPullStrategy updates the in-memory preference immediately", () => {
+        gitpar.applyPullStrategy("rebase", false);
+        expect(gitpar.pullStrategy).toBe("rebase");
     });
 
-    test("isAutoFetchEnabled defaults to false", () => {
-        expect(gitpar.isAutoFetchEnabled()).toBe(false);
+    test("applyPullStrategy rejects anything it does not know", () => {
+        gitpar.applyPullStrategy("rebase", false);
+        gitpar.applyPullStrategy("bogus", false);
+        expect(gitpar.pullStrategy).toBe("ff");
     });
 
-    test("isAutoFetchEnabled is true only when explicitly enabled", () => {
-        gitpar.__testLocalStorage.setItem(gitpar.AUTO_FETCH_KEY, "1");
-        expect(gitpar.isAutoFetchEnabled()).toBe(true);
-        gitpar.__testLocalStorage.setItem(gitpar.AUTO_FETCH_KEY, "0");
-        expect(gitpar.isAutoFetchEnabled()).toBe(false);
+    test("autoFetchEnabled defaults to false", () => {
+        expect(gitpar.autoFetchEnabled).toBe(false);
+    });
+
+    test("applyAutoFetchPreference updates the in-memory preference immediately", () => {
+        gitpar.applyAutoFetchPreference(true, false);
+        expect(gitpar.autoFetchEnabled).toBe(true);
+        gitpar.applyAutoFetchPreference(false, false);
+        expect(gitpar.autoFetchEnabled).toBe(false);
+    });
+
+    test("adoptPullStrategy uses the server's value when nothing is stored", () => {
+        gitpar.adoptPullStrategy("rebase");
+        expect(gitpar.pullStrategy).toBe("rebase");
+    });
+
+    test("adoptPullStrategy migrates a value left in localStorage once, then clears it", () => {
+        // Migrating persists the recovered value to the server, same as
+        // adoptTheme - stub $.ajax so the test isn't making a real
+        // network call through jsdom's XHR shim.
+        gitpar.__testJQuery.ajax = () => ({ fail: () => {} });
+        gitpar.__testLocalStorage.setItem("gitpar-pull-strategy", "rebase");
+        gitpar.adoptPullStrategy("ff");
+        expect(gitpar.pullStrategy).toBe("rebase");
+        expect(gitpar.__testLocalStorage.getItem("gitpar-pull-strategy")).toBeNull();
+    });
+
+    test("adoptAutoFetchPreference uses the server's value when nothing is stored", () => {
+        gitpar.adoptAutoFetchPreference(true);
+        expect(gitpar.autoFetchEnabled).toBe(true);
+    });
+
+    test("adoptAutoFetchPreference migrates a value left in localStorage once, then clears it", () => {
+        gitpar.__testJQuery.ajax = () => ({ fail: () => {} });
+        gitpar.__testLocalStorage.setItem("gitpar-auto-fetch", "1");
+        gitpar.adoptAutoFetchPreference(false);
+        expect(gitpar.autoFetchEnabled).toBe(true);
+        expect(gitpar.__testLocalStorage.getItem("gitpar-auto-fetch")).toBeNull();
     });
 });
 

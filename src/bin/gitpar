@@ -29,6 +29,13 @@ import sys
 import tempfile
 import webbrowser
 
+try:
+    import fcntl
+except ImportError:
+    # Windows has no fcntl. acquire_state_lock() treats a missing module
+    # the same as a failed lock: skip locking, keep the atomic write.
+    fcntl = None
+
 if sys.version > '3':
     from http.server import SimpleHTTPRequestHandler, HTTPServer
     from urllib.parse import parse_qs, unquote, urlparse
@@ -97,6 +104,12 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
     # that silently resets when the app happens to start on a different
     # port is not a preference.
     THEME = "light"
+    # Pull strategy and auto-fetch used to live in localStorage, which
+    # is keyed by origin - and the origin includes the port, which moves
+    # whenever the one below is taken. Two windows then quietly held
+    # different settings. They sit here with the theme instead.
+    PULL_STRATEGY = "ff"
+    AUTO_FETCH = False
 
     # Repos currently open as tabs, in tab order. REPO_ROOT (above) is
     # whichever one of these is the active tab for the current request -
@@ -119,12 +132,31 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             GitParRequestHandler.REPO_ROOT = GitParRequestHandler.OPEN_REPOS[0]
 
     @classmethod
+    def read_state_document(cls, path=None):
+        """The state file as a dict, or {} if it is missing or unreadable.
+
+        Never raises: a state file that cannot be read is a reason to
+        carry on with defaults, not to fail to start.
+        """
+        state_path = path or cls.APP_STATE_PATH
+        if not state_path:
+            return {}
+        try:
+            with open(state_path, "r") as state_file:
+                document = json.load(state_file)
+            return document if isinstance(document, dict) else {}
+        except Exception:
+            return {}
+
+    @classmethod
     def load_state(cls):
         cls.RECENT_REPOS = []
         cls.RECENT_WORKSPACES = []
         cls.WORKSPACE_ROOT = None
         cls.OPEN_REPOS = []
         cls.THEME = "light"
+        cls.PULL_STRATEGY = "ff"
+        cls.AUTO_FETCH = False
         state_path = cls.APP_STATE_PATH
         if not state_path:
             return
@@ -137,49 +169,144 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             if not legacy_path or not os.path.exists(legacy_path):
                 return
             state_path = legacy_path
-        try:
-            with open(state_path, "r") as state_file:
-                state = json.load(state_file)
-            recent_repos = state.get("recent_repos", [])
-            cls.RECENT_REPOS = [repo for repo in recent_repos if os.path.isdir(repo)]
-            recent_workspaces = state.get("recent_workspaces", [])
-            cls.RECENT_WORKSPACES = [workspace for workspace in recent_workspaces if os.path.isdir(workspace)]
-            workspace_root = state.get("workspace_root")
-            if workspace_root and os.path.isdir(workspace_root):
-                cls.WORKSPACE_ROOT = os.path.realpath(workspace_root)
-            open_repos = state.get("open_repos", [])
-            cls.OPEN_REPOS = [repo for repo in open_repos if os.path.isdir(repo)]
-            cls.THEME = state.get("theme") if state.get("theme") in THEME_CHOICES else "light"
-        except Exception:
-            cls.RECENT_REPOS = []
-            cls.RECENT_WORKSPACES = []
-            cls.WORKSPACE_ROOT = None
-            cls.OPEN_REPOS = []
-            cls.THEME = "light"
+        state = cls.read_state_document(state_path)
+        recent_repos = state.get("recent_repos") or []
+        cls.RECENT_REPOS = [repo for repo in recent_repos if os.path.isdir(repo)]
+        recent_workspaces = state.get("recent_workspaces") or []
+        cls.RECENT_WORKSPACES = [workspace for workspace in recent_workspaces if os.path.isdir(workspace)]
+        workspace_root = state.get("workspace_root")
+        if workspace_root and os.path.isdir(workspace_root):
+            cls.WORKSPACE_ROOT = os.path.realpath(workspace_root)
+        open_repos = state.get("open_repos") or []
+        cls.OPEN_REPOS = [repo for repo in open_repos if os.path.isdir(repo)]
+        cls.THEME = state.get("theme") if state.get("theme") in THEME_CHOICES else "light"
+        cls.PULL_STRATEGY = state.get("pull_strategy") if state.get("pull_strategy") in PULL_STRATEGIES else "ff"
+        cls.AUTO_FETCH = bool(state.get("auto_fetch"))
 
     @classmethod
-    def save_state(cls):
+    def state_value(cls, field, on_disk):
+        """This instance's value for one field, given what is on disk.
+
+        Recent lists merge rather than replace: another instance may
+        have visited a repository this one has never seen, and dropping
+        it would be pure loss. Everything else is this instance's own
+        value - the caller only names fields it actually changed.
+
+        open_repos is handled the same defensive way here, but this is
+        the fallback path, not the one actually used to open or close a
+        tab - see save_open_repos_delta. A plain union can never lose a
+        tab another instance opened, but it also can never truthfully
+        remove one (this instance closing a tab does not prove no other
+        instance still has it open), so open_repo()/close_repo() apply
+        an explicit add or remove to the on-disk list instead of
+        offering their own OPEN_REPOS as the value to merge.
+        """
+        if field == "recent_repos":
+            return cls.merge_recent(cls.RECENT_REPOS, on_disk.get("recent_repos") or [])
+        if field == "recent_workspaces":
+            return cls.merge_recent(cls.RECENT_WORKSPACES, on_disk.get("recent_workspaces") or [])
+        if field == "open_repos":
+            return cls.merge_recent(cls.OPEN_REPOS, on_disk.get("open_repos") or [], limit=None)
+        return {
+            "workspace_root": cls.WORKSPACE_ROOT,
+            "theme": cls.THEME,
+            "pull_strategy": cls.PULL_STRATEGY,
+            "auto_fetch": cls.AUTO_FETCH,
+        }.get(field)
+
+    @staticmethod
+    def merge_recent(mine, theirs, limit=10):
+        """Most-recently-used union, this instance's order first."""
+        merged = list(mine)
+        for entry in theirs:
+            if entry not in merged:
+                merged.append(entry)
+        return merged[:limit]
+
+    @classmethod
+    def save_state(cls, *fields):
+        """Persist the named fields, leaving the rest of the file alone.
+
+        Two instances each hold a copy of this state from their own
+        start-up, so writing the whole document from memory made every
+        save publish a stale snapshot: changing the theme in one window
+        erased the tabs another window had opened since. A save now
+        touches only what its caller changed, and re-reads the file
+        first so the other fields carry through untouched.
+
+        The read, merge and write happen under a lock file and the
+        result is swapped in with os.replace, which is atomic on POSIX
+        and on Windows. Writing in place truncated the file first, and a
+        reader landing in that window got an empty file, treated it as
+        corrupt, and reset to defaults - which the next save then made
+        permanent.
+        """
         if not cls.APP_STATE_PATH:
             return
         state_dir = os.path.dirname(cls.APP_STATE_PATH)
         if not os.path.isdir(state_dir):
             os.makedirs(state_dir)
-        state = {
-            "recent_repos": cls.RECENT_REPOS[:10],
-            "recent_workspaces": cls.RECENT_WORKSPACES[:10],
-            "workspace_root": cls.WORKSPACE_ROOT,
-            "open_repos": cls.OPEN_REPOS,
-            "theme": cls.THEME,
-        }
-        with open(cls.APP_STATE_PATH, "w") as state_file:
-            json.dump(state, state_file)
+        if not fields:
+            fields = STATE_FIELDS
+        lock = acquire_state_lock(cls.APP_STATE_PATH)
+        try:
+            document = cls.read_state_document()
+            for field in fields:
+                document[field] = cls.state_value(field, document)
+            write_json_atomically(cls.APP_STATE_PATH, document)
+        finally:
+            release_state_lock(lock)
+
+    @classmethod
+    def save_open_repos_delta(cls, add=None, remove=None):
+        """Add or remove exactly one repo from the persisted tab list.
+
+        Applied to whatever is on disk right now, not to this instance's
+        own OPEN_REPOS: another instance may have opened tabs this one
+        has never heard of, and offering OPEN_REPOS as the new value (as
+        a plain save_state("open_repos") would) loses them the moment
+        this instance saves anything.
+
+        This also makes closing a tab actually stick, which a generic
+        union-merge cannot: if the merge always took the union of "mine"
+        and "on disk", a tab this instance just closed would come right
+        back as soon as the on-disk copy (still listing it, from before
+        this close) was merged back in.
+        """
+        if not cls.APP_STATE_PATH:
+            return
+        state_dir = os.path.dirname(cls.APP_STATE_PATH)
+        if not os.path.isdir(state_dir):
+            os.makedirs(state_dir)
+        lock = acquire_state_lock(cls.APP_STATE_PATH)
+        try:
+            document = cls.read_state_document()
+            open_repos = list(document.get("open_repos") or [])
+            if add and add not in open_repos:
+                open_repos.append(add)
+            if remove and remove in open_repos:
+                open_repos.remove(remove)
+            document["open_repos"] = open_repos
+            write_json_atomically(cls.APP_STATE_PATH, document)
+        finally:
+            release_state_lock(lock)
 
     @classmethod
     def set_theme(cls, theme):
         # "system" defers to whatever the desktop reports; the browser
         # resolves it, so the server only has to remember the choice.
         cls.THEME = theme if theme in THEME_CHOICES else "light"
-        cls.save_state()
+        cls.save_state("theme")
+
+    @classmethod
+    def set_pull_strategy(cls, strategy):
+        cls.PULL_STRATEGY = strategy if strategy in PULL_STRATEGIES else "ff"
+        cls.save_state("pull_strategy")
+
+    @classmethod
+    def set_auto_fetch(cls, enabled):
+        cls.AUTO_FETCH = bool(enabled)
+        cls.save_state("auto_fetch")
 
     @classmethod
     def set_repo_root(cls, repo_root, persist=True):
@@ -188,7 +315,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             repo_root = os.path.realpath(repo_root)
             cls.RECENT_REPOS = [repo for repo in cls.RECENT_REPOS if repo != repo_root and os.path.isdir(repo)]
             cls.RECENT_REPOS.insert(0, repo_root)
-            cls.save_state()
+            cls.save_state("recent_repos")
 
     @classmethod
     def open_repo(cls, repo_root):
@@ -197,7 +324,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
         cls.set_repo_root(repo_root, persist=True)
         if repo_root not in cls.OPEN_REPOS:
             cls.OPEN_REPOS.append(repo_root)
-        cls.save_state()
+        cls.save_open_repos_delta(add=repo_root)
         return repo_root
 
     @classmethod
@@ -205,7 +332,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
         """Close a repo tab. Returns the repo_root that should become active, or None."""
         repo_root = os.path.realpath(repo_root)
         cls.OPEN_REPOS = [repo for repo in cls.OPEN_REPOS if repo != repo_root]
-        cls.save_state()
+        cls.save_open_repos_delta(remove=repo_root)
         if cls.REPO_ROOT == repo_root:
             cls.REPO_ROOT = cls.OPEN_REPOS[0] if cls.OPEN_REPOS else None
         return cls.REPO_ROOT
@@ -227,7 +354,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 if workspace != cls.WORKSPACE_ROOT and os.path.isdir(workspace)
             ]
             cls.RECENT_WORKSPACES.insert(0, cls.WORKSPACE_ROOT)
-            cls.save_state()
+            cls.save_state("recent_workspaces", "workspace_root")
 
     @classmethod
     def get_recent_repo_entries(cls):
@@ -272,6 +399,8 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             "workspace_repos": workspace_repos,
             "view_only": self.is_view_only(),
             "theme": GitParRequestHandler.THEME,
+            "pull_strategy": GitParRequestHandler.PULL_STRATEGY,
+            "auto_fetch": GitParRequestHandler.AUTO_FETCH,
             "hostname": socket.gethostname(),
         }
         return context
@@ -626,6 +755,14 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             GitParRequestHandler.set_theme(payload.get("theme"))
             self.send_json(200, {"theme": GitParRequestHandler.THEME})
+        elif self.request_path == "/api/settings/pull-strategy":
+            payload = self.read_json_body()
+            GitParRequestHandler.set_pull_strategy(payload.get("strategy"))
+            self.send_json(200, {"pull_strategy": GitParRequestHandler.PULL_STRATEGY})
+        elif self.request_path == "/api/settings/auto-fetch":
+            payload = self.read_json_body()
+            GitParRequestHandler.set_auto_fetch(payload.get("enabled"))
+            self.send_json(200, {"auto_fetch": GitParRequestHandler.AUTO_FETCH})
         elif self.request_path == "/api/conflicts/save":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
@@ -1080,6 +1217,70 @@ def parse_for_each_ref_line(line):
 
 
 THEME_CHOICES = ("system", "light", "dark")
+PULL_STRATEGIES = ("ff", "rebase")
+STATE_FIELDS = (
+    "recent_repos",
+    "recent_workspaces",
+    "workspace_root",
+    "open_repos",
+    "theme",
+    "pull_strategy",
+    "auto_fetch",
+)
+
+
+def write_json_atomically(path, document):
+    """Write JSON so a reader never sees a half-written file.
+
+    A temporary file in the same directory, flushed and fsynced, then
+    renamed over the target. os.replace is atomic on POSIX and on
+    Windows, so a concurrent reader sees either the old file or the new
+    one and never the gap between them.
+    """
+    directory = os.path.dirname(path) or "."
+    handle, temp_path = tempfile.mkstemp(dir=directory, prefix=".state-", suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w") as temp_file:
+            json.dump(document, temp_file)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, path)
+    except Exception:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
+
+
+def acquire_state_lock(state_path):
+    """Serialise read-modify-write of the state file between instances.
+
+    A separate lock file, because the state file itself is replaced
+    rather than written in place - a lock held on it would be a lock on
+    a file that is about to stop being the state file.
+
+    Returns None where fcntl is unavailable (Windows). Losing the lock
+    is not fatal: the atomic write still guarantees the file is always
+    readable, only a simultaneous update can be missed.
+    """
+    if fcntl is None:
+        return None
+    try:
+        lock_file = open(state_path + ".lock", "w")
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        return lock_file
+    except OSError:
+        return None
+
+
+def release_state_lock(lock_file):
+    if lock_file is None:
+        return
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        lock_file.close()
 
 
 def get_unpushed_commits(repo_root):
