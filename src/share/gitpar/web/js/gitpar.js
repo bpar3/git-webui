@@ -4413,6 +4413,15 @@ gitpar.HistoryView = function(mainView) {
         self.logView.redrawGraph();
     };
 
+    // True while a commit is showing full-view rather than the list.
+    // switchTo mounts exactly one view, so being attached is the test -
+    // this covers the expanded commit and the tree browser reached from
+    // it, both of which step back to the list.
+    self.isCommitViewOpen = function() {
+        return !!((self.commitDetailView && self.commitDetailView.element.parentElement) ||
+                  (self.commitView && self.commitView.element.parentElement));
+    };
+
     // The ref column spans the full sidebar so a chip for the very first
     // commit isn't pushed under a header. The filter banner floats over
     // it and only appears while a filter is narrowing the list.
@@ -4436,12 +4445,29 @@ gitpar.HistoryView = function(mainView) {
     $(self.logView.element).scroll(self.syncRefScroll);
     $(window).resize(self.positionRefChips);
     $(document).on("click", self.collapseExpandedRefs);
-    $(document).on("keydown", function(event) {
-        if (event.key == "Escape") {
-            self.collapseExpandedRefs();
-            self.logView.collapseSelection();
+    // Capture phase, so this sees the popovers before they close. They
+    // hide themselves on Escape from the bubble phase, so by then the
+    // "is a menu open" answer is always no and one press would both
+    // close the menu and step back a view.
+    document.addEventListener("keydown", function(event) {
+        if (event.key != "Escape") {
+            return;
         }
-    });
+        // A popover owns the key while it is open.
+        if ($(".ref-action-menu.open").length > 0) {
+            return;
+        }
+        // Escape steps back one view rather than undoing everything: from
+        // a commit opened full-view it returns to the list, leaving that
+        // commit expanded there, the same as the Back control. Only once
+        // the list is what's showing does it collapse anything.
+        if (self.isCommitViewOpen()) {
+            self.collapseCommit();
+            return;
+        }
+        self.collapseExpandedRefs();
+        self.logView.collapseSelection();
+    }, true);
     // Clicking off an open commit closes it. Scoped to this view rather
     // than the document so working the toolbar - fetching, switching
     // section - doesn't shut the commit you were reading. Clicks landing
