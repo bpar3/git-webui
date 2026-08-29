@@ -4768,10 +4768,17 @@ gitpar.ConflictBannerView = function(workspaceView) {
         data.conflicted_files.forEach(function(path) {
             var row = $(  '<div class="conflict-banner-file">' +
                                 '<span class="conflict-banner-file-path"></span>' +
+                                '<button type="button" class="btn btn-default btn-xs conflict-resolve-open">Resolve&hellip;</button>' +
                                 '<button type="button" class="btn btn-default btn-xs conflict-ours">Accept Ours</button>' +
                                 '<button type="button" class="btn btn-default btn-xs conflict-theirs">Accept Theirs</button>' +
                             '</div>');
             $(".conflict-banner-file-path", row).text(path);
+            // Accept Ours/Theirs take a whole file; Resolve opens the
+            // three panes, for the files where the answer is some of
+            // each.
+            $(".conflict-resolve-open", row).click(function() {
+                workspaceView.mainView.conflictResolveView.update(path);
+            });
             $(".conflict-ours", row).click(function() { self.resolve(path, "ours"); });
             $(".conflict-theirs", row).click(function() { self.resolve(path, "theirs"); });
             list.append(row);
@@ -4820,12 +4827,411 @@ gitpar.ConflictBannerView = function(workspaceView) {
     $(self.element).hide();
 };
 
+// The resolved file, as lines tagged with where each came from.
+// Context is taken verbatim; a disputed region contributes whichever
+// sides are chosen, ours before theirs, so taking both is a concatenation
+// rather than a special case. Taking neither drops the region - a real
+// resolution, and the only way to delete a contested block.
+gitpar.buildResolvedLines = function(segments, selection) {
+    var lines = [];
+    for (var i = 0; i < segments.length; ++i) {
+        var segment = segments[i];
+        if (segment.kind != "conflict") {
+            var context = segment.lines || [];
+            for (var c = 0; c < context.length; ++c) {
+                lines.push({ text: context[c], origin: "context" });
+            }
+            continue;
+        }
+        var choice = (selection && selection[i]) || {};
+        var sides = ["ours", "theirs"];
+        for (var s = 0; s < sides.length; ++s) {
+            if (!choice[sides[s]]) {
+                continue;
+            }
+            var own = segment[sides[s]] || [];
+            for (var n = 0; n < own.length; ++n) {
+                lines.push({ text: own[n], origin: sides[s] });
+            }
+        }
+    }
+    return lines;
+}
+
+/*
+ * == ConflictResolveView =====================================================
+ */
+// Three panes over one conflicted file: each side's version of the
+// disputed lines, and the file that will be written. Git has already
+// worked out which lines correspond - that is what the markers in the
+// working copy record - so the two source panes can be laid out from
+// the same list of segments and stay aligned line for line.
+//
+// Choosing is per conflict region, not per file: a region checked in a
+// pane contributes its lines to the output, in pane order, so taking
+// both sides is just checking both. Nothing is written until Save.
+gitpar.ConflictResolveView = function(mainView) {
+
+    var self = this;
+    var segments = [];
+    // selection[i] = { ours: bool, theirs: bool } for the i-th segment.
+    // Context segments have no entry - they are never in dispute.
+    var selection = [];
+    var path = null;
+
+    self.element = $('<div class="conflict-resolve">' +
+                         '<div class="conflict-resolve-header">' +
+                             '<span class="conflict-resolve-title"></span>' +
+                             '<div class="conflict-resolve-actions">' +
+                                 '<button type="button" class="btn btn-primary btn-sm conflict-resolve-save">Save file</button>' +
+                                 '<button type="button" class="btn btn-default btn-sm conflict-resolve-close">Close</button>' +
+                             '</div>' +
+                         '</div>' +
+                         '<div class="conflict-resolve-sources">' +
+                             '<div class="conflict-pane" data-side="ours"></div>' +
+                             '<div class="conflict-pane" data-side="theirs"></div>' +
+                         '</div>' +
+                         '<div class="conflict-pane conflict-pane-output" data-side="output"></div>' +
+                     '</div>')[0];
+
+    // Every conflict region, in file order. The panes and the counters
+    // all index into this.
+    self.conflictIndexes = function() {
+        var indexes = [];
+        for (var i = 0; i < segments.length; ++i) {
+            if (segments[i].kind == "conflict") {
+                indexes.push(i);
+            }
+        }
+        return indexes;
+    }
+
+    self.chosenCount = function(side) {
+        var indexes = self.conflictIndexes();
+        var chosen = 0;
+        for (var i = 0; i < indexes.length; ++i) {
+            if (selection[indexes[i]] && selection[indexes[i]][side]) {
+                ++chosen;
+            }
+        }
+        return chosen;
+    }
+
+    // The file as it would be written: context verbatim, and each
+    // disputed region replaced by whichever sides are checked. Taking
+    // neither side drops the region, which is a legitimate resolution
+    // and the only way to delete a contested block.
+    self.outputLines = function() {
+        return gitpar.buildResolvedLines(segments, selection);
+    }
+
+    self.outputText = function() {
+        var lines = self.outputLines();
+        var text = [];
+        for (var i = 0; i < lines.length; ++i) {
+            text.push(lines[i].text);
+        }
+        return text.join("\n");
+    }
+
+    // A pane's rows. Both source panes walk the same segment list, so a
+    // region occupies the same row range in each - which is what keeps
+    // them aligned. Where one side has fewer lines than the other the
+    // shorter one is padded, so the next shared line still sits on the
+    // same row in both panes.
+    self.paneRows = function(side) {
+        var rows = [];
+        var lineNumber = 0;
+        for (var i = 0; i < segments.length; ++i) {
+            var segment = segments[i];
+            if (segment.kind == "context") {
+                for (var c = 0; c < segment.lines.length; ++c) {
+                    rows.push({ kind: "context", number: ++lineNumber, text: segment.lines[c] });
+                }
+                continue;
+            }
+            var own = segment[side] || [];
+            var other = segment[side == "ours" ? "theirs" : "ours"] || [];
+            for (var n = 0; n < own.length; ++n) {
+                rows.push({ kind: "conflict", segment: i, number: ++lineNumber,
+                            text: own[n], first: n == 0 });
+            }
+            // Padding rows carry no line number: they are not lines in
+            // this version of the file, they are the space where the
+            // other version has more to say.
+            for (var p = own.length; p < other.length; ++p) {
+                rows.push({ kind: "filler", segment: i });
+            }
+        }
+        return rows;
+    }
+
+    self.outputRows = function() {
+        var lines = self.outputLines();
+        var rows = [];
+        for (var i = 0; i < lines.length; ++i) {
+            rows.push({ kind: lines[i].origin == "context" ? "context" : "conflict",
+                        origin: lines[i].origin, number: i + 1, text: lines[i].text });
+        }
+        return rows;
+    }
+
+    self.renderPane = function(side) {
+        var pane = $(".conflict-pane[data-side='" + side + "']", self.element);
+        var isOutput = side == "output";
+        var rows = isOutput ? self.outputRows() : self.paneRows(side);
+        var indexes = self.conflictIndexes();
+
+        var label = isOutput ? "Output" : (side == "ours" ? "Ours" : "Theirs");
+        var ref = "";
+        if (!isOutput && indexes.length > 0) {
+            ref = segments[indexes[0]][side + "_label"] || "";
+        }
+
+        var header = $('<div class="conflict-pane-header">' +
+                           '<label class="conflict-pane-title">' +
+                               (isOutput ? '' : '<input type="checkbox" class="conflict-pane-all">') +
+                               '<span class="conflict-pane-name"></span>' +
+                               '<span class="conflict-pane-ref"></span>' +
+                           '</label>' +
+                           '<span class="conflict-pane-count"></span>' +
+                       '</div>');
+        $(".conflict-pane-name", header).text(label);
+        $(".conflict-pane-ref", header).text(ref);
+        if (isOutput) {
+            $(".conflict-pane-count", header).text(rows.length + (rows.length == 1 ? " line" : " lines"));
+        } else {
+            var chosen = self.chosenCount(side);
+            $(".conflict-pane-count", header).text(chosen + "/" + indexes.length);
+            var all = $(".conflict-pane-all", header)[0];
+            all.checked = indexes.length > 0 && chosen == indexes.length;
+            all.indeterminate = chosen > 0 && chosen < indexes.length;
+            all.disabled = indexes.length == 0;
+            $(all).change(function() {
+                var take = this.checked;
+                for (var i = 0; i < indexes.length; ++i) {
+                    selection[indexes[i]][side] = take;
+                }
+                self.render();
+            });
+        }
+
+        var body = $('<div class="conflict-pane-body">' +
+                         '<div class="conflict-minimap"></div>' +
+                         '<div class="conflict-pane-scroll"><div class="conflict-lines"></div></div>' +
+                     '</div>');
+        var lines = $(".conflict-lines", body);
+
+        for (var r = 0; r < rows.length; ++r) {
+            var row = rows[r];
+            var element = $('<div class="conflict-line">' +
+                                '<span class="conflict-line-pick"></span>' +
+                                '<span class="conflict-line-number"></span>' +
+                                '<span class="conflict-line-text"></span>' +
+                            '</div>');
+            element.addClass("conflict-line-" + row.kind);
+            if (row.origin) {
+                element.addClass("conflict-line-from-" + row.origin);
+            }
+            if (row.kind != "filler") {
+                $(".conflict-line-number", element).text(row.number);
+                $(".conflict-line-text", element).text(row.text);
+            }
+            if (row.kind == "conflict" && !isOutput) {
+                element.addClass("conflict-line-" + side);
+                var chosenHere = selection[row.segment] && selection[row.segment][side];
+                element.toggleClass("conflict-line-chosen", !!chosenHere);
+                // One checkbox per region, on its first line - a region
+                // is taken or not taken as a whole, which is what the
+                // markers describe.
+                if (row.first) {
+                    var box = $('<input type="checkbox" class="conflict-line-check">');
+                    box[0].checked = !!chosenHere;
+                    (function(segmentIndex) {
+                        box.change(function() {
+                            selection[segmentIndex][side] = this.checked;
+                            self.render();
+                        });
+                    })(row.segment);
+                    $(".conflict-line-pick", element).append(box);
+                }
+                // The whole region responds to a click, not just the
+                // checkbox - the rows are small targets.
+                (function(segmentIndex) {
+                    element.click(function(event) {
+                        if ($(event.target).is("input")) {
+                            return;
+                        }
+                        selection[segmentIndex][side] = !selection[segmentIndex][side];
+                        self.render();
+                    });
+                })(row.segment);
+            }
+            lines.append(element);
+        }
+
+        pane.empty().append(header).append(body);
+        self.drawMinimap(pane, rows, side);
+        return pane;
+    }
+
+    // A bar standing for the whole file, with a mark at each disputed
+    // region and a window showing what is on screen. Marks are placed
+    // by row index, and the panes share a row count, so a conflict sits
+    // at the same height in all three - the bars read across as one
+    // instrument rather than three separate scrollbars.
+    self.drawMinimap = function(pane, rows, side) {
+        var minimap = $(".conflict-minimap", pane);
+        var scroll = $(".conflict-pane-scroll", pane)[0];
+        if (rows.length == 0) {
+            return;
+        }
+        var runs = [];
+        var start = -1;
+        for (var i = 0; i <= rows.length; ++i) {
+            var isConflict = i < rows.length && rows[i].kind == "conflict";
+            if (isConflict && start == -1) {
+                start = i;
+            } else if (!isConflict && start != -1) {
+                runs.push({ from: start, to: i, origin: rows[start].origin });
+                start = -1;
+            }
+        }
+        for (var r = 0; r < runs.length; ++r) {
+            var run = runs[r];
+            var mark = $('<span class="conflict-minimap-mark">');
+            // A single-line region would round to nothing, so every
+            // mark is given a floor - the bar's job is to say "there is
+            // something here", which a zero-height mark cannot do.
+            mark.css({
+                top: (100 * run.from / rows.length) + "%",
+                height: "max(2px, " + (100 * (run.to - run.from) / rows.length) + "%)"
+            });
+            mark.addClass("conflict-minimap-mark-" + (run.origin || side));
+            minimap.append(mark);
+        }
+        var viewport = $('<span class="conflict-minimap-viewport">');
+        minimap.append(viewport);
+
+        var sync = function() {
+            var height = scroll.scrollHeight || 1;
+            viewport.css({
+                top: (100 * scroll.scrollTop / height) + "%",
+                height: (100 * scroll.clientHeight / height) + "%"
+            });
+        };
+        $(scroll).scroll(sync);
+        // Laid out after the pane is in the document, so clientHeight
+        // is real; until then every viewport would read full height.
+        window.setTimeout(sync, 0);
+
+        var scrollToPoint = function(event) {
+            var box = minimap[0].getBoundingClientRect();
+            var ratio = (event.clientY - box.top) / (box.height || 1);
+            scroll.scrollTop = ratio * scroll.scrollHeight - scroll.clientHeight / 2;
+        };
+        minimap.mousedown(function(event) {
+            event.preventDefault();
+            scrollToPoint(event);
+            var move = function(moveEvent) { scrollToPoint(moveEvent); };
+            var up = function() {
+                $(document).off("mousemove", move).off("mouseup", up);
+            };
+            $(document).on("mousemove", move).on("mouseup", up);
+        });
+    }
+
+    // The two source panes are padded to a common row count precisely
+    // so a conflict sits at the same height in both; letting them
+    // scroll apart would throw that away. They move together, with a
+    // guard so echoing each other's scroll events doesn't loop.
+    self.linkSourceScrolling = function() {
+        var panes = [];
+        $(".conflict-resolve-sources .conflict-pane-scroll", self.element).each(function() {
+            panes.push(this);
+        });
+        if (panes.length < 2) {
+            return;
+        }
+        var syncing = false;
+        for (var i = 0; i < panes.length; ++i) {
+            (function(source) {
+                $(source).scroll(function() {
+                    if (syncing) {
+                        return;
+                    }
+                    syncing = true;
+                    for (var j = 0; j < panes.length; ++j) {
+                        if (panes[j] !== source) {
+                            panes[j].scrollTop = source.scrollTop;
+                        }
+                    }
+                    syncing = false;
+                });
+            })(panes[i]);
+        }
+    }
+
+    self.render = function() {
+        // Scroll positions are restored so that choosing a side does
+        // not throw away where the reader was in a long file.
+        var offsets = {};
+        $(".conflict-pane", self.element).each(function() {
+            var scroll = $(".conflict-pane-scroll", this)[0];
+            if (scroll) {
+                offsets[$(this).attr("data-side")] = scroll.scrollTop;
+            }
+        });
+        self.renderPane("ours");
+        self.renderPane("theirs");
+        self.renderPane("output");
+        self.linkSourceScrolling();
+        $(".conflict-pane", self.element).each(function() {
+            var side = $(this).attr("data-side");
+            var scroll = $(".conflict-pane-scroll", this)[0];
+            if (scroll && offsets[side] !== undefined) {
+                scroll.scrollTop = offsets[side];
+            }
+        });
+        $(".conflict-resolve-title", self.element).text("Conflicts in " + path);
+    }
+
+    self.update = function(filePath) {
+        path = filePath;
+        gitpar.apiGet("/api/conflicts/file?path=" + encodeURIComponent(filePath), function(data) {
+            segments = data.segments || [];
+            selection = [];
+            for (var i = 0; i < segments.length; ++i) {
+                // Nothing is taken by default. A resolution should be
+                // something the reader chose, not something they were
+                // handed and had to notice was wrong.
+                selection[i] = segments[i].kind == "conflict" ? { ours: false, theirs: false } : null;
+            }
+            self.render();
+            mainView.switchTo(self.element);
+        });
+    }
+
+    $(".conflict-resolve-save", self.element).click(function() {
+        gitpar.apiPost("/api/conflicts/save",
+                       { path: path, content: self.outputText(), stage: true },
+                       function() {
+                           mainView.repoChrome.showWorkspace();
+                       });
+    });
+
+    $(".conflict-resolve-close", self.element).click(function() {
+        mainView.repoChrome.showWorkspace();
+    });
+}
+
 /*
  * == WorkspaceView ===========================================================
  */
 gitpar.WorkspaceView = function(mainView) {
 
     var self = this;
+    self.mainView = mainView;
 
     self.show = function() {
         mainView.switchTo(self.element);
@@ -5417,6 +5823,7 @@ function MainUi() {
             self.branchesView = new gitpar.BranchesView(self);
             if (!gitpar.viewonly) {
                 self.workspaceView = new gitpar.WorkspaceView(self);
+                self.conflictResolveView = new gitpar.ConflictResolveView(self);
             }
             if (postAction == "workspace" && self.workspaceView) {
                 self.workspaceView.update("stage");

@@ -2991,3 +2991,252 @@ input[type="password"] {
         display: none;
     }
 }
+
+// == Conflict resolution =====================================================
+//
+// Three panes over one file: each side's version of the disputed lines
+// above, and the file that will be written below. The two source panes
+// are laid out from the same segment list and padded to a common row
+// count, so a conflict sits at the same height in both and the eye can
+// travel straight across.
+//
+// Provenance is the one thing carried by colour: ours reads in the
+// accent, theirs in the violet the ref chips already use for a branch
+// from somewhere else, and the Output pane tints each line by the side
+// it came from - so the resolved file says where every line originated
+// without anyone having to remember.
+.conflict-resolve {
+    .display-flex();
+    .flex-direction(column);
+    .flex(1);
+    min-height: 0;
+    background: var(--gf-page-bg);
+
+    .conflict-resolve-header {
+        flex: 0 0 auto;
+        .display-flex();
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        background: var(--gf-toolbar-bg);
+        border-bottom: 1px solid var(--gf-border);
+    }
+
+    .conflict-resolve-title {
+        .flex(1);
+        font-weight: bold;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .conflict-resolve-actions {
+        flex: 0 0 auto;
+        .display-flex();
+        gap: 6px;
+    }
+
+    // Sources share the upper half, the output takes the lower - the
+    // same split the file itself has: two candidates, one result.
+    .conflict-resolve-sources {
+        .display-flex();
+        .flex(1);
+        min-height: 0;
+        border-bottom: 1px solid var(--gf-border-strong);
+
+        .conflict-pane + .conflict-pane {
+            border-left: 1px solid var(--gf-border);
+        }
+    }
+
+    .conflict-pane-output {
+        .flex(1);
+        min-height: 0;
+    }
+}
+
+.conflict-pane {
+    .display-flex();
+    .flex-direction(column);
+    .flex(1);
+    min-width: 0;
+    min-height: 0;
+
+    .conflict-pane-header {
+        flex: 0 0 auto;
+        .display-flex();
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        background: var(--gf-toolbar-bg);
+        border-bottom: 1px solid var(--gf-border);
+        font-size: 11.5px;
+    }
+
+    .conflict-pane-title {
+        .flex(1);
+        .display-flex();
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        font-weight: bold;
+        min-width: 0;
+    }
+
+    // The branch or commit the side came from, beside its name but not
+    // competing with it.
+    .conflict-pane-ref {
+        font-weight: normal;
+        color: var(--gf-text-faint);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .conflict-pane-count {
+        flex: 0 0 auto;
+        color: var(--gf-text-muted);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .conflict-pane-body {
+        .display-flex();
+        .flex(1);
+        min-height: 0;
+    }
+
+    .conflict-pane-scroll {
+        .flex(1);
+        min-width: 0;
+        overflow: auto;
+    }
+}
+
+// The bar stands for the whole file, not the part on screen: marks sit
+// at each region's proportional position and the window shows what is
+// in view. Placed left of the numbers so the three bars line up down
+// the window and can be read across.
+.conflict-minimap {
+    flex: 0 0 auto;
+    position: relative;
+    width: 12px;
+    background: var(--gf-row-hover);
+    border-right: 1px solid var(--gf-border);
+    cursor: pointer;
+
+    .conflict-minimap-mark {
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        border-radius: 1px;
+        background: var(--gf-text-faint);
+        // A one-line region rounds to a hairline, which cannot say
+        // "something is here". Three pixels is the floor at which a
+        // mark still registers.
+        min-height: 3px;
+    }
+
+    .conflict-minimap-mark-ours {
+        background: var(--gf-accent);
+    }
+
+    .conflict-minimap-mark-theirs {
+        background: var(--gf-chip-purple-text);
+    }
+
+    .conflict-minimap-mark-context {
+        background: var(--gf-text-faint);
+    }
+
+    // Outlined rather than filled: it has to sit over the marks without
+    // hiding which ones are under it. The fill is barely there; the
+    // rules top and bottom are what actually delimit the window.
+    .conflict-minimap-viewport {
+        position: absolute;
+        left: 0;
+        right: 0;
+        min-height: 8px;
+        background: var(--gf-text);
+        opacity: 0.10;
+        outline: 1px solid var(--gf-text-muted);
+        outline-offset: -1px;
+        pointer-events: none;
+    }
+}
+
+.conflict-lines {
+    font-family: @font-family-monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+    min-width: min-content;
+}
+
+.conflict-line {
+    .display-flex();
+    align-items: flex-start;
+    white-space: pre;
+
+    .conflict-line-pick {
+        flex: 0 0 auto;
+        width: 18px;
+        text-align: center;
+    }
+
+    .conflict-line-check {
+        margin: 0;
+        vertical-align: middle;
+    }
+
+    .conflict-line-number {
+        flex: 0 0 auto;
+        width: 3.5em;
+        padding-right: 8px;
+        text-align: right;
+        color: var(--gf-diff-gutter-text);
+        border-right: 1px solid var(--gf-diff-gutter-border);
+        .no-select();
+    }
+
+    .conflict-line-text {
+        .flex(1);
+        padding-left: 8px;
+        min-width: 0;
+    }
+
+    // A region the other side has more lines for. Hatched rather than
+    // blank, so it reads as "nothing here in this version" instead of
+    // as an empty line in the file.
+    &.conflict-line-filler {
+        background-image: repeating-linear-gradient(
+            135deg,
+            transparent 0 5px,
+            var(--gf-border) 5px 6px);
+        height: 1.5em;
+    }
+
+    &.conflict-line-conflict {
+        cursor: pointer;
+    }
+
+    &.conflict-line-ours.conflict-line-chosen,
+    &.conflict-line-from-ours {
+        background: var(--gf-accent-bg);
+        box-shadow: inset 3px 0 0 var(--gf-accent);
+    }
+
+    &.conflict-line-theirs.conflict-line-chosen,
+    &.conflict-line-from-theirs {
+        background: var(--gf-chip-purple-bg);
+        box-shadow: inset 3px 0 0 var(--gf-chip-purple-text);
+    }
+
+    // Not yet taken: visible as disputed, but clearly not part of the
+    // result.
+    &.conflict-line-conflict:not(.conflict-line-chosen):not(.conflict-line-from-ours):not(.conflict-line-from-theirs) {
+        opacity: 0.62;
+    }
+
+    &.conflict-line-conflict:hover {
+        opacity: 1;
+    }
+}

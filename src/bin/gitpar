@@ -353,6 +353,12 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 return
             result = list_submodules(GitParRequestHandler.REPO_ROOT)
             self.send_json(result["status"], result["payload"])
+        elif self.request_path == "/api/conflicts/file":
+            if not self.ensure_repo_selected():
+                return
+            requested_file = parse_qs(urlparse(self.path).query).get("path", [None])[0]
+            result = get_conflict_file(GitParRequestHandler.REPO_ROOT, requested_file)
+            self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/conflicts":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)
@@ -596,6 +602,14 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 return
             payload = self.read_json_body()
             result = add_to_gitignore(GitParRequestHandler.REPO_ROOT, payload.get("pattern"))
+            self.send_json(result["status"], result["payload"])
+        elif self.request_path == "/api/conflicts/save":
+            if self.is_view_only() or not self.ensure_repo_selected():
+                self.send_error(403 if self.is_view_only() else 409)
+                return
+            payload = self.read_json_body()
+            result = save_resolved_file(GitParRequestHandler.REPO_ROOT, payload.get("path"),
+                                        payload.get("content"), payload.get("stage", True))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/conflicts/resolve":
             if self.is_view_only() or not self.ensure_repo_selected():
@@ -1689,6 +1703,122 @@ def get_conflict_status(repo_root):
             "conflicted_files": conflicted,
         },
     }
+
+
+CONFLICT_OURS_MARKER = "<<<<<<<"
+CONFLICT_BASE_MARKER = "|||||||"
+CONFLICT_SPLIT_MARKER = "======="
+CONFLICT_THEIRS_MARKER = ">>>>>>>"
+
+
+def parse_conflict_segments(text):
+    """Split a conflicted file into an ordered run of segments.
+
+    Two kinds come back: "context", lines both sides agree on, and
+    "conflict", which carries each side's version of the same stretch.
+    Keeping them in one ordered list is what lets three panes line up -
+    git has already worked out which lines correspond, and the markers
+    are that answer written down.
+
+    diff3-style conflicts carry the merge base between ||||||| and
+    =======; it is kept for display and is never part of either side.
+    """
+    segments = []
+    context = []
+    state = "context"
+    conflict = None
+
+    def flush_context():
+        if context:
+            segments.append({"kind": "context", "lines": list(context)})
+            del context[:]
+
+    for line in text.split("\n"):
+        if state == "context" and line.startswith(CONFLICT_OURS_MARKER):
+            flush_context()
+            state = "ours"
+            conflict = {
+                "kind": "conflict",
+                "ours": [],
+                "base": [],
+                "theirs": [],
+                "ours_label": line[len(CONFLICT_OURS_MARKER):].strip(),
+                "theirs_label": "",
+            }
+        elif state == "ours" and line.startswith(CONFLICT_BASE_MARKER):
+            state = "base"
+        elif state in ("ours", "base") and line.startswith(CONFLICT_SPLIT_MARKER):
+            state = "theirs"
+        elif state == "theirs" and line.startswith(CONFLICT_THEIRS_MARKER):
+            conflict["theirs_label"] = line[len(CONFLICT_THEIRS_MARKER):].strip()
+            segments.append(conflict)
+            conflict = None
+            state = "context"
+        elif state == "context":
+            context.append(line)
+        else:
+            conflict[state].append(line)
+
+    # An unterminated conflict means the markers are malformed. Its
+    # lines are still shown rather than silently dropped.
+    if conflict is not None:
+        segments.append(conflict)
+    flush_context()
+    return segments
+
+
+def resolve_repo_path(repo_root, path):
+    """Absolute path for a repo-relative path, or None if it escapes."""
+    if not path:
+        return None
+    root = os.path.realpath(repo_root)
+    target = os.path.realpath(os.path.join(root, path))
+    if target != root and not target.startswith(root + os.sep):
+        return None
+    return target
+
+
+def get_conflict_file(repo_root, path):
+    target = resolve_repo_path(repo_root, path)
+    if target is None:
+        return {"status": 400, "payload": {"error": "Invalid file path."}}
+    if not os.path.isfile(target):
+        return {"status": 404, "payload": {"error": "No such file: " + str(path)}}
+    try:
+        with open(target, "rb") as handle:
+            raw = handle.read()
+    except OSError as error:
+        return {"status": 400, "payload": {"error": str(error)}}
+    if b"\0" in raw:
+        return {"status": 400, "payload": {"error": "Cannot resolve a binary file here."}}
+    text = decode_output(raw)
+    segments = parse_conflict_segments(text)
+    return {
+        "status": 200,
+        "payload": {
+            "path": path,
+            "segments": segments,
+            "conflicted": any(segment["kind"] == "conflict" for segment in segments),
+        },
+    }
+
+
+def save_resolved_file(repo_root, path, content, stage):
+    target = resolve_repo_path(repo_root, path)
+    if target is None:
+        return {"status": 400, "payload": {"error": "Invalid file path."}}
+    if content is None:
+        return {"status": 400, "payload": {"error": "No content to save."}}
+    try:
+        with open(target, "wb") as handle:
+            handle.write(content.encode("utf-8"))
+    except OSError as error:
+        return {"status": 400, "payload": {"error": str(error)}}
+    if stage:
+        add_result = run_git_capture(repo_root, ["add", "--", path])
+        if add_result["returncode"] != 0:
+            return {"status": 400, "payload": {"error": add_result["stderr"] or "Unable to stage the resolved file."}}
+    return get_conflict_status(repo_root)
 
 
 def resolve_conflict(repo_root, path, resolution):
