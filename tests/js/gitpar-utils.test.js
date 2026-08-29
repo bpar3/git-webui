@@ -629,3 +629,47 @@ describe("gitpar.parseNoUpstreamError", () => {
         expect(gitpar.parseNoUpstreamError(undefined)).toBeNull();
     });
 });
+
+describe("gitpar.suggestWorktreePath", () => {
+    let gitpar;
+
+    beforeEach(() => {
+        gitpar = loadGitpar();
+    });
+
+    test("suggests a sibling directory named after the branch", () => {
+        expect(gitpar.suggestWorktreePath("/home/binu/repos/rtm/repo", "feature-alpha"))
+            .toBe("/home/binu/repos/rtm/repo-feature-alpha");
+    });
+
+    test("flattens slashes in the branch name so it does not nest unexpectedly", () => {
+        expect(gitpar.suggestWorktreePath("/home/binu/repos/repo", "feature/nested"))
+            .toBe("/home/binu/repos/repo-feature-nested");
+    });
+
+    test("flattens spaces in the branch name", () => {
+        expect(gitpar.suggestWorktreePath("/home/binu/repos/repo", "release 2.0"))
+            .toBe("/home/binu/repos/repo-release-2.0");
+    });
+
+    test("tolerates a trailing slash on the repo path", () => {
+        expect(gitpar.suggestWorktreePath("/home/binu/repos/repo/", "beta"))
+            .toBe("/home/binu/repos/repo-beta");
+    });
+
+    test("handles a repo at the filesystem root without a doubled slash", () => {
+        expect(gitpar.suggestWorktreePath("/repo", "beta")).toBe("/repo-beta");
+    });
+
+    test("returns empty for a missing repo path or branch name", () => {
+        expect(gitpar.suggestWorktreePath("", "beta")).toBe("");
+        expect(gitpar.suggestWorktreePath("/home/binu/repos/repo", "")).toBe("");
+        expect(gitpar.suggestWorktreePath(null, "beta")).toBe("");
+        expect(gitpar.suggestWorktreePath("/home/binu/repos/repo", null)).toBe("");
+    });
+
+    test("trims whitespace around the branch name", () => {
+        expect(gitpar.suggestWorktreePath("/home/binu/repos/repo", "  beta  "))
+            .toBe("/home/binu/repos/repo-beta");
+    });
+});

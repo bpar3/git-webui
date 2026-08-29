@@ -779,6 +779,32 @@ gitpar.findBranchByRef = function(refInfo) {
     })[0] || null;
 }
 
+// A sibling directory named after the branch, offered as a starting
+// point rather than left blank - one thing to confirm instead of one
+// to compose from nothing. Slashes and spaces in the branch name are
+// flattened to hyphens: a literal slash would nest the new worktree
+// inside an unrelated directory of that name rather than beside the
+// repo, which is never what "feature/x" as a suggested path means.
+gitpar.suggestWorktreePath = function(repoPath, branchName) {
+    if (!repoPath || !branchName) {
+        return "";
+    }
+    var trimmed = repoPath.replace(/\/+$/, "");
+    var lastSlash = trimmed.lastIndexOf("/");
+    // parent can legitimately be "" for a repo at the filesystem root
+    // ("/repo" -> parent ""), which is different from there being no
+    // slash at all (a bare relative name, with no parent to rejoin) -
+    // hence branching on whether a slash was found, not on parent being
+    // truthy.
+    var parent = lastSlash >= 0 ? trimmed.substring(0, lastSlash) : "";
+    var repoName = lastSlash >= 0 ? trimmed.substring(lastSlash + 1) : trimmed;
+    var safeBranch = branchName.trim().replace(/[\/\s]+/g, "-");
+    if (!repoName || !safeBranch) {
+        return "";
+    }
+    return (lastSlash >= 0 ? parent + "/" : "") + repoName + "-" + safeBranch;
+}
+
 gitpar.copyToClipboard = function(text, label) {
     if (!text) {
         return;
@@ -2173,93 +2199,257 @@ gitpar.ConfigureRemotesView = function() {
 
 /*
  * == WorktreesView =============================================================
+ * Local branches, browsed the same way as the Branches view - one row per
+ * branch, click-driven rather than typed - paired with their worktree if
+ * one exists. Git allows one worktree per branch at a time, which used to
+ * be the failure the old blank-fields form kept hitting silently (trying
+ * to create a branch that already existed); showing the pairing up front
+ * removes the only way to reach that failure. A row with no worktree gets
+ * a suggested sibling path rather than a blank field, and starting a whole
+ * new branch stays a separate, deliberate action from reattaching to one
+ * that already exists.
  */
 gitpar.WorktreesView = function(mainView) {
 
     var self = this;
+    self.branches = [];
+    self.worktrees = [];
+    self.filterText = "";
+    // local_name of the branch whose inline "new worktree" row is open,
+    // if any - only one at a time, same as the log view only ever has one
+    // commit card open.
+    self.creatingFor = null;
+
+    self.show = function() {
+        self.creatingFor = null;
+        self.filterText = "";
+        $(".worktrees-view-filter", self.element).val("");
+        self.refresh();
+        mainView.switchTo(self.element);
+    }
+
+    self.close = function() {
+        mainView.repoChrome.showHistory();
+    }
 
     self.refresh = function() {
-        gitpar.apiGet("/api/worktrees", function(data) {
-            self.render(data.worktrees || []);
-        });
-    }
-
-    self.render = function(worktrees) {
-        var list = $(".worktrees-list", self.element);
-        list.empty();
-        if (worktrees.length == 0) {
-            list.append('<div class="toolbar-menu-empty">No worktrees.</div>');
-        }
-        worktrees.forEach(function(worktree) {
-            var row = $(  '<div class="worktrees-row">' +
-                                '<div class="worktrees-row-path"></div>' +
-                                '<div class="worktrees-row-branch"></div>' +
-                                '<button type="button" class="btn btn-danger btn-xs worktrees-remove">Remove</button>' +
-                            '</div>');
-            $(".worktrees-row-path", row).text(worktree.path);
-            $(".worktrees-row-branch", row).text(worktree.detached ? "(detached)" : (worktree.branch || ""));
-            $(".worktrees-remove", row).prop("disabled", worktree.path == gitpar.repoPath);
-            $(".worktrees-remove", row).click(function() {
-                if (!window.confirm("Remove worktree at '" + worktree.path + "'?")) {
-                    return;
-                }
-                gitpar.apiPost("/api/worktrees/remove", {path: worktree.path, force: true}, function(data) {
-                    self.render(data.worktrees || []);
-                }, function(xhr) {
-                    gitpar.showError(gitpar.parseApiError(xhr, "Unable to remove worktree"));
-                });
+        gitpar.apiGet("/api/branches", function(branchData) {
+            self.branches = (branchData.branches || []).filter(function(branch) {
+                return !!branch.local_name;
             });
-            list.append(row);
+            gitpar.apiGet("/api/worktrees", function(worktreeData) {
+                self.worktrees = worktreeData.worktrees || [];
+                self.render();
+            });
         });
     }
 
-    self.onAdd = function() {
-        var path = $(".worktrees-add-path", self.element).val();
-        var branch = $(".worktrees-add-branch", self.element).val();
-        var createBranch = $(".worktrees-add-create", self.element).is(":checked");
-        if (!path || !branch) {
+    self.worktreeFor = function(localName) {
+        return self.worktrees.filter(function(worktree) {
+            return !worktree.detached && worktree.branch == localName;
+        })[0] || null;
+    }
+
+    self.matchesFilter = function(branch) {
+        if (!self.filterText) {
+            return true;
+        }
+        return branch.local_name.toLowerCase().indexOf(self.filterText) != -1;
+    }
+
+    self.render = function() {
+        var list = $(".worktrees-view-list", self.element);
+        list.empty();
+        var matchedPaths = {};
+        var shown = 0;
+        self.branches.forEach(function(branch) {
+            if (!self.matchesFilter(branch)) {
+                return;
+            }
+            shown++;
+            var worktree = self.worktreeFor(branch.local_name);
+            if (worktree) {
+                matchedPaths[worktree.path] = true;
+            }
+            list.append(self.buildRow(branch, worktree));
+        });
+        if (shown == 0) {
+            list.append('<div class="worktrees-view-empty">No branches match this filter.</div>');
+        }
+        self.renderOtherWorktrees(matchedPaths);
+    }
+
+    // Worktrees that don't belong to any branch shown above - a detached
+    // one, most likely. Rare enough that it earns a plain, quiet section
+    // rather than a row of its own kind everywhere else, and stays
+    // entirely out of the way when there is nothing to put in it.
+    self.renderOtherWorktrees = function(matchedPaths) {
+        var section = $(".worktrees-view-other", self.element);
+        section.empty();
+        var others = self.worktrees.filter(function(worktree) {
+            return !matchedPaths[worktree.path];
+        });
+        section.toggle(others.length > 0);
+        if (others.length == 0) {
+            return;
+        }
+        section.append('<div class="worktrees-view-other-label">Other worktrees</div>');
+        others.forEach(function(worktree) {
+            var row = $('<div class="worktrees-view-other-row"></div>');
+            row.append($('<span class="wtv-path">').attr("title", worktree.path).text(worktree.path));
+            row.append($('<span class="wtv-none">').text(worktree.detached ? "(detached)" : (worktree.branch || "")));
+            var removeBtn = $('<button type="button" class="wtv-link-btn quiet">Remove</button>');
+            var isMainWorktree = worktree.path == gitpar.repoPath;
+            removeBtn.prop("disabled", isMainWorktree);
+            removeBtn.click(function() {
+                self.removeWorktree(worktree.path);
+            });
+            row.append(removeBtn);
+            section.append(row);
+        });
+    }
+
+    self.buildRow = function(branch, worktree) {
+        var barClass = branch.current ? "current" : "local";
+        var row = $(  '<div class="wtv-row">' +
+                            '<div class="wtv-row-bar ' + barClass + '">' +
+                                '<span class="wtv-row-name"></span>' +
+                            '</div>' +
+                            '<div class="wtv-cell"></div>' +
+                        '</div>');
+        $(".wtv-row-name", row).text(branch.local_name);
+        if (branch.current) {
+            $(".wtv-row-bar", row).append('<span class="wtv-row-check" title="Current branch">&#10003;</span>');
+        }
+
+        var cell = $(".wtv-cell", row);
+        var isMainWorktree = worktree && worktree.path == gitpar.repoPath;
+        if (branch.current || isMainWorktree) {
+            // The worktree this app is itself running from - never
+            // offered for removal, and there's nothing useful to copy
+            // that the reader doesn't already know.
+            cell.append($('<span class="wtv-none">').text("— you're standing in this one"));
+        } else if (worktree) {
+            cell.append($('<span class="wtv-path">').attr("title", worktree.path).text(worktree.path));
+            var copyBtn = $('<button type="button" class="wtv-link-btn">Copy path</button>');
+            copyBtn.click(function() {
+                gitpar.copyToClipboard(worktree.path, "Worktree path");
+            });
+            cell.append(copyBtn);
+            var removeBtn = $('<button type="button" class="wtv-link-btn quiet">Remove</button>');
+            removeBtn.click(function() {
+                self.removeWorktree(worktree.path);
+            });
+            cell.append(removeBtn);
+        } else if (self.creatingFor == branch.local_name) {
+            cell.addClass("editing");
+            cell.append(self.buildCreateForm(branch));
+        } else {
+            cell.append($('<span class="wtv-none">').text("no worktree"));
+            var startBtn = $('<button type="button" class="wtv-link-btn">+ New Worktree</button>');
+            startBtn.click(function() {
+                self.creatingFor = branch.local_name;
+                self.render();
+            });
+            cell.append(startBtn);
+        }
+        return row;
+    }
+
+    self.buildCreateForm = function(branch) {
+        var suggested = gitpar.suggestWorktreePath(gitpar.repoPath, branch.local_name);
+        var form = $(  '<div class="wtv-inline-create">' +
+                            '<input type="text" class="wtv-path-input">' +
+                            '<button type="button" class="btn btn-primary btn-xs wtv-create-btn">Create</button>' +
+                            '<button type="button" class="wtv-link-btn quiet wtv-cancel-btn">Cancel</button>' +
+                        '</div>');
+        $(".wtv-path-input", form).val(suggested);
+        $(".wtv-create-btn", form).click(function() {
+            self.addWorktree(branch.local_name, $(".wtv-path-input", form).val(), false, null);
+        });
+        $(".wtv-cancel-btn", form).click(function() {
+            self.creatingFor = null;
+            self.render();
+        });
+        return form;
+    }
+
+    self.addWorktree = function(branchName, path, createBranch, startPoint) {
+        if (!path || !path.trim()) {
             return;
         }
         gitpar.apiPost("/api/worktrees/add", {
-            path: path,
-            branch: branch,
-            create_branch: createBranch,
-            start_point: gitpar.historyRef || "HEAD",
-        }, function(data) {
-            $(".worktrees-add-path, .worktrees-add-branch", self.element).val("");
-            self.render(data.worktrees || []);
+            path: path.trim(),
+            branch: branchName,
+            create_branch: !!createBranch,
+            start_point: startPoint,
+        }, function() {
+            self.creatingFor = null;
+            self.refresh();
         }, function(xhr) {
             gitpar.showError(gitpar.parseApiError(xhr, "Unable to add worktree"));
         });
     }
 
-    self.show = function() {
-        self.refresh();
-        $(self.element).modal("show");
+    self.removeWorktree = function(path) {
+        if (!window.confirm("Remove worktree at '" + path + "'?")) {
+            return;
+        }
+        gitpar.apiPost("/api/worktrees/remove", {path: path, force: true}, function() {
+            self.refresh();
+        }, function(xhr) {
+            gitpar.showError(gitpar.parseApiError(xhr, "Unable to remove worktree"));
+        });
     }
 
-    self.element = $(   '<div class="modal fade" id="worktrees-modal" tabindex="-1" role="dialog">' +
-                            '<div class="modal-dialog" role="document">' +
-                                '<div class="modal-content">' +
-                                    '<div class="modal-header">' +
-                                        '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
-                                        '<div class="repo-picker-eyebrow">Worktrees</div>' +
-                                        '<h4 class="modal-title">Manage Worktrees</h4>' +
-                                    '</div>' +
-                                    '<div class="modal-body">' +
-                                        '<div class="worktrees-list"></div>' +
-                                        '<div class="worktrees-add">' +
-                                            '<input type="text" class="form-control input-sm worktrees-add-path" placeholder="new worktree path">' +
-                                            '<input type="text" class="form-control input-sm worktrees-add-branch" placeholder="branch name">' +
-                                            '<label class="worktrees-add-create-label"><input type="checkbox" class="worktrees-add-create" checked> new branch</label>' +
-                                            '<button type="button" class="btn btn-primary btn-sm worktrees-add-button">Add</button>' +
-                                        '</div>' +
-                                    '</div>' +
+    // Starting a new branch is a different intent from reattaching to one
+    // that already exists, so it keeps its own control rather than living
+    // inside a row that doesn't exist yet - mirroring "Create branch
+    // here" elsewhere in the app, which is the same two-step shape: name
+    // the branch, then confirm where.
+    self.onNewBranch = function() {
+        var branchName = window.prompt("New branch name");
+        if (!branchName || !branchName.trim()) {
+            return;
+        }
+        branchName = branchName.trim();
+        var suggested = gitpar.suggestWorktreePath(gitpar.repoPath, branchName);
+        var path = window.prompt("Worktree path for '" + branchName + "'", suggested);
+        if (!path || !path.trim()) {
+            return;
+        }
+        self.addWorktree(branchName, path, true, gitpar.historyRef || "HEAD");
+    }
+
+    self.onFilterInput = function(event) {
+        self.filterText = event.currentTarget.value.toLowerCase();
+        self.render();
+    }
+
+    self.element = $(   '<div id="worktrees-view">' +
+                            '<div class="worktrees-view-head">' +
+                                '<div>' +
+                                    '<div class="repo-picker-eyebrow">Worktrees</div>' +
+                                    '<h4 class="worktrees-view-title">Manage Worktrees</h4>' +
                                 '</div>' +
+                                '<button type="button" class="btn btn-default btn-sm worktrees-view-close">Close</button>' +
+                            '</div>' +
+                            '<div class="worktrees-view-toolbar">' +
+                                '<input type="text" class="form-control input-sm worktrees-view-filter" placeholder="Find a branch">' +
+                            '</div>' +
+                            '<div class="worktrees-view-header">' +
+                                '<div class="worktrees-view-header-branch">Branch</div>' +
+                                '<div class="worktrees-view-header-worktree">Worktree</div>' +
+                            '</div>' +
+                            '<div class="worktrees-view-list"></div>' +
+                            '<div class="worktrees-view-other"></div>' +
+                            '<div class="worktrees-view-footer">' +
+                                '<button type="button" class="wtv-link-btn worktrees-view-new-branch">+ New worktree with a new branch&hellip;</button>' +
                             '</div>' +
                         '</div>')[0];
-    $(".worktrees-add-button", self.element).click(self.onAdd);
-    $("body").append(self.element);
+    $(".worktrees-view-filter", self.element).on("input", self.onFilterInput);
+    $(".worktrees-view-close", self.element).click(self.close);
+    $(".worktrees-view-new-branch", self.element).click(self.onNewBranch);
 };
 
 /*
