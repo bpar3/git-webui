@@ -4533,7 +4533,36 @@ gitpar.HistoryView = function(mainView) {
     self.logView = new gitpar.LogView(self);
     historyMain.appendChild(self.logView.element);
     $(self.logView.element).scroll(self.syncRefScroll);
-    $(window).resize(self.positionRefChips);
+
+    // The graph is one SVG laid over the rows, so its left edge is a
+    // pixel offset read from a real row's gutter - which moves whenever
+    // the rows reflow. Nothing recomputed it after the first draw, so
+    // narrowing the window left the SVG parked at its old offset, out
+    // past the right edge of the list: the graph vanished and the list
+    // grew a horizontal scrollbar. Redrawing realigns it, and also
+    // repositions the ref chips, which are placed against row centres
+    // for the same reason.
+    //
+    // A ResizeObserver rather than window.resize: the list also changes
+    // width without the window doing so - the ref column, the tab bar
+    // wrapping to a second row. Observing the element catches both.
+    // Frame-coalesced so a drag-resize redraws once per frame.
+    var reflowPending = false;
+    var reflow = function() {
+        if (reflowPending) {
+            return;
+        }
+        reflowPending = true;
+        requestAnimationFrame(function() {
+            reflowPending = false;
+            self.logView.redrawGraph();
+        });
+    };
+    if (window.ResizeObserver) {
+        new ResizeObserver(reflow).observe(self.logView.element);
+    } else {
+        $(window).resize(reflow);
+    }
     $(document).on("click", self.collapseExpandedRefs);
     // Capture phase, so this sees the popovers before they close. They
     // hide themselves on Escape from the bubble phase, so by then the
