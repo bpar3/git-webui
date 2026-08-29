@@ -2742,36 +2742,29 @@ body.dark-mode {
         .flex-direction(column);
     }
 
-    #main-view,
-    #history-view {
-        .flex-direction(column);
-    }
-
+    // The ref column narrows rather than stacking above the list. Its
+    // chips are positioned against the row they label, so a stacked
+    // column - which sizes to its in-flow content, and the chips are
+    // not in flow - collapses to nothing and the labels disappear.
     #history-view .history-view-sidebar {
-        width: 100%;
-        flex-basis: auto;
-        max-height: 14em;
-        border-right: 0;
-        border-bottom: 1px var(--gf-border) solid;
-    }
-
-    #main-view {
-        order: 0;
-    }
-
-    #log-view {
-        border-right: 0;
-        border-bottom: 1px var(--gf-border) solid;
-        min-height: 14em;
-        max-height: 38vh;
-    }
-
-    #commit-view {
-        min-height: 18em;
+        width: 8em;
+        flex-basis: 8em;
     }
 
     .diff-view-container .panel-heading {
         flex-wrap: wrap;
         gap: 8px;
+    }
+}
+
+// Below this the subject is down to a few characters, and it is the
+// one column the list exists to show. The relative date goes first: it
+// is the least specific of the three, and the row still carries its
+// exact timestamp as a tooltip and its date on the expanded card. The
+// graph keeps its gutter - dropping it would leave no way to see the
+// branch structure, which is the other reason to be on this view.
+@media (max-width: 560px) {
+    #log-view .log-entry .log-entry-date {
+        display: none;
     }
 }
