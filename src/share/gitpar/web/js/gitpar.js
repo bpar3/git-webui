@@ -1711,6 +1711,16 @@ gitpar.Toolbar = function(mainView) {
     // gitpar.git surfaces a non-zero exit through showError - and git's
     // warnings on a successful run still reach the message bar.
 
+    // Every remote action refreshes whichever section is actually on
+    // screen, via refreshActiveSection - not a specific one. A pull
+    // brings in new commits the Commits view has to redraw to show, but
+    // it can just as easily land the reader on Branches or Search, and
+    // forcing a switch to Changes (as onPull alone used to do
+    // unconditionally) took over the screen regardless of where the
+    // reader was. refreshActiveSection already existed for exactly this
+    // - redraw the visible section in place - because switching a repo
+    // tab needed the same thing.
+
     self.onPull = function(event) {
         if (event) {
             event.preventDefault();
@@ -1719,9 +1729,7 @@ gitpar.Toolbar = function(mainView) {
         var args = strategy == "rebase" ? "pull --rebase" : "pull";
         self.runRemoteAction("toolbar-pull", args, function(data) {
             self.loadBranches();
-            if (mainView.workspaceView) {
-                mainView.workspaceView.update("stage");
-            }
+            self.refreshActiveSection();
         });
     }
 
@@ -1731,6 +1739,7 @@ gitpar.Toolbar = function(mainView) {
         }
         self.runRemoteAction("toolbar-push", "push", function(data) {
             self.loadBranches();
+            self.refreshActiveSection();
         });
     }
 
@@ -1740,6 +1749,7 @@ gitpar.Toolbar = function(mainView) {
         }
         self.runRemoteAction("toolbar-push", "push --force", function(data) {
             self.loadBranches();
+            self.refreshActiveSection();
         });
     }
 
@@ -1749,6 +1759,7 @@ gitpar.Toolbar = function(mainView) {
         }
         self.runRemoteAction("toolbar-fetch", "fetch", function(data) {
             self.loadBranches();
+            self.refreshActiveSection();
         });
     }
 
