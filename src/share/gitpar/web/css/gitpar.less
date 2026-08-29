@@ -45,6 +45,11 @@
     --gf-page-bg:           #ffffff;
     --gf-border:            #e6e6e6;
     --gf-border-strong:     #d8d8d8;
+    // The commit list is a long run of rows, so its separator carries
+    // far more total ink than any panel edge and has to be lighter
+    // than --gf-border to weigh the same. Both themes sit ~15 levels
+    // off their own background, so the rule reads equally in each.
+    --gf-row-rule:          #f0f0f0;
     --gf-text:              #24292e;
     --gf-text-muted:        #6a737d;
     --gf-text-faint:        #8a8a8a;
@@ -89,6 +94,7 @@ body.dark-mode {
     --gf-page-bg:           #141414;
     --gf-border:            #262626;
     --gf-border-strong:     #333333;
+    --gf-row-rule:          #232323;
     --gf-text:              #e2e2e2;
     --gf-text-muted:        #9a9a9a;
     --gf-text-faint:        #767676;
@@ -1056,7 +1062,6 @@ body {
         position: relative;
         .display-flex();
         .flex-direction(column);
-        border-right: 1px solid var(--gf-border);
         background: var(--gf-toolbar-bg);
         min-height: 0;
     }
@@ -1323,8 +1328,13 @@ body {
         margin: 0;
         border-top-width: 0;
         // A hairline under each commit keeps long lists scannable
-        // without boxing every row.
-        border-bottom: 1px solid var(--gf-border);
+        // without boxing every row. The sides come from Bootstrap's
+        // .list-group-item and have to be turned off explicitly, or
+        // they draw a full-height rule down both edges of the list -
+        // in the light-theme #ddd, which glares in dark mode.
+        border-left: 0;
+        border-right: 0;
+        border-bottom: 1px solid var(--gf-row-rule);
 
         // Both of these used to be derived from Bootstrap's light-theme
         // palette at compile time, so in dark mode they painted a pale
