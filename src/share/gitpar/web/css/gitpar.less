@@ -1401,6 +1401,13 @@ body {
             // Fixed width so the graph gutter beside it keeps the same
             // left edge on every row - a date that grows from "now" to
             // "2 days ago" would otherwise shift the lanes.
+            // The body preview trails the subject on the same line, set
+            // back so the subject still reads as the row's title.
+            .log-entry-body {
+                color: var(--gf-text-faint);
+                margin-left: 8px;
+            }
+
             .log-entry-date {
                 flex: 0 0 auto;
                 width: 7.5em;

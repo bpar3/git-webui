@@ -2833,6 +2833,18 @@ gitpar.LogView = function(historyView) {
             }
         };
 
+        // The row shows the subject and then as much of the body as
+        // fits on the same line, muted. The row is already clipped with
+        // an ellipsis, so the body costs nothing when it doesn't fit and
+        // says what the commit did when it does.
+        self.bodyPreview = function() {
+            var end = self.message.indexOf("\n");
+            if (end == -1) {
+                return "";
+            }
+            return self.message.substr(end + 1).replace(/\s+/g, " ").trim();
+        };
+
         self.createElement = function() {
             // A stash isn't authored work, so it gets a stash marker
             // rather than the author's initials - it reads as something
@@ -2851,7 +2863,12 @@ gitpar.LogView = function(historyView) {
                              '</a>')[0];
             var subject = self.stash ? gitpar.formatStashSubject(self.stash.message) : self.abbrevMessage();
             $(self.element).toggleClass("log-entry-stash", !!self.stash);
-            $(".list-group-item-text", self.element)[0].appendChild(document.createTextNode(subject));
+            var text = $(".list-group-item-text", self.element);
+            text[0].appendChild(document.createTextNode(subject));
+            var body = self.stash ? "" : self.bodyPreview();
+            if (body) {
+                text.append($('<span class="log-entry-body">').text(body));
+            }
             $(".log-entry-menu-btn", self.element).click(function(event) {
                 event.preventDefault();
                 event.stopPropagation();
