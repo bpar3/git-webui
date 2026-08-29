@@ -1372,6 +1372,35 @@ body {
     border-bottom: 1px solid var(--gf-border);
     background: var(--gf-page-bg);
 
+    // Expanded, it becomes a card on the same terms as an expanded
+    // commit: inset from the left, stopping short of the graph gutter,
+    // bordered and rounded, and the same height - so opening the
+    // changes and opening a commit read as the same gesture rather
+    // than as two different kinds of thing.
+    &.uncommitted-summary-expanded {
+        // The commit card sits inside the log row's own horizontal
+        // padding, so the extra 10px here is what lines the two up.
+        margin: 0 ~"calc(var(--log-graph-inset, 0px) + 10px)" 8px 10px;
+        border: 1px solid var(--gf-border-strong);
+        border-radius: 6px;
+        background: var(--gf-panel-bg);
+        overflow: hidden;
+        height: 290px;
+        .display-flex();
+        .flex-direction(column);
+
+        // Still the control that closes the card, so it keeps looking
+        // like one.
+        .uncommitted-summary-header {
+            flex: 0 0 auto;
+        }
+
+        .uncommitted-summary-files {
+            .flex(1);
+            max-height: none;
+        }
+    }
+
     .uncommitted-summary-header {
         position: relative;
         .display-flex();

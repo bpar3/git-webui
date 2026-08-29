@@ -3012,7 +3012,14 @@ gitpar.LogView = function(historyView) {
         var header = gutter.parentElement;
         if (header) {
             var inset = Math.max(0, header.getBoundingClientRect().right - gutterRect.left);
+            // Set on the history view, not the log list, so the
+            // changes card above the list inherits it too - it has to
+            // stop short of the same gutter to line up with an open
+            // commit below it.
             self.element.style.setProperty("--log-graph-inset", inset + "px");
+            if (historyView && historyView.element) {
+                historyView.element.style.setProperty("--log-graph-inset", inset + "px");
+            }
         }
     }
 
@@ -5028,6 +5035,12 @@ gitpar.HistoryView = function(mainView) {
         // the list is what's showing does it collapse anything.
         if (self.isCommitViewOpen()) {
             self.collapseCommit();
+            return;
+        }
+        // The changes card is the same kind of thing as an open commit
+        // and closes on the same key.
+        if (self.uncommittedSummary && self.uncommittedSummary.expanded) {
+            self.uncommittedSummary.toggleExpand();
             return;
         }
         self.collapseExpandedRefs();
