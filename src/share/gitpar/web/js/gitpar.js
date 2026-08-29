@@ -2648,9 +2648,24 @@ gitpar.RefActionMenu = function(mainView) {
                 mainView.repoChrome.checkoutRef(refInfo.gitRef, null);
             }, gitpar.viewonly || isCurrentLocal);
         } else if (refInfo.kind == "remote") {
-            self.addAction("Checkout tracking branch", function() {
-                mainView.repoChrome.checkoutRef(null, refInfo.gitRef);
-            }, gitpar.viewonly);
+            // findBranchByRef pairs a remote ref with a local branch of
+            // the same name even without upstream tracking configured -
+            // the same match `git checkout --track` itself refuses once
+            // it exists, since it would collide with that branch name.
+            // Local and remote pointing at different commits (the
+            // remote ahead, say) doesn't change any of that: checking
+            // out an existing branch never needs it to match its
+            // upstream first, so there is nothing here to resolve
+            // before switching to it.
+            if (branch && branch.local_name) {
+                self.addAction("Checkout", function() {
+                    mainView.repoChrome.checkoutRef(branch.local_name, null);
+                }, gitpar.viewonly || isCurrentLocal);
+            } else {
+                self.addAction("Checkout tracking branch", function() {
+                    mainView.repoChrome.checkoutRef(null, refInfo.gitRef);
+                }, gitpar.viewonly);
+            }
         }
 
         self.addAction("Create branch here", function() {
