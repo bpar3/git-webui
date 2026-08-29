@@ -164,19 +164,37 @@ describe("gitpar avatar helpers", () => {
         expect(gitpar.getInitials("   ")).toBe("?");
     });
 
-    test("colorForAuthor is deterministic for the same name", () => {
-        expect(gitpar.colorForAuthor("Binu Parayil")).toBe(gitpar.colorForAuthor("Binu Parayil"));
+    test("colorForAuthor is deterministic for the same identity", () => {
+        expect(gitpar.colorForAuthor("Binu Parayil", "b@example.com"))
+            .toBe(gitpar.colorForAuthor("Binu Parayil", "b@example.com"));
     });
 
     test("colorForAuthor always returns one of gitpar.COLORS", () => {
+        expect(gitpar.COLORS).toContain(gitpar.colorForAuthor("Binu Parayil", "b@example.com"));
+        expect(gitpar.COLORS).toContain(gitpar.colorForAuthor("", ""));
         expect(gitpar.COLORS).toContain(gitpar.colorForAuthor("Binu Parayil"));
-        expect(gitpar.COLORS).toContain(gitpar.colorForAuthor(""));
     });
 
     test("colorForAuthor differs for at least some different names", () => {
-        var colors = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank"].map(gitpar.colorForAuthor);
+        var names = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank"];
+        var colors = names.map(function(name) { return gitpar.colorForAuthor(name, "x@example.com"); });
         var distinct = colors.filter(function(color, index) { return colors.indexOf(color) == index; });
         expect(distinct.length).toBeGreaterThan(1);
+    });
+
+    test("colorForAuthor separates one name used with different addresses", () => {
+        // The point of hashing the address: two contributors who share a
+        // name, or one who commits from work and personal addresses,
+        // must not share an avatar colour.
+        var addresses = ["a@example.com", "b@example.com", "c@example.com",
+                         "d@example.com", "e@example.com", "f@example.com"];
+        var colors = addresses.map(function(email) { return gitpar.colorForAuthor("Binu Parayil", email); });
+        var distinct = colors.filter(function(color, index) { return colors.indexOf(color) == index; });
+        expect(distinct.length).toBeGreaterThan(1);
+    });
+
+    test("colorForAuthor does not collide across the name/email boundary", () => {
+        expect(gitpar.colorForAuthor("ab", "c")).not.toBe(gitpar.colorForAuthor("a", "bc"));
     });
 });
 

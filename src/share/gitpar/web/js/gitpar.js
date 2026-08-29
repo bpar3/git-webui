@@ -321,11 +321,17 @@ gitpar.hashString = function(str) {
     return Math.abs(hash);
 }
 
-gitpar.colorForAuthor = function(name) {
-    if (!name) {
+// Keyed on the whole identity, not the name. Two people can share a
+// name, and one person's work can arrive under several addresses; in
+// both cases the colour is meant to tell them apart, so the address is
+// part of what it hashes. The separator is a character git won't let
+// into either field, so "ab" + "c" can't collide with "a" + "bc".
+gitpar.colorForAuthor = function(name, email) {
+    var identity = (name || "") + "\n" + (email || "");
+    if (identity == "\n") {
         return gitpar.COLORS[0];
     }
-    return gitpar.COLORS[gitpar.hashString(name) % gitpar.COLORS.length];
+    return gitpar.COLORS[gitpar.hashString(identity) % gitpar.COLORS.length];
 }
 
 // The absolute date shown on an expanded commit: weekday, short month,
@@ -2863,7 +2869,7 @@ gitpar.LogView = function(historyView) {
             // set aside rather than a commit.
             var marker = self.stash
                 ? '<span class="log-entry-avatar log-entry-stash-mark" title="' + gitpar.escapeHtml(self.stash.ref || "stash") + '">&#9707;</span>'
-                : '<span class="log-entry-avatar" style="background:' + gitpar.colorForAuthor(self.author.name) + '" title="' + gitpar.escapeHtml(self.author.name) + ' &lt;' + gitpar.escapeHtml(self.author.email) + '&gt;">' + gitpar.escapeHtml(gitpar.getInitials(self.author.name)) + '</span>';
+                : '<span class="log-entry-avatar" style="background:' + gitpar.colorForAuthor(self.author.name, self.author.email) + '" title="' + gitpar.escapeHtml(self.author.name) + ' &lt;' + gitpar.escapeHtml(self.author.email) + '&gt;">' + gitpar.escapeHtml(gitpar.getInitials(self.author.name)) + '</span>';
             self.element = $('<a class="log-entry list-group-item">' +
                                 '<header>' +
                                     marker +
@@ -2934,7 +2940,7 @@ gitpar.LogView = function(historyView) {
                           '</div>');
             $(".log-entry-card-avatar", self.card)
                 .text(gitpar.getInitials(self.author.name))
-                .attr("style", "background:" + gitpar.colorForAuthor(self.author.name))
+                .attr("style", "background:" + gitpar.colorForAuthor(self.author.name, self.author.email))
                 .attr("title", self.author.name + " <" + self.author.email + ">");
             $(".log-entry-card-meta", self.card)
                 .text(gitpar.formatCommitDate(self.author.date) + " by ")
@@ -4146,7 +4152,7 @@ gitpar.CommitDetailView = function(historyView) {
         $(".commit-detail-filter", self.element).val("");
         $(".commit-detail-avatar", self.element)
             .text(gitpar.getInitials(entry.author.name))
-            .attr("style", "background:" + gitpar.colorForAuthor(entry.author.name));
+            .attr("style", "background:" + gitpar.colorForAuthor(entry.author.name, entry.author.email));
         $(".commit-detail-meta", self.element)
             .text(gitpar.formatCommitDate(entry.author.date) + " by ")
             .append($('<span class="log-entry-card-author">').text(entry.author.name))
