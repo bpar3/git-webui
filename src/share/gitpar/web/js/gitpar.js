@@ -26,7 +26,19 @@ gitpar.openRepos = [];
 gitpar.workspacePath = null;
 gitpar.recentWorkspaces = [];
 gitpar.workspaceRepos = [];
+// Refs for the repository currently open. Declared and cleared together
+// because they are refetched together - leaving one behind means drawing
+// a repository with another's refs.
 gitpar.branches = [];
+gitpar.tags = [];
+gitpar.stashes = [];
+
+gitpar.clearRepoRefs = function() {
+    gitpar.branches = [];
+    gitpar.tags = [];
+    gitpar.stashes = [];
+}
+
 gitpar.viewonly = false;
 gitpar.historyRef = null;
 
@@ -861,7 +873,7 @@ gitpar.Toolbar = function(mainView) {
 
     self.loadBranches = function(callback) {
         if (!gitpar.repoPath) {
-            gitpar.branches = [];
+            gitpar.clearRepoRefs();
             self.updateStatusMeta();
             if (callback) {
                 callback();
@@ -1362,6 +1374,12 @@ gitpar.Toolbar = function(mainView) {
         gitpar.historyRef = null;
         gitpar.historyAuthorFilter = null;
         gitpar.refChipFilterName = null;
+        // Branches, tags and stashes belong to the repository that was
+        // open. loadBranches refetches them, but refreshActiveSection
+        // below runs first and would otherwise draw the new repository
+        // using the old one's refs - and seed the log with stash commits
+        // that don't exist here.
+        gitpar.clearRepoRefs();
         self.renderRepoTabs();
         self.update();
         self.refreshActiveSection();
