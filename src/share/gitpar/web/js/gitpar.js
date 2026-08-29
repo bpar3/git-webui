@@ -663,6 +663,21 @@ gitpar.quoteArg = function(value) {
     return '"' + String(value).replace(/([\\"])/g, "\\$1") + '"';
 }
 
+// A plain `push` on a branch with no upstream fails outright, and git's
+// own stderr already names the exact fix - it has worked out the right
+// remote for this branch itself, accounting for multiple remotes,
+// remote.pushDefault and the like, which is not worth re-deriving
+// independently. Recognising that specific message is what turns it
+// from raw stderr in the generic error banner into a plain question:
+// publish this branch there? Returns null for any other failure, so a
+// push failing for some other reason still shows as a normal error.
+gitpar.NO_UPSTREAM_PATTERN = /git push --set-upstream (\S+) (\S+)/;
+
+gitpar.parseNoUpstreamError = function(message) {
+    var match = gitpar.NO_UPSTREAM_PATTERN.exec(String(message || ""));
+    return match ? { remote: match[1], branch: match[2] } : null;
+}
+
 // Parses `git diff-tree --name-status` output into {status, path} pairs.
 // Fields are tab-separated; renames and copies carry a similarity score
 // on the status (R100) and a second path, which is the one to show.
@@ -1696,11 +1711,11 @@ gitpar.Toolbar = function(mainView) {
 
     // -- Pull / Push / Fetch : left click executes, right click opens options --
 
-    self.runRemoteAction = function(buttonId, cmd, callback) {
+    self.runRemoteAction = function(buttonId, cmd, callback, onError) {
         var button = $("#" + buttonId, self.element).addClass("toolbar-remote-btn-busy");
         gitpar.git(cmd, function(data) {
             callback(data);
-        }).always(function() {
+        }, onError).always(function() {
             button.removeClass("toolbar-remote-btn-busy");
         });
     }
@@ -1733,6 +1748,21 @@ gitpar.Toolbar = function(mainView) {
         });
     }
 
+    self.onPushSetUpstream = function(remote, branch) {
+        if (!window.confirm("'" + branch + "' has no upstream yet. Publish it to '" + remote + "' and track it there?")) {
+            return;
+        }
+        // remote/branch are ref-format tokens straight out of git's own
+        // suggested command line, never free-form text - the same
+        // reason branch and tag names are embedded unquoted elsewhere
+        // (createTagAtRef, for one): git's own naming rules already
+        // forbid the characters that would need escaping here.
+        self.runRemoteAction("toolbar-push", "push --set-upstream " + remote + " " + branch, function(data) {
+            self.loadBranches();
+            self.refreshActiveSection();
+        });
+    }
+
     self.onPush = function(event) {
         if (event) {
             event.preventDefault();
@@ -1740,6 +1770,12 @@ gitpar.Toolbar = function(mainView) {
         self.runRemoteAction("toolbar-push", "push", function(data) {
             self.loadBranches();
             self.refreshActiveSection();
+        }, function(message) {
+            var noUpstream = gitpar.parseNoUpstreamError(message);
+            if (noUpstream) {
+                self.onPushSetUpstream(noUpstream.remote, noUpstream.branch);
+                return true;
+            }
         });
     }
 

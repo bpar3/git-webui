@@ -587,3 +587,45 @@ describe("gitpar.formatRelativeTime", () => {
         expect(gitpar.formatRelativeTime(daysAgo(365 * 3), now)).toBe("3 years ago");
     });
 });
+
+describe("gitpar.parseNoUpstreamError", () => {
+    let gitpar;
+
+    beforeEach(() => {
+        gitpar = loadGitpar();
+    });
+
+    test("extracts the remote and branch git itself suggests", () => {
+        const message =
+            "fatal: The current branch host-load-metrics has no upstream branch.\n" +
+            "To push the current branch and set the remote as upstream, use\n" +
+            "\n" +
+            "    git push --set-upstream trmc host-load-metrics\n" +
+            "\n" +
+            "To have this happen automatically for branches without a tracking\n" +
+            "upstream, see 'push.autoSetupRemote' in 'git help config'.\n";
+        expect(gitpar.parseNoUpstreamError(message)).toEqual({
+            remote: "trmc",
+            branch: "host-load-metrics",
+        });
+    });
+
+    test("handles a branch name containing slashes", () => {
+        const message = "    git push --set-upstream origin feature/new-thing\n";
+        expect(gitpar.parseNoUpstreamError(message)).toEqual({
+            remote: "origin",
+            branch: "feature/new-thing",
+        });
+    });
+
+    test("returns null for an unrelated push failure", () => {
+        const message = "! [rejected]        main -> main (non-fast-forward)\n" +
+            "error: failed to push some refs to 'origin'";
+        expect(gitpar.parseNoUpstreamError(message)).toBeNull();
+    });
+
+    test("returns null for an empty or missing message", () => {
+        expect(gitpar.parseNoUpstreamError("")).toBeNull();
+        expect(gitpar.parseNoUpstreamError(undefined)).toBeNull();
+    });
+});
