@@ -191,10 +191,113 @@ body {
     }
 }
 
+// Notices float over the app instead of taking a row in it. This was
+// a block appended to <body>, which is a flex column - so every notice
+// became a layout row, pushed the whole UI down and reflowed it, and
+// git writes to stderr on success often enough that a plain fetch did
+// that on every click.
+//
+// Bottom right: out of the way of the toolbar the click came from and
+// of the first rows of the commit list, which is where the eye is.
 #message-box {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1080;
+    width: 30em;
+    max-width: ~"calc(100vw - 32px)";
+    .display-flex();
+    .flex-direction(column);
+    gap: 8px;
+    // The stack is only a positioning frame - clicks belong to the app
+    // underneath except on a notice itself.
+    pointer-events: none;
+}
 
-    .alert {
+.app-notice {
+    pointer-events: auto;
+    background: var(--gf-panel-bg);
+    border: 1px solid var(--gf-border-strong);
+    border-left: 3px solid var(--gf-text-faint);
+    border-radius: 4px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+    padding: 8px 10px 9px 11px;
+    .display-flex();
+    align-items: flex-start;
+    gap: 8px;
+
+    &.app-notice-error {
+        border-left-color: var(--gf-danger);
+    }
+
+    .app-notice-body {
+        .flex(1);
+        min-width: 0;
+    }
+
+    .app-notice-label {
+        display: block;
+        font-size: 10px;
+        font-weight: bold;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--gf-text-faint);
+        margin-bottom: 3px;
+    }
+
+    // git's own output, shown in git's own shape: the monospace face
+    // and its line breaks kept, capped at a few lines so a chatty
+    // remote can't grow the notice past the window.
+    .app-notice-text {
+        // Bootstrap styles bare <pre> as a bordered light panel, which
+        // inside the notice read as a second box with its own frame.
         margin: 0;
+        padding: 0;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        font-family: @font-family-monospace;
+        font-size: 11.5px;
+        line-height: 1.45;
+        color: var(--gf-text);
+        white-space: pre-wrap;
+        // break-word, not anywhere: a long remote URL still wraps, but
+        // ordinary words are not shattered mid-token to save a pixel.
+        overflow-wrap: break-word;
+        max-height: 9em;
+        overflow-y: auto;
+    }
+
+    .app-notice-close {
+        flex: 0 0 auto;
+        border: 0;
+        background: transparent;
+        color: var(--gf-text-faint);
+        font-size: 15px;
+        line-height: 1;
+        padding: 0 2px;
+        border-radius: 3px;
+
+        &:hover,
+        &:focus {
+            color: var(--gf-text);
+            background: var(--gf-row-hover);
+        }
+    }
+}
+
+.app-notice-enter {
+    animation: app-notice-in 140ms ease-out;
+}
+
+@keyframes app-notice-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-notice-enter {
+        animation: none;
     }
 }
 

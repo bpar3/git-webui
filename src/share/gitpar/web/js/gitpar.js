@@ -73,16 +73,56 @@ gitpar.showResult = function(title, message) {
     gitpar.showModal(title, message, "info");
 }
 
-gitpar.showWarning = function(message) {
+// A notice floats over the app in the bottom-right and takes itself
+// away. It used to be a dismissible block appended to <body>, which is
+// a flex column, so it became a layout row: the whole UI shifted down
+// and reflowed, and stayed shifted until it was dismissed by hand.
+//
+// Notices stack rather than replace, so a second one doesn't erase a
+// message that hasn't been read yet, and the stack is capped so a
+// chatty remote can't fill the window.
+gitpar.MAX_NOTICES = 3;
+gitpar.NOTICE_TIMEOUT = 7000;
+
+gitpar.showNotice = function(label, message, kind) {
     var messageBox = $("#message-box");
-    messageBox.empty();
-    $(  '<div class="alert alert-warning alert-dismissible" role="alert">' +
-            '<button type="button" class="close" data-dismiss="alert">' +
-                '<span aria-hidden="true">&times;</span>' +
-                '<span class="sr-only">Close</span>' +
-            '</button>' +
-            message +
-        '</div>').appendTo(messageBox);
+    if (messageBox.length == 0) {
+        return;
+    }
+    var notice = $('<div class="app-notice app-notice-enter" role="status">' +
+                       '<div class="app-notice-body">' +
+                           '<span class="app-notice-label"></span>' +
+                           '<pre class="app-notice-text"></pre>' +
+                       '</div>' +
+                       '<button type="button" class="app-notice-close" title="Dismiss">&times;</button>' +
+                   '</div>');
+    notice.toggleClass("app-notice-error", kind == "error");
+    $(".app-notice-label", notice).text(label);
+    $(".app-notice-text", notice).text(String(message).replace(/\s+$/, ""));
+
+    var timer = null;
+    var dismiss = function() {
+        window.clearTimeout(timer);
+        notice.remove();
+    };
+    // Hovering holds the notice open - the timeout exists so it goes
+    // away on its own, not so it can vanish mid-read.
+    var arm = function() {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(dismiss, gitpar.NOTICE_TIMEOUT);
+    };
+    $(".app-notice-close", notice).click(dismiss);
+    notice.hover(function() { window.clearTimeout(timer); }, arm);
+    arm();
+
+    messageBox.append(notice);
+    while (messageBox.children().length > gitpar.MAX_NOTICES) {
+        messageBox.children().first().remove();
+    }
+}
+
+gitpar.showWarning = function(message) {
+    gitpar.showNotice("Warning", message, "error");
 }
 
 gitpar.parseApiError = function(xhr, fallbackMessage) {
@@ -636,10 +676,14 @@ gitpar.git = function(cmd, arg1, arg2, arg3) {
                 if (callback) {
                     callback(output);
                 }
-                // Return code is 0 but there is stderr output: this is a warning message
+                // Return code 0 with stderr output. This is not a
+                // failure - git reports normal progress on stderr, so
+                // an ordinary fetch or push lands here every time. It
+                // is shown as what it is, the command's own output,
+                // labelled with the command that produced it.
                 if (message.length > 0) {
                     console.log(message);
-                    gitpar.showWarning(message);
+                    gitpar.showNotice("git " + String(cmd).split(/\s+/)[0], message);
                 }
             } else {
                 console.log(message);
