@@ -20,13 +20,26 @@ def test_set_theme_persists_across_a_restart(backend, handler_state, tmp_path):
     assert handler.THEME == "dark"
 
 
-def test_set_theme_rejects_anything_but_dark(backend, handler_state):
+def test_set_theme_rejects_anything_it_does_not_know(backend, handler_state):
     handler = backend.GitParRequestHandler
     handler.set_theme("dark")
     handler.set_theme("neon")
     assert handler.THEME == "light"
     handler.set_theme(None)
     assert handler.THEME == "light"
+
+
+def test_system_is_stored_as_a_preference_of_its_own(backend, handler_state):
+    """"system" must survive as itself. Resolving it to dark or light
+    before saving would pin the theme and stop it following the desktop
+    on the next launch."""
+    handler = backend.GitParRequestHandler
+    handler.set_theme("system")
+    assert handler.THEME == "system"
+
+    handler.THEME = "light"
+    handler.load_state()
+    assert handler.THEME == "system"
 
 
 def test_load_state_without_a_theme_falls_back_to_light(backend, handler_state):

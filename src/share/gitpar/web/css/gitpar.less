@@ -3329,3 +3329,78 @@ input[type="password"] {
         opacity: 1;
     }
 }
+
+// == App menu ================================================================
+//
+// Two panes rather than one long list: categories on the left, the
+// chosen category's items on the right. A single flat menu had grown
+// long enough that finding anything meant reading all of it.
+.toolbar-menu.app-menu {
+    .display-flex();
+    padding: 0;
+    overflow: visible;
+
+    .app-menu-cats {
+        flex: 0 0 auto;
+        .display-flex();
+        .flex-direction(column);
+        min-width: 7.5em;
+        padding: 4px 0;
+        border-right: 1px solid var(--gf-border);
+        background: var(--gf-toolbar-bg);
+    }
+
+    .app-menu-cat {
+        .display-flex();
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: var(--gf-text);
+        text-align: left;
+        padding: 5px 10px;
+        font-size: 12.5px;
+
+        &:hover,
+        &.active {
+            background: var(--gf-accent);
+            color: var(--gf-accent-fg);
+        }
+    }
+
+    .app-menu-cat-arrow {
+        color: inherit;
+        opacity: 0.6;
+    }
+
+    // Wide enough for a repository path, which is the longest thing any
+    // of these lists holds, and scrollable because the recent list has
+    // no fixed length.
+    .app-menu-panel {
+        .flex(1);
+        min-width: 22em;
+        max-width: 42em;
+        max-height: 32em;
+        overflow-y: auto;
+        padding: 4px 0;
+    }
+
+    .toolbar-menu-item {
+        .display-flex();
+        align-items: baseline;
+        gap: 16px;
+    }
+
+    .toolbar-menu-label {
+        .flex(1);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .toolbar-menu-item[disabled] {
+        opacity: 0.4;
+    }
+}

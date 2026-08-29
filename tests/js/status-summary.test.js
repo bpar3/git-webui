@@ -66,3 +66,25 @@ describe("summarizeStatusCounts", () => {
         expect(gitpar.summarizeStatusCounts([])).toEqual([]);
     });
 });
+
+describe("theme resolution", () => {
+    let gitpar;
+    beforeEach(() => { gitpar = loadGitpar(); });
+
+    test("an explicit choice is used as given", () => {
+        expect(gitpar.resolveTheme("dark")).toBe("dark");
+        expect(gitpar.resolveTheme("light")).toBe("light");
+    });
+
+    test("anything unrecognised resolves to light", () => {
+        expect(gitpar.resolveTheme("neon")).toBe("light");
+        expect(gitpar.resolveTheme(undefined)).toBe("light");
+    });
+
+    test("system follows what the desktop reports", () => {
+        gitpar.systemPrefersDark = () => true;
+        expect(gitpar.resolveTheme("system")).toBe("dark");
+        gitpar.systemPrefersDark = () => false;
+        expect(gitpar.resolveTheme("system")).toBe("light");
+    });
+});

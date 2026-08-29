@@ -78,16 +78,38 @@ gitpar.COLORS = ["#ffab1d", "#fd8c25", "#f36e4a", "#fc6148", "#d75ab6", "#b25ade
 //
 // The write is fire-and-forget. A theme that failed to save is worth a
 // line in the console, not a dialog over the app.
+gitpar.THEME_CHOICES = ["system", "light", "dark"];
+// What the user picked, which is not always what is on screen: under
+// "system" the desktop decides, and can change while the app is open.
+gitpar.themePreference = "light";
+
+gitpar.systemPrefersDark = function() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+}
+
+gitpar.resolveTheme = function(preference) {
+    if (preference == "system") {
+        return gitpar.systemPrefersDark() ? "dark" : "light";
+    }
+    return preference == "dark" ? "dark" : "light";
+}
+
 gitpar.applyTheme = function(theme, persist) {
-    var dark = theme == "dark";
-    $("body").toggleClass("dark-mode", dark);
+    if (gitpar.THEME_CHOICES.indexOf(theme) == -1) {
+        theme = "light";
+    }
+    gitpar.themePreference = theme;
+    $("body").toggleClass("dark-mode", gitpar.resolveTheme(theme) == "dark");
     if (persist === false) {
         return;
     }
     $.ajax({
         url: "/api/settings/theme",
         method: "POST",
-        data: JSON.stringify({ theme: dark ? "dark" : "light" }),
+        // The preference, not what it resolved to today: saving
+        // "dark" for a System choice would pin the theme and stop it
+        // following the desktop on the next launch.
+        data: JSON.stringify({ theme: theme }),
         contentType: "application/json",
     }).fail(function() {
         console.log("Could not save the theme preference.");
@@ -98,6 +120,26 @@ gitpar.applyTheme = function(theme, persist) {
 // The one exception is a theme left behind in localStorage by a version
 // that stored it there: it is carried over once, saved, and cleared, so
 // the choice survives the upgrade instead of resetting to light.
+// The desktop can change while the app is open - a night-mode schedule,
+// a manual switch - and "system" means following it, not sampling it
+// once at startup.
+gitpar.watchSystemTheme = function() {
+    if (!window.matchMedia) {
+        return;
+    }
+    var query = window.matchMedia("(prefers-color-scheme: dark)");
+    var onChange = function() {
+        if (gitpar.themePreference == "system") {
+            gitpar.applyTheme("system", false);
+        }
+    };
+    if (query.addEventListener) {
+        query.addEventListener("change", onChange);
+    } else if (query.addListener) {
+        query.addListener(onChange);
+    }
+}
+
 gitpar.adoptTheme = function(serverTheme) {
     var stored = null;
     try {
@@ -114,6 +156,7 @@ gitpar.adoptTheme = function(serverTheme) {
         return;
     }
     gitpar.applyTheme(serverTheme, false);
+    gitpar.watchSystemTheme();
 }
 
 // Porcelain status codes for a path git could not merge. Both columns
@@ -1283,19 +1326,164 @@ gitpar.Toolbar = function(mainView) {
         }
     }
 
+    // The menu is grouped rather than flat: a single list of everything
+    // the app can do had grown long enough that finding anything in it
+    // meant reading all of it, and four of its actions - Worktrees,
+    // Reflog, Submodules, and the stash list - had no entry at all, so
+    // those views were unreachable.
+    self.APP_MENU_CATEGORIES = [
+        { id: "file", label: "File" },
+        { id: "view", label: "View" },
+        { id: "repo", label: "Repo" },
+        { id: "help", label: "Help" },
+    ];
+    self.appMenuCategory = "file";
+
+    self.appMenuItem = function(label, shortcut, action, options) {
+        options = options || {};
+        var item = $('<button type="button" class="toolbar-menu-item">');
+        item.append($('<span class="toolbar-menu-label">').text(label));
+        if (shortcut) {
+            item.append($('<span class="toolbar-menu-shortcut">').text(shortcut));
+        }
+        if (options.checked) {
+            item.addClass("checked");
+        }
+        if (options.disabled) {
+            item.prop("disabled", true);
+        } else {
+            item.click(function() {
+                self.closeMenus();
+                action();
+            });
+        }
+        return item;
+    }
+
+    self.appMenuDivider = function() {
+        return $('<div class="toolbar-menu-divider"></div>');
+    }
+
+    self.renderAppMenuPanel = function() {
+        var panel = $(".app-menu-panel", self.element);
+        panel.empty();
+        $(".app-menu-cat", self.element).each(function() {
+            $(this).toggleClass("active", $(this).attr("data-category") == self.appMenuCategory);
+        });
+        var builders = {
+            file: self.buildFileMenu,
+            view: self.buildViewMenu,
+            repo: self.buildRepoMenu,
+            help: self.buildHelpMenu,
+        };
+        (builders[self.appMenuCategory] || self.buildFileMenu)(panel);
+    }
+
+    self.buildFileMenu = function(panel) {
+        panel.append(self.appMenuItem("Create Repo\u2026", "Ctrl+Shift+N", self.createRepoFlow));
+        panel.append(self.appMenuItem("Clone Repo\u2026", "Ctrl+N", self.cloneRepo));
+        panel.append(self.appMenuItem("Open Local Repo\u2026", "Ctrl+O", self.openPicker));
+        panel.append(self.appMenuItem("Open Repo Folder\u2026", null, self.openWorkspacePicker));
+        if (gitpar.repoPath) {
+            panel.append(self.appMenuDivider());
+            panel.append(self.appMenuItem("Close " + gitpar.repoPath, null, function() {
+                self.closeRepoTab(gitpar.activeRepoId);
+            }));
+        }
+        // The repositories this app has opened, current one ticked -
+        // the same list the repo label offers, reachable from the menu
+        // as well because that is where a File menu is looked for.
+        if (gitpar.recentRepos.length > 0) {
+            panel.append(self.appMenuDivider());
+            gitpar.recentRepos.forEach(function(repo) {
+                panel.append(self.appMenuItem(repo.path, null, function() {
+                    mainView.repoPicker.selectRepo(repo.path);
+                }, { checked: !!repo.active }));
+            });
+        }
+    }
+
+    self.buildViewMenu = function(panel) {
+        panel.append($('<div class="toolbar-menu-heading">Theme</div>'));
+        [["system", "System"], ["light", "Light"], ["dark", "Dark"]].forEach(function(choice) {
+            panel.append(self.appMenuItem(choice[1], null, function() {
+                gitpar.applyTheme(choice[0]);
+            }, { checked: gitpar.themePreference == choice[0] }));
+        });
+        panel.append(self.appMenuDivider());
+        panel.append(self.appMenuItem("Show Changes", "Ctrl+1", self.showWorkspace));
+        panel.append(self.appMenuItem("Show Commits", "Ctrl+2", self.showHistory));
+        panel.append(self.appMenuItem("Show Branches", "Ctrl+3", self.showBranches));
+        panel.append(self.appMenuDivider());
+        panel.append(self.appMenuItem("Reload", null, function() { window.location.reload(); }));
+    }
+
+    self.buildRepoMenu = function(panel) {
+        var noRepo = !gitpar.repoPath;
+        panel.append(self.appMenuItem("Find\u2026", "Ctrl+F", function() {
+            mainView.searchOverlay.show();
+        }, { disabled: noRepo }));
+        panel.append(self.appMenuDivider());
+        var current = self.currentBranch();
+        panel.append(self.appMenuItem("Pull", "Ctrl+Shift+P", function() { self.onPull(); },
+                                      { disabled: noRepo || !(current && current.upstream) }));
+        panel.append(self.appMenuItem("Push", "Ctrl+Shift+U", function() { self.onPush(); },
+                                      { disabled: noRepo }));
+        panel.append(self.appMenuItem("Force Push", null, self.onForcePush, { disabled: noRepo }));
+        panel.append(self.appMenuItem("Fetch", "Ctrl+Shift+F", function() { self.onFetch(); },
+                                      { disabled: noRepo }));
+        panel.append(self.appMenuDivider());
+        panel.append(self.appMenuItem("Auto fetch", null, function() {
+            self.toggleAutoFetch();
+        }, { checked: gitpar.isAutoFetchEnabled() }));
+        panel.append(self.appMenuItem("Configure Remotes\u2026", null, function() {
+            mainView.configureRemotesView.show();
+        }, { disabled: noRepo }));
+        panel.append(self.appMenuDivider());
+        panel.append(self.appMenuItem("Stashes\u2026", null, function() {
+            mainView.stashesView.show();
+        }, { disabled: noRepo }));
+        panel.append(self.appMenuItem("Worktrees\u2026", null, function() {
+            mainView.worktreesView.show();
+        }, { disabled: noRepo }));
+        panel.append(self.appMenuItem("Submodules\u2026", null, function() {
+            mainView.submodulesView.show();
+        }, { disabled: noRepo }));
+        panel.append(self.appMenuItem("Reflog\u2026", null, function() {
+            mainView.reflogView.show();
+        }, { disabled: noRepo }));
+    }
+
+    self.buildHelpMenu = function(panel) {
+        panel.append(self.appMenuItem("About GitPar", null, function() {
+            $("#help-modal").modal("show");
+        }));
+    }
+
     self.renderAppMenu = function() {
         var menu = $(".toolbar-menu[data-menu='app']", self.element);
         menu.empty();
-        menu.append('<button type="button" class="toolbar-menu-item" data-action="open-local">Open Local Repo&hellip;<span class="toolbar-menu-shortcut">Ctrl+O</span></button>');
-        menu.append('<button type="button" class="toolbar-menu-item" data-action="open-workspace">Open Repo Folder&hellip;</button>');
-        menu.append('<button type="button" class="toolbar-menu-item" data-action="clone-repo">Clone Repo&hellip;<span class="toolbar-menu-shortcut">Ctrl+N</span></button>');
-        menu.append('<button type="button" class="toolbar-menu-item" data-action="create-repo">Create Repo&hellip;<span class="toolbar-menu-shortcut">Ctrl+Shift+N</span></button>');
-        menu.append('<div class="toolbar-menu-divider"></div>');
-        menu.append('<div class="toolbar-menu-heading">View</div>');
-        menu.append('<button type="button" class="toolbar-menu-item' + ($("body").hasClass("dark-mode") ? " checked" : "") + '" data-action="toggle-theme">Dark Theme</button>');
-        menu.append('<div class="toolbar-menu-divider"></div>');
-        menu.append('<button type="button" class="toolbar-menu-item" data-action="help">Help / About</button>');
-        $(".toolbar-menu-item[data-action]", menu).click(self.onAppMenuAction);
+        menu.addClass("app-menu");
+        var categories = $('<div class="app-menu-cats"></div>');
+        self.APP_MENU_CATEGORIES.forEach(function(category) {
+            var button = $('<button type="button" class="app-menu-cat">')
+                .attr("data-category", category.id)
+                .append($('<span>').text(category.label))
+                .append('<span class="app-menu-cat-arrow">&#8250;</span>');
+            // Hover as well as click: a category is a place to look, not
+            // a thing to commit to, so pointing at one is enough.
+            var choose = function(event) {
+                event.stopPropagation();
+                self.appMenuCategory = category.id;
+                self.renderAppMenuPanel();
+            };
+            button.click(choose);
+            button.mouseenter(choose);
+            categories.append(button);
+        });
+        menu.append(categories);
+        menu.append($('<div class="app-menu-panel"></div>'));
+        self.renderAppMenuPanel();
     }
 
     self.onAppMenuAction = function(event) {
@@ -1452,7 +1640,9 @@ gitpar.Toolbar = function(mainView) {
     // warnings on a successful run still reach the message bar.
 
     self.onPull = function(event) {
-        event.preventDefault();
+        if (event) {
+            event.preventDefault();
+        }
         var strategy = gitpar.getPullStrategy();
         var args = strategy == "rebase" ? "pull --rebase" : "pull";
         self.runRemoteAction("toolbar-pull", args, function(data) {
@@ -1464,7 +1654,9 @@ gitpar.Toolbar = function(mainView) {
     }
 
     self.onPush = function(event) {
-        event.preventDefault();
+        if (event) {
+            event.preventDefault();
+        }
         self.runRemoteAction("toolbar-push", "push", function(data) {
             self.loadBranches();
         });
@@ -1697,6 +1889,39 @@ gitpar.Toolbar = function(mainView) {
         event.stopPropagation();
         self.renderAppMenu();
         self.toggleMenu("app", event.currentTarget);
+    });
+
+    // The shortcuts the menu advertises. Typing in a field owns its own
+    // keystrokes, so nothing fires while a commit message or a filter
+    // has focus.
+    $(document).on("keydown", function(event) {
+        if (!event.ctrlKey && !event.metaKey) {
+            return;
+        }
+        var target = event.target;
+        if (target && (target.tagName == "INPUT" || target.tagName == "TEXTAREA" || target.isContentEditable)) {
+            return;
+        }
+        var key = String(event.key).toLowerCase();
+        if (!event.shiftKey && key == "1") {
+            event.preventDefault();
+            self.showWorkspace();
+        } else if (!event.shiftKey && key == "2") {
+            event.preventDefault();
+            self.showHistory();
+        } else if (!event.shiftKey && key == "3") {
+            event.preventDefault();
+            self.showBranches();
+        } else if (event.shiftKey && key == "p" && !gitpar.viewonly) {
+            event.preventDefault();
+            self.onPull();
+        } else if (event.shiftKey && key == "u" && !gitpar.viewonly) {
+            event.preventDefault();
+            self.onPush();
+        } else if (event.shiftKey && key == "f" && !gitpar.viewonly) {
+            event.preventDefault();
+            self.onFetch();
+        }
     });
     $("#toolbar-repo-label", self.element).click(function(event) {
         event.stopPropagation();

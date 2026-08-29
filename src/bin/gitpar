@@ -91,7 +91,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
     RECENT_REPOS = []
     WORKSPACE_ROOT = None
     RECENT_WORKSPACES = []
-    # "dark" or "light". Kept here rather than in the browser because
+    # "system", "dark" or "light". Kept here rather than in the browser because
     # localStorage is scoped to an origin, and the origin includes the
     # port - which moves to 8001 whenever 8000 is taken. A preference
     # that silently resets when the app happens to start on a different
@@ -149,7 +149,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 cls.WORKSPACE_ROOT = os.path.realpath(workspace_root)
             open_repos = state.get("open_repos", [])
             cls.OPEN_REPOS = [repo for repo in open_repos if os.path.isdir(repo)]
-            cls.THEME = "dark" if state.get("theme") == "dark" else "light"
+            cls.THEME = state.get("theme") if state.get("theme") in THEME_CHOICES else "light"
         except Exception:
             cls.RECENT_REPOS = []
             cls.RECENT_WORKSPACES = []
@@ -176,7 +176,9 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
 
     @classmethod
     def set_theme(cls, theme):
-        cls.THEME = "dark" if theme == "dark" else "light"
+        # "system" defers to whatever the desktop reports; the browser
+        # resolves it, so the server only has to remember the choice.
+        cls.THEME = theme if theme in THEME_CHOICES else "light"
         cls.save_state()
 
     @classmethod
@@ -1075,6 +1077,9 @@ def parse_for_each_ref_line(line):
         "commit": fields[6],
         "full_name": fields[7],
     }
+
+
+THEME_CHOICES = ("system", "light", "dark")
 
 
 def get_unpushed_commits(repo_root):
