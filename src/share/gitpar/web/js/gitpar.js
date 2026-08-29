@@ -328,6 +328,28 @@ gitpar.colorForAuthor = function(name) {
     return gitpar.COLORS[gitpar.hashString(name) % gitpar.COLORS.length];
 }
 
+// The absolute date shown on an expanded commit: weekday, short month,
+// and the time to the minute. Seconds are noise at this size, and the
+// weekday is what makes a date read as a moment rather than a serial
+// number. Falls back to the locale default if Intl rejects the options.
+gitpar.formatCommitDate = function(date) {
+    if (!date) {
+        return "";
+    }
+    try {
+        return date.toLocaleString(undefined, {
+            weekday: "short",
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+        });
+    } catch (error) {
+        return date.toLocaleString();
+    }
+}
+
 // Turns git's own stash subject into a compact label.
 // Auto-created stashes read "WIP on <branch>: <sha> <subject>", which is
 // mostly noise once the row is marked as a stash; an explicit
@@ -2866,8 +2888,13 @@ gitpar.LogView = function(historyView) {
             if (self.card) {
                 return;
             }
+            // The card carries the commit's identity - avatar, when, who,
+            // hash - because the row above it is reduced to the date and
+            // the graph while it is open. Repeating them in both places
+            // showed the hash twice.
             self.card = $('<div class="log-entry-card">' +
                               '<div class="log-entry-card-header">' +
+                                  '<span class="log-entry-card-avatar"></span>' +
                                   '<span class="log-entry-card-meta"></span>' +
                                   '<span class="log-entry-card-actions">' +
                                       '<button type="button" class="log-entry-card-btn log-entry-card-menu" title="Show commit menu">&#8942;</button>' +
@@ -2877,8 +2904,14 @@ gitpar.LogView = function(historyView) {
                               '<pre class="log-entry-card-message"></pre>' +
                               '<div class="log-entry-card-files"></div>' +
                           '</div>');
+            $(".log-entry-card-avatar", self.card)
+                .text(gitpar.getInitials(self.author.name))
+                .attr("style", "background:" + gitpar.colorForAuthor(self.author.name))
+                .attr("title", self.author.name + " <" + self.author.email + ">");
             $(".log-entry-card-meta", self.card)
-                .text(self.author.date.toLocaleString() + " by " + self.author.name + "  ")
+                .text(gitpar.formatCommitDate(self.author.date) + " by ")
+                .append($('<span class="log-entry-card-author">').text(self.author.name))
+                .append(document.createTextNode("  "))
                 .append($('<button type="button" class="log-entry-card-hash">')
                     .text("(" + self.abbrevCommitHash() + ")")
                     .attr("title", self.commit)
@@ -4087,7 +4120,9 @@ gitpar.CommitDetailView = function(historyView) {
             .text(gitpar.getInitials(entry.author.name))
             .attr("style", "background:" + gitpar.colorForAuthor(entry.author.name));
         $(".commit-detail-meta", self.element)
-            .text(entry.author.date.toLocaleString() + " by " + entry.author.name + "  ")
+            .text(gitpar.formatCommitDate(entry.author.date) + " by ")
+            .append($('<span class="log-entry-card-author">').text(entry.author.name))
+            .append(document.createTextNode("  "))
             .append($('<button type="button" class="log-entry-card-hash">')
                 .text("(" + entry.abbrevCommitHash() + ")")
                 .attr("title", entry.commit)
