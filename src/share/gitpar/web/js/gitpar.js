@@ -5041,6 +5041,18 @@ gitpar.HistoryView = function(mainView) {
     self.collapseCommit = function() {
         mainView.switchTo(self.element);
         self.logView.redrawGraph();
+        // The row's inline card is never closed by expanding it further -
+        // expandCommit only changes what mainView shows, so the row is
+        // still selected and its card still open underneath. But
+        // switchTo detaches and reattaches #history-view, and a detached
+        // element's scrollTop resets to 0 in the process, so without
+        // this the list snaps back to its very top: the card the reader
+        // was looking at is still there, just scrolled out of view on a
+        // list of any real length.
+        var selected = self.logView.selectedEntry();
+        if (selected) {
+            selected.element.scrollIntoView({ block: "center" });
+        }
     };
 
     // True while a commit is showing full-view rather than the list.
