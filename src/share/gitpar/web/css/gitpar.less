@@ -1099,9 +1099,10 @@ body {
 
         .history-view-ref-row {
             position: absolute;
+            left: 8px;
             .display-flex();
             align-items: center;
-            justify-content: flex-end;
+            justify-content: flex-start;
             // Wrapping is what lets an expanded "+N" pill's several
             // chips flow across lines. A collapsed row only ever holds
             // one chip plus its "+N" pill, which must stay beside it -
@@ -1111,7 +1112,6 @@ body {
             gap: 4px;
             max-width: ~"calc(100% - 16px)";
             min-width: 0;
-            right: 8px;
 
             &.history-view-ref-row-expanded {
                 flex-wrap: wrap;
