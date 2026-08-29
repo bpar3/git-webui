@@ -2927,6 +2927,14 @@ gitpar.LogView = function(historyView) {
                         $(".log-entry-card-file-status", row)
                             .text(file.status)
                             .addClass("log-entry-card-status-" + file.status.charAt(0));
+                        // Opens the commit full-view on that file, rather
+                        // than making you expand and then find it again.
+                        row.attr("title", "Open " + file.path);
+                        row.click(function(event) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            historyView.expandCommit(self, file.path);
+                        });
                         fileBox.append(row);
                     });
                 }
@@ -4066,9 +4074,13 @@ gitpar.CommitDetailView = function(historyView) {
     self.filterText = "";
     self.selectedPath = null;
 
-    self.update = function(entry) {
+    // selectPath opens straight to a particular file, for arriving from
+    // the inline card by clicking one. Without it the first file is
+    // selected, as when the commit is opened as a whole.
+    self.update = function(entry, selectPath) {
         self.entry = entry;
         self.selectedPath = null;
+        self.pendingPath = selectPath || null;
         self.filterText = "";
         $(".commit-detail-filter", self.element).val("");
         $(".commit-detail-avatar", self.element)
@@ -4111,11 +4123,20 @@ gitpar.CommitDetailView = function(historyView) {
             }
             self.files = gitpar.parseNameStatus(data);
             self.renderFiles();
-            if (self.files.length > 0) {
-                self.selectFile(self.files[0].path);
-            } else {
+            if (self.files.length == 0) {
                 self.diffView.refresh("");
+                self.pendingPath = null;
+                return;
             }
+            // Fall back to the first file if the requested one isn't in
+            // this commit - the two lists come from the same command, so
+            // that means something moved under us rather than a bad path.
+            var wanted = self.pendingPath;
+            self.pendingPath = null;
+            var match = wanted && self.files.filter(function(file) {
+                return file.path == wanted;
+            })[0];
+            self.selectFile(match ? match.path : self.files[0].path);
         });
     };
 
@@ -4397,8 +4418,8 @@ gitpar.HistoryView = function(mainView) {
     // The commit detail pane is no longer docked beside the list; it
     // takes over the view when a commit is explicitly expanded, and
     // hands back to the list on collapse.
-    self.expandCommit = function(entry) {
-        self.commitDetailView.update(entry);
+    self.expandCommit = function(entry, selectPath) {
+        self.commitDetailView.update(entry, selectPath);
         mainView.switchTo(self.commitDetailView.element);
     };
 

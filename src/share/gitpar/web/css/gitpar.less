@@ -1467,7 +1467,7 @@ body {
 
             // The card immediately below repeats the full message, so
             // the truncated subject here would just be the same text
-            // twice - hidden rather than recoloured, matching GitFiend.
+            // twice - hidden rather than recoloured.
             header .list-group-item-text {
                 display: none;
             }
@@ -1573,9 +1573,15 @@ body {
         .align-items(center);
         gap: 8px;
         padding: 3px 10px;
+        // Each row opens the commit full-view on that file.
+        cursor: pointer;
 
         &:hover {
             background: var(--gf-row-hover);
+
+            .log-entry-card-file-path {
+                color: var(--gf-accent);
+            }
         }
 
         .log-entry-card-file-path {
