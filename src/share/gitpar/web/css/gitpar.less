@@ -166,6 +166,13 @@ body {
     font-size: var(--gf-font-size);
     color: var(--gf-text);
     background: var(--gf-page-bg);
+    // Grayscale rather than subpixel antialiasing. Subpixel rendering
+    // thickens stems against a light background and thins them against
+    // a dark one, so the same weight 400 read heavier in light mode
+    // than in dark. Both properties inherit, so setting them here is
+    // enough for the whole UI.
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 #error-modal {
