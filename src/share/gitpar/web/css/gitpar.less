@@ -80,6 +80,13 @@
     // cream in dark mode while its text turned near-white.
     --gf-danger-bg:         #fdf1ee;
     --gf-danger-border:     #f3c8bd;
+    // A disputed line before any choice is made: the side's hue, well
+    // below the strength the chosen fill uses, so the two states are
+    // told apart by weight rather than by hue.
+    --gf-conflict-ours-bg:    #f2f7fd;
+    --gf-conflict-ours-edge:  #b9d4f2;
+    --gf-conflict-theirs-bg:  #f9f4fd;
+    --gf-conflict-theirs-edge:#dcc4ef;
     --gf-diff-selected-bg:  #337ab7;
     // The diff sits on a warm off-white, with pastel add/remove fills
     // rather than the saturated blocks Bootstrap's palette gave.
@@ -127,6 +134,10 @@ body.dark-mode {
     --gf-danger:            #e5675e;
     --gf-danger-bg:         #2b1a18;
     --gf-danger-border:     #4a2c27;
+    --gf-conflict-ours-bg:    #151d27;
+    --gf-conflict-ours-edge:  #2c435c;
+    --gf-conflict-theirs-bg:  #1e1826;
+    --gf-conflict-theirs-edge:#3d2f4d;
     --gf-diff-line-bg:      #1b1b1b;
     --gf-diff-header-bg:    #212121;
     --gf-diff-selected-bg:  #2f6fb0;
@@ -3336,6 +3347,23 @@ input[type="password"] {
         cursor: pointer;
     }
 
+    // Every disputed line is tinted whether or not it has been taken.
+    // Selection was the only thing colouring these, so before a choice
+    // was made a conflict looked exactly like context and the panes
+    // read as two copies of the same file - the marks in the bar said
+    // where to look and the text did not confirm it. The fill says
+    // "this is in dispute"; the checkbox and the stronger fill below
+    // say "and this is the copy I am keeping".
+    &.conflict-line-ours {
+        background: var(--gf-conflict-ours-bg);
+        box-shadow: inset 3px 0 0 var(--gf-conflict-ours-edge);
+    }
+
+    &.conflict-line-theirs {
+        background: var(--gf-conflict-theirs-bg);
+        box-shadow: inset 3px 0 0 var(--gf-conflict-theirs-edge);
+    }
+
     &.conflict-line-ours.conflict-line-chosen,
     &.conflict-line-from-ours {
         background: var(--gf-accent-bg);
@@ -3348,13 +3376,16 @@ input[type="password"] {
         box-shadow: inset 3px 0 0 var(--gf-chip-purple-text);
     }
 
-    // Not yet taken: visible as disputed, but clearly not part of the
-    // result.
+    // Dimmed rather than plain, so a region that has not been taken
+    // still reads as excluded from the result - but only slightly, so
+    // it stays readable enough to judge.
     &.conflict-line-conflict:not(.conflict-line-chosen):not(.conflict-line-from-ours):not(.conflict-line-from-theirs) {
-        opacity: 0.62;
+        .conflict-line-text {
+            opacity: 0.75;
+        }
     }
 
-    &.conflict-line-conflict:hover {
+    &.conflict-line-conflict:hover .conflict-line-text {
         opacity: 1;
     }
 }
