@@ -56,6 +56,12 @@ def _make_git_repo(repo_path):
 
 
 @pytest.fixture()
+def run_git():
+    """Run a git command in a test repo, asserting it succeeded."""
+    return _run_git
+
+
+@pytest.fixture()
 def git_repo(tmp_path):
     """A throwaway git repo with a single commit on `master`, for backend tests."""
     return _make_git_repo(tmp_path / "repo")

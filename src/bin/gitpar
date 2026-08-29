@@ -315,6 +315,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 "branches": get_branch_entries(GitParRequestHandler.REPO_ROOT),
                 "tags": get_tag_entries(GitParRequestHandler.REPO_ROOT),
                 "stashes": get_stash_entries(GitParRequestHandler.REPO_ROOT),
+                "unpushed": get_unpushed_commits(GitParRequestHandler.REPO_ROOT),
             })
         elif self.request_path == "/api/remotes":
             if not self.ensure_repo_selected():
@@ -1039,6 +1040,21 @@ def parse_for_each_ref_line(line):
         "commit": fields[6],
         "full_name": fields[7],
     }
+
+
+def get_unpushed_commits(repo_root):
+    """Commits on HEAD that no remote has yet.
+
+    --not --remotes rather than @{u}..HEAD: a branch with no upstream
+    has no @{u} to compare against, and that is exactly the case where
+    everything on it is unpushed. Asking which commits no remote holds
+    answers both cases with one command, and matches what the Publish
+    button offers to do.
+    """
+    result = run_git_capture(repo_root, ["rev-list", "HEAD", "--not", "--remotes"])
+    if result["returncode"] != 0:
+        return []
+    return [line.strip() for line in result["stdout"].splitlines() if line.strip()]
 
 
 def get_tag_entries(repo_root):

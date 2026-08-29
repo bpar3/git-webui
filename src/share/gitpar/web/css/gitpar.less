@@ -1049,12 +1049,12 @@ body {
     border: 1px solid transparent;
     .no-select();
 
-    &.ref-chip-local {
-        background: var(--gf-chip-green-bg);
-        color: var(--gf-chip-green-text);
-        border-color: var(--gf-chip-green-border);
-    }
-
+    // Local and remote branches share one fill. Colour was carrying a
+    // distinction the name already makes - a remote branch is written
+    // with its remote in front of it - and spending two hues on it
+    // left nothing to separate branches from tags, which is the split
+    // that actually matters when scanning the column.
+    &.ref-chip-local,
     &.ref-chip-remote {
         background: var(--gf-chip-purple-bg);
         color: var(--gf-chip-purple-text);
@@ -1470,6 +1470,10 @@ body {
         // Both of these used to be derived from Bootstrap's light-theme
         // palette at compile time, so in dark mode they painted a pale
         // row under pale text and the message became unreadable.
+        &.log-entry-is-unpushed .log-entry-unpushed {
+            background: var(--gf-accent);
+        }
+
         &:hover {
             background-color: var(--gf-row-hover);
         }
@@ -1553,6 +1557,19 @@ body {
             // Fixed width so the graph gutter beside it keeps the same
             // left edge on every row - a date that grows from "now" to
             // "2 days ago" would otherwise shift the lanes.
+            // A dot between the message and the graph, on the commits
+            // that no remote has yet. It holds its column whether or
+            // not it is filled, so rows don't shift as commits are
+            // pushed - only the dot appears and disappears.
+            .log-entry-unpushed {
+                flex: 0 0 auto;
+                width: 6px;
+                height: 6px;
+                margin: 0 10px 0 6px;
+                border-radius: 50%;
+                background: transparent;
+            }
+
             // The body preview trails the subject on the same line, set
             // back so the subject still reads as the row's title.
             .log-entry-body {

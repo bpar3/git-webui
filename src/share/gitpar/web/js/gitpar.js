@@ -32,11 +32,24 @@ gitpar.workspaceRepos = [];
 gitpar.branches = [];
 gitpar.tags = [];
 gitpar.stashes = [];
+// Shas of commits no remote holds yet. A set, because every row in the
+// log asks whether it is one of these.
+gitpar.unpushed = [];
+gitpar.unpushedSet = {};
+
+gitpar.setUnpushed = function(shas) {
+    gitpar.unpushed = shas || [];
+    gitpar.unpushedSet = {};
+    for (var i = 0; i < gitpar.unpushed.length; ++i) {
+        gitpar.unpushedSet[gitpar.unpushed[i]] = true;
+    }
+}
 
 gitpar.clearRepoRefs = function() {
     gitpar.branches = [];
     gitpar.tags = [];
     gitpar.stashes = [];
+    gitpar.setUnpushed([]);
 }
 
 gitpar.viewonly = false;
@@ -956,6 +969,7 @@ gitpar.Toolbar = function(mainView) {
             gitpar.branches = data.branches || [];
             gitpar.tags = data.tags || [];
             gitpar.stashes = data.stashes || [];
+            gitpar.setUnpushed(data.unpushed);
             self.updateStatusMeta();
             if (mainView.historyView) {
                 mainView.historyView.refreshToolbar();
@@ -972,7 +986,13 @@ gitpar.Toolbar = function(mainView) {
         $(".app-titlebar-path", self.element).text("GitPar" + (gitpar.repoPath ? " - " + gitpar.repoPath : ""));
         $("title")[0].textContent = gitpar.repoPath ? "Git - " + gitpar.repo : "GitPar";
         var current = self.currentBranch();
-        self.setBadge("#toolbar-push-badge", current && current.ahead);
+        // Commits waiting to go out. Behind/ahead come from the
+        // upstream's tracking info; with no upstream there is none, so
+        // the push count falls back to everything no remote holds -
+        // which is what Publish would send.
+        self.setBadge("#toolbar-pull-badge", current && current.behind);
+        self.setBadge("#toolbar-push-badge",
+                      current && current.upstream ? current.ahead : gitpar.unpushed.length);
 
         // A branch with no upstream has nothing to pull from, and its
         // push is the one that creates the remote branch - so the
@@ -1542,6 +1562,7 @@ gitpar.Toolbar = function(mainView) {
                                 '<div class="toolbar-remote-actions">' +
                                     '<button type="button" class="toolbar-remote-btn" id="toolbar-pull" title="Left-click to pull, right-click for options">' +
                                         '<span class="toolbar-remote-btn-icon">&#8595;</span><span>Pull</span>' +
+                                        '<span class="toolbar-remote-btn-badge" id="toolbar-pull-badge"></span>' +
                                     '</button>' +
                                     '<div class="toolbar-menu" data-menu="pull"></div>' +
                                     '<button type="button" class="toolbar-remote-btn" id="toolbar-push" title="Left-click to push, right-click for options">' +
@@ -2919,6 +2940,7 @@ gitpar.LogView = function(historyView) {
                                     marker +
                                     '<p class="list-group-item-text"></p>' +
                                     '<button type="button" class="log-entry-menu-btn" title="Show commit menu">&#8942;</button>' +
+                                    '<span class="log-entry-unpushed" title="Not on any remote yet"></span>' +
                                     '<span class="log-entry-graph"></span>' +
                                     '<span class="log-entry-date" title="' + gitpar.escapeHtml(self.author.date.toLocaleString()) + '">' + gitpar.escapeHtml(self.relativeDate || "") + '</span>' +
                                 '</header>' +
@@ -2927,6 +2949,10 @@ gitpar.LogView = function(historyView) {
             $(self.element).toggleClass("log-entry-stash", !!self.stash);
             var text = $(".list-group-item-text", self.element);
             text[0].appendChild(document.createTextNode(subject));
+            // Marks the commits Publish would send. Stashes are never
+            // pushed, so they never carry the dot.
+            $(self.element).toggleClass("log-entry-is-unpushed",
+                !self.stash && !!gitpar.unpushedSet[self.commit]);
             var body = self.stash ? "" : self.bodyPreview();
             if (body) {
                 text.append($('<span class="log-entry-body">').text(body));
