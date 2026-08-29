@@ -91,6 +91,13 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
     RECENT_REPOS = []
     WORKSPACE_ROOT = None
     RECENT_WORKSPACES = []
+    # "dark" or "light". Kept here rather than in the browser because
+    # localStorage is scoped to an origin, and the origin includes the
+    # port - which moves to 8001 whenever 8000 is taken. A preference
+    # that silently resets when the app happens to start on a different
+    # port is not a preference.
+    THEME = "light"
+
     # Repos currently open as tabs, in tab order. REPO_ROOT (above) is
     # whichever one of these is the active tab for the current request -
     # see _apply_request_repo_context(), called once per request. The
@@ -117,6 +124,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
         cls.RECENT_WORKSPACES = []
         cls.WORKSPACE_ROOT = None
         cls.OPEN_REPOS = []
+        cls.THEME = "light"
         state_path = cls.APP_STATE_PATH
         if not state_path:
             return
@@ -141,11 +149,13 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 cls.WORKSPACE_ROOT = os.path.realpath(workspace_root)
             open_repos = state.get("open_repos", [])
             cls.OPEN_REPOS = [repo for repo in open_repos if os.path.isdir(repo)]
+            cls.THEME = "dark" if state.get("theme") == "dark" else "light"
         except Exception:
             cls.RECENT_REPOS = []
             cls.RECENT_WORKSPACES = []
             cls.WORKSPACE_ROOT = None
             cls.OPEN_REPOS = []
+            cls.THEME = "light"
 
     @classmethod
     def save_state(cls):
@@ -159,9 +169,15 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             "recent_workspaces": cls.RECENT_WORKSPACES[:10],
             "workspace_root": cls.WORKSPACE_ROOT,
             "open_repos": cls.OPEN_REPOS,
+            "theme": cls.THEME,
         }
         with open(cls.APP_STATE_PATH, "w") as state_file:
             json.dump(state, state_file)
+
+    @classmethod
+    def set_theme(cls, theme):
+        cls.THEME = "dark" if theme == "dark" else "light"
+        cls.save_state()
 
     @classmethod
     def set_repo_root(cls, repo_root, persist=True):
@@ -253,6 +269,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             "recent_workspaces": [] if self.is_view_only() else GitParRequestHandler.get_recent_workspace_entries(),
             "workspace_repos": workspace_repos,
             "view_only": self.is_view_only(),
+            "theme": GitParRequestHandler.THEME,
             "hostname": socket.gethostname(),
         }
         return context
@@ -603,6 +620,10 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             result = add_to_gitignore(GitParRequestHandler.REPO_ROOT, payload.get("pattern"))
             self.send_json(result["status"], result["payload"])
+        elif self.request_path == "/api/settings/theme":
+            payload = self.read_json_body()
+            GitParRequestHandler.set_theme(payload.get("theme"))
+            self.send_json(200, {"theme": GitParRequestHandler.THEME})
         elif self.request_path == "/api/conflicts/save":
             if self.is_view_only() or not self.ensure_repo_selected():
                 self.send_error(403 if self.is_view_only() else 409)

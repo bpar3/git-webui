@@ -69,6 +69,53 @@ gitpar.COLORS = ["#ffab1d", "#fd8c25", "#f36e4a", "#fc6148", "#d75ab6", "#b25ade
                 "#ff911a", "#fc8120", "#e7623e", "#fa5236", "#ca4da9", "#a74fd3", "#5a68ff", "#6d69db", "#489bd9", "#00bcde", "#36a436", "#47a519", "#798d0a", "#c1a120", "#bf7730", "#8e8e8e"]
 
 
+// The theme lives on the server, in the same state file as the open
+// repos. localStorage was the obvious place and the wrong one: it is
+// scoped to an origin, the origin includes the port, and the port moves
+// to 8001 whenever 8000 is taken - so choosing dark and reopening the
+// app could land on a different origin with an empty store and paint
+// light again.
+//
+// The write is fire-and-forget. A theme that failed to save is worth a
+// line in the console, not a dialog over the app.
+gitpar.applyTheme = function(theme, persist) {
+    var dark = theme == "dark";
+    $("body").toggleClass("dark-mode", dark);
+    if (persist === false) {
+        return;
+    }
+    $.ajax({
+        url: "/api/settings/theme",
+        method: "POST",
+        data: JSON.stringify({ theme: dark ? "dark" : "light" }),
+        contentType: "application/json",
+    }).fail(function() {
+        console.log("Could not save the theme preference.");
+    });
+}
+
+// Applies what the server reported, without writing it straight back.
+// The one exception is a theme left behind in localStorage by a version
+// that stored it there: it is carried over once, saved, and cleared, so
+// the choice survives the upgrade instead of resetting to light.
+gitpar.adoptTheme = function(serverTheme) {
+    var stored = null;
+    try {
+        stored = localStorage.getItem("theme");
+    } catch (error) {
+        // Private mode, or storage disabled. Nothing to migrate.
+    }
+    if (stored && stored != serverTheme) {
+        gitpar.applyTheme(stored);
+        try {
+            localStorage.removeItem("theme");
+        } catch (error) {
+        }
+        return;
+    }
+    gitpar.applyTheme(serverTheme, false);
+}
+
 gitpar.showModal = function(title, message, type) {
     var body = $("#error-modal .alert");
     $("#error-modal .modal-title").text(title);
@@ -1225,8 +1272,7 @@ gitpar.Toolbar = function(mainView) {
     }
 
     self.toggleTheme = function() {
-        $("body").toggleClass("dark-mode");
-        localStorage.setItem("theme", $("body").hasClass("dark-mode") ? "dark" : "light");
+        gitpar.applyTheme($("body").hasClass("dark-mode") ? "light" : "dark");
     }
 
     // -- repo dropdown --
@@ -1628,9 +1674,6 @@ gitpar.Toolbar = function(mainView) {
         mainView.searchOverlay.show();
     });
 
-    if (localStorage.getItem("theme") === "dark") {
-        $("body").addClass("dark-mode");
-    }
     self.applyAutoFetch();
 
     $("body").append(self.compareModal);
@@ -5791,6 +5834,7 @@ function MainUi() {
         gitpar.recentWorkspaces = context.recent_workspaces || [];
         gitpar.workspaceRepos = context.workspace_repos || [];
         gitpar.viewonly = context.view_only;
+        gitpar.adoptTheme(context.theme);
 
         var title = $("title")[0];
         title.textContent = context.has_repo ? "Git - " + gitpar.repo : "GitPar";
