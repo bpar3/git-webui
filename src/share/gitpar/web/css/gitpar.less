@@ -23,7 +23,6 @@
 @diff-added-dark:    #669900;
 @diff-removed-light: #ff9494;
 @diff-removed-dark:  #cc0000;
-@separator-line:     @list-group-border;
 @log-view-opacity:   0.9;
 
 // Theme tokens, as CSS custom properties (not LESS variables) so
@@ -88,8 +87,8 @@ body.dark-mode {
     --gf-toolbar-border:    #3d3d3d;
     --gf-panel-bg:          #1b1b1b;
     --gf-page-bg:           #141414;
-    --gf-border:            #3a3a3a;
-    --gf-border-strong:     #4a4a4a;
+    --gf-border:            #262626;
+    --gf-border-strong:     #333333;
     --gf-text:              #e2e2e2;
     --gf-text-muted:        #9a9a9a;
     --gf-text-faint:        #767676;
@@ -1046,7 +1045,7 @@ body {
         position: relative;
         .display-flex();
         .flex-direction(column);
-        border-right: 1px solid @separator-line;
+        border-right: 1px solid var(--gf-border);
         background: var(--gf-toolbar-bg);
         min-height: 0;
     }
@@ -1103,13 +1102,31 @@ body {
             .display-flex();
             align-items: center;
             justify-content: flex-end;
-            // Expanding a "+N" pill can put several chips on one row, so
-            // they wrap instead of overflowing the column.
-            flex-wrap: wrap;
+            // Wrapping is what lets an expanded "+N" pill's several
+            // chips flow across lines. A collapsed row only ever holds
+            // one chip plus its "+N" pill, which must stay beside it -
+            // see .history-view-ref-row-expanded below, which turns
+            // wrapping back on for that case.
+            flex-wrap: nowrap;
             gap: 4px;
             max-width: ~"calc(100% - 16px)";
             min-width: 0;
             right: 8px;
+
+            &.history-view-ref-row-expanded {
+                flex-wrap: wrap;
+            }
+
+            // Basis 0 so a long branch name's natural width doesn't
+            // count against the row when deciding whether the "+N"
+            // pill fits beside it - the chip grows to fill the space
+            // instead, then ellipsizes if the name still doesn't fit.
+            // Only for the collapsed row: an expanded row's chips need
+            // their natural width for the wrap above to break lines.
+            &:not(.history-view-ref-row-expanded) .ref-chip {
+                flex: 1 1 0;
+                min-width: 0;
+            }
         }
 
         .ref-chip {
@@ -1448,11 +1465,11 @@ body {
                 background: var(--gf-accent-bg);
             }
 
-            // Selection is carried by the fill and the accent colour;
-            // bumping the weight as well made the selected subject read
-            // as bold against every other row.
+            // The card immediately below repeats the full message, so
+            // the truncated subject here would just be the same text
+            // twice - hidden rather than recoloured, matching GitFiend.
             header .list-group-item-text {
-                color: var(--gf-accent);
+                display: none;
             }
         }
     }
@@ -1934,7 +1951,7 @@ body {
         overflow: auto;
 
         .file-list-left-container {
-            border: solid @separator-line;
+            border: solid var(--gf-border);
             border-width: 0 1px 0 0;
         }
         .file-list-right-container, .file-list-left-container {
@@ -2080,7 +2097,7 @@ body {
             overflow: auto;
 
             &:nth-child(2) {
-                border: solid @separator-line;
+                border: solid var(--gf-border);
                 border-width: 0 0 0 1px;
             }
 
@@ -2268,7 +2285,7 @@ body {
     .breadcrumb {
         padding: @padding-large-vertical @padding-large-horizontal;
         margin-bottom: 0;
-        border-bottom: 1px @separator-line solid;
+        border-bottom: 1px var(--gf-border) solid;
     }
 
     #tree-view-tree-content {
@@ -2487,7 +2504,7 @@ body {
         .flex(1);
         .display-flex();
         .align-items(stretch);
-        border: solid @separator-line;
+        border: solid var(--gf-border);
         border-width: 1px 0 0 0;
         cursor: default;
 
@@ -2543,7 +2560,7 @@ body {
             margin: 0;
             border-width: 0 1px 0 0;
             border-style: solid;
-            border-color: @separator-line;
+            border-color: var(--gf-border);
 
             .panel-heading {
                 .no-select();
@@ -2661,7 +2678,7 @@ body.dark-mode {
         flex-basis: auto;
         max-height: 14em;
         border-right: 0;
-        border-bottom: 1px @separator-line solid;
+        border-bottom: 1px var(--gf-border) solid;
     }
 
     #main-view {
@@ -2670,7 +2687,7 @@ body.dark-mode {
 
     #log-view {
         border-right: 0;
-        border-bottom: 1px @separator-line solid;
+        border-bottom: 1px var(--gf-border) solid;
         min-height: 14em;
         max-height: 38vh;
     }

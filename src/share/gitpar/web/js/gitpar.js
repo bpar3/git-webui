@@ -554,18 +554,22 @@ gitpar.copyToClipboard = function(text, label) {
     }
 }
 
-gitpar.git = function(cmd, arg1, arg2) {
+gitpar.git = function(cmd, arg1, arg2, arg3) {
     // cmd = git command line arguments
-    // other arguments = optional stdin content and a callback function:
+    // other arguments = optional stdin content, a callback function, and an
+    // optional error callback:
     // ex:
     // git("log", mycallback)
+    // git("log", mycallback, myErrorCallback)
     // git("commit -F -", "my commit message", mycallback)
     if (typeof(arg1) == "function") {
         var callback = arg1;
+        var onError = arg2;
     } else {
         // Convention : first line = git arguments, rest = process stdin
         cmd += "\n" + arg1;
         var callback = arg2;
+        var onError = arg3;
     }
     return $.post(gitpar.withRepoParam("git"), cmd, function(data, status, xhr) {
         if (xhr.status == 200) {
@@ -599,6 +603,12 @@ gitpar.git = function(cmd, arg1, arg2) {
                 }
             } else {
                 console.log(message);
+                // An error callback that returns true has handled the
+                // failure itself (e.g. retried), so the generic banner
+                // is skipped.
+                if (onError && onError(message) === true) {
+                    return;
+                }
                 gitpar.showError(message);
             }
         } else {
@@ -849,10 +859,13 @@ gitpar.Toolbar = function(mainView) {
         return current.display_name || current.local_name || current.remote_name || "Detached";
     }
 
-    self.loadBranches = function() {
+    self.loadBranches = function(callback) {
         if (!gitpar.repoPath) {
             gitpar.branches = [];
             self.updateStatusMeta();
+            if (callback) {
+                callback();
+            }
             return;
         }
         gitpar.apiGet("/api/branches", function(data) {
@@ -862,6 +875,9 @@ gitpar.Toolbar = function(mainView) {
             self.updateStatusMeta();
             if (mainView.historyView) {
                 mainView.historyView.refreshToolbar();
+            }
+            if (callback) {
+                callback();
             }
         });
     }
@@ -2373,7 +2389,7 @@ gitpar.LogView = function(historyView) {
         self.populate();
     };
 
-    self.populate = function() {
+    self.populate = function(isRetry) {
         var maxCount = 1000;
         if (content.childElementCount > 0) {
             // The last node is the 'Show more commits placeholder'. Remove it.
@@ -2386,10 +2402,12 @@ gitpar.LogView = function(historyView) {
         // in stashes taken from somewhere else.
         self.stashCommits = {};
         self.hiddenCommits = {};
+        var seededStash = false;
         if (!self.ref) {
             (gitpar.stashes || []).forEach(function(stash) {
                 self.stashCommits[stash.commit] = stash;
                 refSpec += " " + stash.commit;
+                seededStash = true;
                 // Seeding the walk with a stash drags in the index and
                 // untracked commits it records. They aren't history, and
                 // they can't be excluded with --not without also
@@ -2430,13 +2448,6 @@ gitpar.LogView = function(historyView) {
                     // place to show its commit card, and the graph is
                     // drawn from real row geometry to follow it.
                     entry.element.style.minHeight = self.lineHeight + "px";
-                    // Only the first load opens a commit by default.
-                    // Appending more commits must not, or collapsing the
-                    // open one and then loading further history would
-                    // pop a card open again on its own.
-                    if (!currentSelection && startAt == 0) {
-                        entry.select();
-                    }
                 } else {
                     self.nextSkip = startAt + maxCount;
                     break;
@@ -2457,6 +2468,18 @@ gitpar.LogView = function(historyView) {
 
             self.updateGraph(startAt);
             historyView.positionRefChips();
+        }, function(message) {
+            // A stash dropped/cleared outside the app (or pruned by gc
+            // after being dropped) leaves its commit unreachable, so the
+            // walk seeded with the cached stash SHA fails outright and
+            // the whole list goes blank. Resync the stash cache and
+            // retry once rather than leaving the view stuck.
+            if (isRetry !== true && seededStash && /bad object/.test(message)) {
+                historyView.mainView.repoChrome.loadBranches(function() {
+                    self.populate(true);
+                });
+                return true;
+            }
         });
     };
 
@@ -4208,6 +4231,11 @@ gitpar.HistoryView = function(mainView) {
         groups.forEach(function(group) {
             var row = $('<div class="history-view-ref-row"></div>');
             var expanded = self.expandedRefCommits[group.commit];
+            // Collapsed rows hold at most one chip plus its "+N" pill,
+            // which must always stay on the same line - the chip shrinks
+            // (ellipsis) rather than the pill wrapping below it. Expanded
+            // rows can hold many chips and still wrap across lines.
+            row.toggleClass("history-view-ref-row-expanded", !!expanded);
 
             var addChip = function(refInfo) {
                 var chipClass = "ref-chip-remote";
