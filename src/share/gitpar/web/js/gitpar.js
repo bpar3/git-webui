@@ -2100,7 +2100,7 @@ gitpar.Toolbar = function(mainView) {
             return;
         }
         gitpar.openRepos.forEach(function(repo) {
-            var tab = $('<div class="repo-tab"><span class="repo-tab-name"></span><button type="button" class="repo-tab-close" title="Close">&times;</button></div>');
+            var tab = $('<div class="repo-tab" draggable="true"><span class="repo-tab-name"></span><button type="button" class="repo-tab-close" title="Close">&times;</button></div>');
             if (repo.path == gitpar.activeRepoId) {
                 tab.addClass("active");
             }
@@ -2112,11 +2112,57 @@ gitpar.Toolbar = function(mainView) {
                 event.stopPropagation();
                 self.closeRepoTab(repo.path);
             });
+            // Reordering is purely a client-side arrangement - open_repos
+            // is persisted with a merge-safe add/remove delta (see
+            // save_open_repos_delta) so two instances' tab lists combine
+            // safely; an explicit order doesn't merge the same way; so a
+            // drag here doesn't survive a reload or reach other repo
+            // tabs, only this window's.
+            tab.on("dragstart", function(event) {
+                self.draggedRepoId = repo.path;
+                tab.addClass("dragging");
+                event.originalEvent.dataTransfer.effectAllowed = "move";
+                event.originalEvent.dataTransfer.setData("text/plain", repo.path);
+            });
+            tab.on("dragend", function() {
+                self.draggedRepoId = null;
+                $(".repo-tab", strip).removeClass("dragging drag-over");
+            });
+            tab.on("dragover", function(event) {
+                if (!self.draggedRepoId || self.draggedRepoId == repo.path) {
+                    return;
+                }
+                event.preventDefault();
+                event.originalEvent.dataTransfer.dropEffect = "move";
+                tab.addClass("drag-over");
+            });
+            tab.on("dragleave", function() {
+                tab.removeClass("drag-over");
+            });
+            tab.on("drop", function(event) {
+                event.preventDefault();
+                tab.removeClass("drag-over");
+                self.reorderRepoTab(self.draggedRepoId, repo.path);
+            });
             strip.append(tab);
         });
         var addButton = $('<button type="button" class="repo-tab-add" title="Open another repo">+</button>');
         addButton.click(self.openPicker);
         strip.append(addButton);
+    }
+
+    self.reorderRepoTab = function(draggedId, targetId) {
+        if (!draggedId || draggedId == targetId) {
+            return;
+        }
+        var fromIndex = gitpar.openRepos.findIndex(function(repo) { return repo.path == draggedId; });
+        var toIndex = gitpar.openRepos.findIndex(function(repo) { return repo.path == targetId; });
+        if (fromIndex == -1 || toIndex == -1) {
+            return;
+        }
+        var moved = gitpar.openRepos.splice(fromIndex, 1)[0];
+        gitpar.openRepos.splice(toIndex, 0, moved);
+        self.renderRepoTabs();
     }
 
     self.switchActiveRepo = function(repoId) {

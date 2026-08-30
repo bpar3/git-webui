@@ -388,15 +388,31 @@ body {
         cursor: pointer;
         max-width: 16em;
         flex: 0 1 auto;
+        // Reserved even when unused so the active tab's indicator (below)
+        // doesn't shift every tab's height by appearing only sometimes.
+        box-shadow: inset 0 -2px 0 transparent;
 
         &.active {
             background: var(--gf-toolbar-bg);
             color: var(--gf-text);
             font-weight: bold;
+            // The background alone (matching the toolbar strip right
+            // below it) read as barely different from an unselected tab
+            // sitting next to a hover state - this is the actual "you are
+            // here" marker.
+            box-shadow: inset 0 -2px 0 var(--gf-accent);
         }
 
         &:hover {
             color: var(--gf-text);
+        }
+
+        &.dragging {
+            opacity: 0.5;
+        }
+
+        &.drag-over {
+            box-shadow: inset 2px 0 0 var(--gf-accent);
         }
     }
 
