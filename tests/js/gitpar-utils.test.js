@@ -673,3 +673,29 @@ describe("gitpar.suggestWorktreePath", () => {
             .toBe("/home/binu/repos/repo-beta");
     });
 });
+
+describe("gitpar.isBranchNotFullyMergedError", () => {
+    let gitpar;
+
+    beforeEach(() => {
+        gitpar = loadGitpar();
+    });
+
+    test("recognises git's own message for an unmerged branch", () => {
+        const message =
+            "error: the branch 'tmg-plugin-integration' is not fully merged\n" +
+            "hint: If you are sure you want to delete it, run 'git branch -D tmg-plugin-integration'\n" +
+            "hint: Disable this message with \"git config set advice.forceDeleteBranch false\"";
+        expect(gitpar.isBranchNotFullyMergedError(message)).toBe(true);
+    });
+
+    test("returns false for an unrelated delete failure", () => {
+        expect(gitpar.isBranchNotFullyMergedError("error: Cannot delete branch 'main' checked out at '/repo'"))
+            .toBe(false);
+    });
+
+    test("returns false for an empty or missing message", () => {
+        expect(gitpar.isBranchNotFullyMergedError("")).toBe(false);
+        expect(gitpar.isBranchNotFullyMergedError(undefined)).toBe(false);
+    });
+});

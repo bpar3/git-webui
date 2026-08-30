@@ -678,6 +678,19 @@ gitpar.parseNoUpstreamError = function(message) {
     return match ? { remote: match[1], branch: match[2] } : null;
 }
 
+// `git branch -d` refuses to delete anything that isn't a strict
+// ancestor of HEAD (or the branch's own upstream) - which is the right
+// default, but it also fires on a branch that was genuinely finished
+// and squash- or rebase-merged, since neither operation leaves the
+// original commits reachable the way an ordinary merge does. git's own
+// message already names the fix (-D); this only recognises that it
+// said so, the same way parseNoUpstreamError recognises push's.
+gitpar.NOT_FULLY_MERGED_PATTERN = /is not fully merged/;
+
+gitpar.isBranchNotFullyMergedError = function(message) {
+    return gitpar.NOT_FULLY_MERGED_PATTERN.test(String(message || ""));
+}
+
 // Parses `git diff-tree --name-status` output into {status, path} pairs.
 // Fields are tab-separated; renames and copies carry a similarity score
 // on the status (R100) and a second path, which is the one to show.
@@ -1357,7 +1370,30 @@ gitpar.Toolbar = function(mainView) {
         if (!window.confirm("Delete branch '" + localName + "'?")) {
             return;
         }
-        gitpar.apiPost("/api/branches/delete", {local_name: localName}, gitpar.reloadApp);
+        self.deleteBranch(localName, false);
+    }
+
+    self.deleteBranch = function(localName, force) {
+        gitpar.apiPost("/api/branches/delete", {local_name: localName, force: !!force}, gitpar.reloadApp, function(xhr) {
+            var message = gitpar.parseApiError(xhr, "Unable to delete branch");
+            // A first, safe attempt (force is still false here - a
+            // retry never asks a second time) that failed only because
+            // the branch isn't a strict ancestor is offered a retry with
+            // -D; every other failure - a branch checked out elsewhere,
+            // one that's genuinely unmerged, anything else - still shows
+            // as a normal error instead.
+            if (!force && gitpar.isBranchNotFullyMergedError(message)) {
+                if (window.confirm(
+                    "'" + localName + "' is not fully merged into its usual ancestry - normal " +
+                    "after a squash or rebase merge, since neither leaves the original commits " +
+                    "reachable the way an ordinary merge does. Delete it anyway?"
+                )) {
+                    self.deleteBranch(localName, true);
+                }
+                return;
+            }
+            gitpar.showError(message);
+        });
     }
 
     self.removeRemoteBranch = function(remoteName) {
