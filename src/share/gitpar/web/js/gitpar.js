@@ -1777,7 +1777,13 @@ gitpar.Toolbar = function(mainView) {
             event.preventDefault();
         }
         var strategy = gitpar.pullStrategy;
-        var args = strategy == "rebase" ? "pull --rebase" : "pull";
+        // --prune: a plain fetch (which pull runs first) never removes a
+        // remote-tracking ref for a branch that's gone from the remote -
+        // that's what --prune is for, and without it every fetch/pull
+        // leaves that branch showing here forever, looking exactly as
+        // live as one that still exists. Only the tracking ref goes;
+        // a local branch of the same name, if there is one, is untouched.
+        var args = (strategy == "rebase" ? "pull --rebase" : "pull") + " --prune";
         self.runRemoteAction("toolbar-pull", args, function(data) {
             self.loadBranches();
             self.refreshActiveSection();
@@ -1829,7 +1835,14 @@ gitpar.Toolbar = function(mainView) {
         if (event) {
             event.preventDefault();
         }
-        self.runRemoteAction("toolbar-fetch", "fetch", function(data) {
+        // --prune: without it, a branch deleted on the remote keeps its
+        // local remote-tracking ref indefinitely - fetch has no reason
+        // to touch a ref it wasn't told to remove - so it goes on
+        // looking exactly like a branch that's still there, in every
+        // repo that never happens to fetch it away. This is also what
+        // the periodic auto-fetch timer runs, so a background fetch
+        // cleans up the same way an explicit one does.
+        self.runRemoteAction("toolbar-fetch", "fetch --prune", function(data) {
             self.loadBranches();
             self.refreshActiveSection();
         });
