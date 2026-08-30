@@ -2833,15 +2833,42 @@ body {
         .flex(1);
         width: 100%;
 
-        iframe {
-            .flex(1);
-            border: 0;
-        }
-
         .tree-blob-toolbar {
             flex: 0 0 auto;
             padding: 6px 10px;
             border-bottom: 1px solid var(--gf-border);
+        }
+
+        #tree-view-blob-text {
+            .flex(1);
+            overflow: auto;
+            font-family: @font-family-monospace;
+            font-size: 11px;
+            background: var(--gf-panel-bg);
+            color: var(--gf-text);
+
+            .tree-blob-line {
+                .display-flex();
+
+                &:hover {
+                    background: var(--gf-row-hover);
+                }
+            }
+
+            .tree-blob-line-num {
+                flex: 0 0 4em;
+                padding: 2px 8px;
+                text-align: right;
+                color: var(--gf-text-faint);
+                border-right: 1px solid var(--gf-border);
+                user-select: none;
+            }
+
+            .tree-blob-line-text {
+                .flex(1);
+                padding: 2px 8px;
+                white-space: pre;
+            }
         }
 
         #tree-view-blame-content {

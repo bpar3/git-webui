@@ -4872,24 +4872,39 @@ gitpar.TreeView = function(commitView) {
         $(self.element.lastElementChild).remove();
         var container = $(  '<div id="tree-view-blob-content">' +
                                 '<div class="tree-blob-toolbar"><button type="button" class="btn btn-default btn-xs tree-blame-toggle">Blame</button></div>' +
-                                '<iframe src="' + gitpar.withRepoParam("/git/cat-file/" + self.stack[self.stack.length - 1].object) + '"></iframe>' +
+                                '<div id="tree-view-blob-text"></div>' +
                             '</div>');
         container.appendTo(self.element);
         $(".tree-blame-toggle", container).click(self.toggleBlame);
+        var textContainer = $("#tree-view-blob-text", container)[0];
+        gitpar.git("cat-file -p " + self.stack[self.stack.length - 1].object, function(data) {
+            // Drop the single trailing newline every file ends with -
+            // keeping it would draw a phantom last line.
+            var lines = data.split("\n");
+            if (lines.length > 0 && lines[lines.length - 1] === "") {
+                lines.pop();
+            }
+            lines.forEach(function(text, index) {
+                var row = $('<div class="tree-blob-line"><span class="tree-blob-line-num"></span><span class="tree-blob-line-text"></span></div>');
+                $(".tree-blob-line-num", row).text(index + 1);
+                $(".tree-blob-line-text", row).text(text);
+                textContainer.appendChild(row[0]);
+            });
+        });
     }
 
     self.toggleBlame = function() {
         var existing = $("#tree-view-blame-content", self.element);
         if (existing.length > 0) {
             existing.remove();
-            $("#tree-view-blob-content iframe", self.element).show();
+            $("#tree-view-blob-text", self.element).show();
             return;
         }
         var path = self.getCurrentPath();
         gitpar.apiGet(
             "/api/blame?path=" + encodeURIComponent(path) + "&rev=" + encodeURIComponent(self.commitRef || "HEAD"),
             function(data) {
-                $("#tree-view-blob-content iframe", self.element).hide();
+                $("#tree-view-blob-text", self.element).hide();
                 var blameContent = $('<div id="tree-view-blame-content"></div>');
                 (data.lines || []).forEach(function(line) {
                     var row = $('<div class="blame-line"><span class="blame-line-meta"></span><span class="blame-line-text"></span></div>');
