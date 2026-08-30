@@ -6354,6 +6354,7 @@ gitpar.WorkspaceView = function(mainView) {
 
     self.element = $(   '<div id="workspace-view">' +
                             '<div class="workspace-toolbar">' +
+                                '<span class="workspace-changed-count"></span>' +
                                 '<input type="text" class="form-control input-sm workspace-filter" placeholder="Filter">' +
                                 '<div class="workspace-dropdown">' +
                                     '<button type="button" class="btn btn-default btn-sm workspace-dropdown-btn" data-dropdown="stash">Stash &#9662;</button>' +
@@ -6373,8 +6374,12 @@ gitpar.WorkspaceView = function(mainView) {
                                 '</div>' +
                             '</div>' +
                             '<div class="conflict-banner"></div>' +
-                            '<div id="workspace-diff-view"></div>' +
-                            '<div id="workspace-editor"></div>' +
+                            '<div id="workspace-body">' +
+                                '<div id="workspace-sidebar">' +
+                                    '<div id="workspace-file-lists"></div>' +
+                                '</div>' +
+                                '<div id="workspace-diff-view"></div>' +
+                            '</div>' +
                         '</div>')[0];
     $(".workspace-filter", self.element).on("input", self.onFilterInput);
     $(".workspace-dropdown-btn", self.element).click(function(event) {
@@ -6401,13 +6406,28 @@ gitpar.WorkspaceView = function(mainView) {
     var workspaceDiffView = $("#workspace-diff-view", self.element)[0];
     self.diffView = new gitpar.DiffView(true, true, self);
     workspaceDiffView.appendChild(self.diffView.element);
-    var workspaceEditor = $("#workspace-editor", self.element)[0];
-    self.workingCopyView = new gitpar.ChangedFilesView(self, "working-copy", "Working Copy");
-    workspaceEditor.appendChild(self.workingCopyView.element);
+    var workspaceSidebar = $("#workspace-sidebar", self.element)[0];
+    var workspaceFileLists = $("#workspace-file-lists", self.element)[0];
+    // Staged and unstaged live in the same scrollable sidebar column, one
+    // above the other - closer to a single unified file list - but stay
+    // two labeled, independently selectable sections rather than merging
+    // into one list, since staging here is still an explicit multi-select
+    // + Stage/Unstage action rather than a single stage-everything toggle.
+    self.stagingAreaView = new gitpar.ChangedFilesView(self, "staging-area", "Staged Changes");
+    workspaceFileLists.appendChild(self.stagingAreaView.element);
+    self.workingCopyView = new gitpar.ChangedFilesView(self, "working-copy", "Changes");
+    workspaceFileLists.appendChild(self.workingCopyView.element);
     self.commitMessageView = new gitpar.CommitMessageView(self);
-    workspaceEditor.appendChild(self.commitMessageView.element);
-    self.stagingAreaView = new gitpar.ChangedFilesView(self, "staging-area", "Staging Area");
-    workspaceEditor.appendChild(self.stagingAreaView.element);
+    workspaceSidebar.appendChild(self.commitMessageView.element);
+
+    // Only relevant once both lists exist - refreshCounter() (called by
+    // each list after every update or selection change) drives this.
+    self.refreshChangedCount = function() {
+        var total = self.workingCopyView.filesCount + self.stagingAreaView.filesCount;
+        $(".workspace-changed-count", self.element).text(
+            total == 0 ? "No changes" : total + (total == 1 ? " changed file" : " changed files"));
+    };
+    self.refreshChangedCount();
 };
 
 /*
@@ -6615,6 +6635,14 @@ gitpar.ChangedFilesView = function(workspaceView, type, label) {
         $(".changed-files-count", self.element).text(selected + "/" + total);
         $(".changed-files-toggle", self.element).toggle(total > 0);
         $(".changed-files-check", self.element).toggleClass("checked", total > 0 && selected == total);
+        // Staged and unstaged share one sidebar column now - an empty
+        // section (usually "Staged Changes", before anything is staged)
+        // would otherwise sit there as dead space, so it only takes up
+        // room once it actually has something to show.
+        $(self.element).toggle(total > 0);
+        if (workspaceView.refreshChangedCount) {
+            workspaceView.refreshChangedCount();
+        }
     }
 
     self.toggleAll = function() {

@@ -2946,6 +2946,13 @@ body {
     border-bottom: 1px solid var(--gf-toolbar-border);
     position: relative;
 
+    .workspace-changed-count {
+        flex: 0 0 auto;
+        font-weight: 600;
+        color: var(--gf-text);
+        white-space: nowrap;
+    }
+
     .workspace-filter {
         width: 16em;
     }
@@ -3049,69 +3056,24 @@ body {
     }
 }
 
-#workspace-view, #commit-explorer-view {
+#commit-explorer-view {
     .display-flex();
     .flex-direction(column);
     .flex(1);
 
-    #workspace-diff-view, #commit-explorer-diff-view {
+    #commit-explorer-diff-view {
         .display-flex();
         .flex(2);
         overflow: auto;
     }
 
-    #workspace-editor, #commit-explorer-navigator-view {
+    #commit-explorer-navigator-view {
         .flex(1);
         .display-flex();
         .align-items(stretch);
         border: solid var(--gf-border);
         border-width: 1px 0 0 0;
         cursor: default;
-
-        #working-copy-view, #staging-area-view {
-            .no-select();
-            .flex(2);
-
-            .file-list-container {
-                .flex(1);
-                overflow: auto;
-
-                .list-group {
-                    display: table;
-                    margin: 0;
-                    width: 100%;
-
-                    .list-group-item:first-child {
-                        border-top: 0;
-                    }
-
-                    .list-group-item {
-                        padding: @padding-small-vertical @padding-small-horizontal;
-                        border-left: 0;
-                        border-right: 0;
-                        white-space: nowrap;
-                    }
-                }
-            }
-        }
-
-        #commit-message-view {
-            .flex(3);
-
-            textarea {
-                .flex(1);
-                resize: none;
-                margin: 0;
-                border: 0;
-                outline: none;
-                padding: 0.3em;
-            }
-
-            .commit-message-commit {
-                margin: 8px;
-                border-radius: 4px;
-            }
-        }
 
         .panel {
             .flex(1);
@@ -3141,9 +3103,130 @@ body {
     }
 }
 
+// A left sidebar (unified, scrollable file list + commit message, docked
+// bottom) beside a full-height diff pane on the right - GitFiend's
+// layout. Staged and unstaged still render as two labeled sections
+// within that one scrolling list rather than truly merging into one,
+// since staging here stays an explicit multi-select + Stage/Unstage
+// action instead of a single per-row checkbox toggle.
 #workspace-view {
+    .display-flex();
+    .flex-direction(column);
+    .flex(1);
+
     .diff-line-add, .diff-line-del, .diff-line-offset {
         cursor: pointer;
+    }
+
+    #workspace-body {
+        .flex(1);
+        .display-flex();
+        .align-items(stretch);
+        min-height: 0;
+        border: solid var(--gf-border);
+        border-width: 1px 0 0 0;
+        cursor: default;
+
+        #workspace-sidebar {
+            .flex(0 0 340px);
+            .display-flex();
+            .flex-direction(column);
+            min-width: 0;
+            border-width: 0 1px 0 0;
+            border-style: solid;
+            border-color: var(--gf-border);
+
+            #workspace-file-lists {
+                .no-select();
+                .flex(1);
+                overflow: auto;
+
+                #working-copy-view, #staging-area-view {
+                    .display-flex();
+                    .flex-direction(column);
+                    margin: 0;
+                    border-width: 0 0 1px 0;
+                    border-style: solid;
+                    border-color: var(--gf-border);
+
+                    .panel-heading {
+                        .no-select();
+                        padding: @padding-small-vertical @padding-small-horizontal;
+                        .display-flex();
+                        .align-items(center);
+                        background: var(--gf-toolbar-bg);
+
+                        h5 {
+                            .flex(1);
+                            margin: 0;
+                            font-size: 11px;
+                            text-transform: uppercase;
+                            letter-spacing: 0.03em;
+                            color: var(--gf-text-muted);
+                        }
+                    }
+
+                    .file-list-container {
+                        .list-group {
+                            display: table;
+                            margin: 0;
+                            width: 100%;
+
+                            .list-group-item:first-child {
+                                border-top: 0;
+                            }
+
+                            .list-group-item {
+                                padding: @padding-small-vertical @padding-small-horizontal;
+                                border-left: 0;
+                                border-right: 0;
+                                white-space: nowrap;
+                            }
+                        }
+                    }
+                }
+            }
+
+            #commit-message-view {
+                .flex(0 0 auto);
+                border-width: 1px 0 0 0;
+                border-style: solid;
+                border-color: var(--gf-border);
+
+                .panel-heading {
+                    .no-select();
+                    padding: @padding-small-vertical @padding-small-horizontal;
+                    .display-flex();
+                    .align-items(center);
+
+                    h5 {
+                        .flex(1);
+                        margin: 0;
+                    }
+                }
+
+                textarea {
+                    height: 6.5em;
+                    resize: vertical;
+                    margin: 0;
+                    border: 0;
+                    outline: none;
+                    padding: 0.3em;
+                }
+
+                .commit-message-commit {
+                    margin: 8px;
+                    border-radius: 4px;
+                }
+            }
+        }
+
+        #workspace-diff-view {
+            .flex(1);
+            .display-flex();
+            overflow: auto;
+            min-width: 0;
+        }
     }
 }
 
