@@ -3973,7 +3973,11 @@ gitpar.LogView = function(historyView) {
         self.loadCardFiles = function() {
             var fileBox = $(".log-entry-card-files", self.card);
             fileBox.text("Loading files…");
-            gitpar.git("diff-tree --no-commit-id --name-status -r -m --first-parent " + self.commit, function(data) {
+            // --root: without it, diff-tree silently produces nothing for
+            // a commit with no parent (the repo's very first commit) -
+            // it needs telling explicitly to diff a root commit against
+            // the empty tree rather than against a (nonexistent) parent.
+            gitpar.git("diff-tree --no-commit-id --name-status -r -m --first-parent --root " + self.commit, function(data) {
                 if (!self.card) {
                     return;
                 }
@@ -5265,7 +5269,8 @@ gitpar.CommitDetailView = function(historyView) {
         var list = $(".commit-detail-file-list", self.element);
         list.text("Loading files…");
         var commit = self.entry.commit;
-        gitpar.git("diff-tree --no-commit-id --name-status -r -m --first-parent " + commit, function(data) {
+        // --root: see the matching comment on the log card's loadCardFiles.
+        gitpar.git("diff-tree --no-commit-id --name-status -r -m --first-parent --root " + commit, function(data) {
             if (!self.entry || self.entry.commit != commit) {
                 return;
             }
