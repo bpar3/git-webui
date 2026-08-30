@@ -699,3 +699,54 @@ describe("gitpar.isBranchNotFullyMergedError", () => {
         expect(gitpar.isBranchNotFullyMergedError(undefined)).toBe(false);
     });
 });
+
+describe("gitpar.defaultRemoteName", () => {
+    let gitpar;
+
+    beforeEach(() => {
+        gitpar = loadGitpar();
+    });
+
+    test("prefers origin when it's one of the remotes", () => {
+        const remotes = [{ name: "upstream" }, { name: "origin" }];
+        expect(gitpar.defaultRemoteName(remotes)).toBe("origin");
+    });
+
+    test("falls back to the alphabetically first remote otherwise", () => {
+        const remotes = [{ name: "fork-b" }, { name: "fork-a" }];
+        expect(gitpar.defaultRemoteName(remotes)).toBe("fork-a");
+    });
+
+    test("returns empty for no remotes", () => {
+        expect(gitpar.defaultRemoteName([])).toBe("");
+        expect(gitpar.defaultRemoteName(undefined)).toBe("");
+    });
+});
+
+describe("gitpar.matchRemoteName", () => {
+    let gitpar;
+    const remotes = [{ name: "origin" }, { name: "upstream" }];
+
+    beforeEach(() => {
+        gitpar = loadGitpar();
+    });
+
+    test("matches an exact remote name", () => {
+        expect(gitpar.matchRemoteName(remotes, "upstream")).toBe("upstream");
+    });
+
+    test("tolerates surrounding whitespace", () => {
+        expect(gitpar.matchRemoteName(remotes, "  origin  ")).toBe("origin");
+    });
+
+    test("does not fuzzy-match a near-miss", () => {
+        expect(gitpar.matchRemoteName(remotes, "Origin")).toBeNull();
+        expect(gitpar.matchRemoteName(remotes, "orig")).toBeNull();
+    });
+
+    test("returns null for empty or missing input", () => {
+        expect(gitpar.matchRemoteName(remotes, "")).toBeNull();
+        expect(gitpar.matchRemoteName(remotes, null)).toBeNull();
+        expect(gitpar.matchRemoteName(remotes, undefined)).toBeNull();
+    });
+});

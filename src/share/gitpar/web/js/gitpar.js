@@ -678,6 +678,33 @@ gitpar.parseNoUpstreamError = function(message) {
     return match ? { remote: match[1], branch: match[2] } : null;
 }
 
+// "origin" if it's one of the configured remotes, otherwise whichever
+// remote sorts first - a plain default for the common case, so the
+// prompt that asks which remote to publish to starts on a reasonable
+// answer instead of an arbitrary one.
+gitpar.defaultRemoteName = function(remotes) {
+    var names = (remotes || []).map(function(remote) { return remote.name; });
+    if (names.indexOf("origin") != -1) {
+        return "origin";
+    }
+    return names.slice().sort()[0] || "";
+}
+
+// Matches what was typed against the repo's actual remotes, tolerating
+// surrounding whitespace but nothing fuzzier than that - a mistyped
+// remote name should be caught, not silently coerced into whichever
+// one happens to look close.
+gitpar.matchRemoteName = function(remotes, typed) {
+    if (!typed) {
+        return null;
+    }
+    var trimmed = typed.trim();
+    var match = (remotes || []).filter(function(remote) {
+        return remote.name == trimmed;
+    })[0];
+    return match ? match.name : null;
+}
+
 // `git branch -d` refuses to delete anything that isn't a strict
 // ancestor of HEAD (or the branch's own upstream) - which is the right
 // default, but it also fires on a branch that was genuinely finished
@@ -1411,11 +1438,83 @@ gitpar.Toolbar = function(mainView) {
         if (!branchName) {
             return;
         }
+        // Which remote to publish to is only ever ambiguous with more
+        // than one configured - a single remote (or none) is exactly
+        // what git itself would use, so there's nothing to ask and the
+        // branch is created the same way it always was. This is also
+        // why the remote list is fetched here rather than kept cached
+        // anywhere: it's read once, right before the one prompt that
+        // needs it, rather than a piece of state to keep in sync.
+        gitpar.apiGet("/api/remotes", function(data) {
+            var remotes = data.remotes || [];
+            if (remotes.length < 2) {
+                self.createBranchWithRemote(branchName, startPoint, null);
+                return;
+            }
+            var names = remotes.map(function(remote) { return remote.name; });
+            var typed = window.prompt(
+                "Push '" + branchName + "' to which remote? (" + names.join(", ") + ")\n" +
+                "Leave blank to create it locally only.",
+                gitpar.defaultRemoteName(remotes)
+            );
+            if (!typed || !typed.trim()) {
+                self.createBranchWithRemote(branchName, startPoint, null);
+                return;
+            }
+            var remote = gitpar.matchRemoteName(remotes, typed);
+            if (!remote) {
+                // createBranchWithRemote ends in a full page reload
+                // (checkout switched branches, which the rest of the
+                // app needs to pick up) - a showError here would be
+                // wiped out before it could be read, the same way any
+                // DOM state is. setFlashMessage is what survives that,
+                // read back and shown once the reload completes.
+                gitpar.setFlashMessage(
+                    "Branch created locally only",
+                    "'" + typed.trim() + "' is not one of this repo's remotes (" + names.join(", ") + ").",
+                    "error"
+                );
+            }
+            self.createBranchWithRemote(branchName, startPoint, remote);
+        }, function(xhr) {
+            // No remotes to ask about, or the listing itself failed -
+            // either way, falling back to the plain local create is the
+            // one behaviour that was always available.
+            self.createBranchWithRemote(branchName, startPoint, null);
+        });
+    }
+
+    self.createBranchWithRemote = function(branchName, startPoint, remote) {
+        // create already checks out the new branch (checkout: true is
+        // git checkout -b under the hood), so publishing it is just the
+        // push that follows - not a separate checkout first.
         gitpar.apiPost("/api/branches/create", {
             name: branchName,
             start_point: startPoint,
             checkout: true,
-        }, gitpar.reloadApp);
+        }, function() {
+            if (!remote) {
+                gitpar.reloadApp();
+                return;
+            }
+            // remote/branchName are a chosen-from-a-list remote name and
+            // a ref-format branch name, not free-form text - the same
+            // reason other ref names are embedded unquoted elsewhere
+            // (onPushSetUpstream, for one).
+            self.runRemoteAction("toolbar-push", "push --set-upstream " + remote + " " + branchName, function() {
+                gitpar.reloadApp();
+            }, function(message) {
+                // The branch exists and is checked out either way - only
+                // the publish failed, so that's what's reported. Flashed
+                // rather than shown directly, since the reload right
+                // after would otherwise wipe out an error dialog before
+                // there was any chance to read it.
+                gitpar.setFlashMessage("Branch created, but not published", message, "error");
+                gitpar.reloadApp();
+            });
+        }, function(xhr) {
+            gitpar.showError(gitpar.parseApiError(xhr, "Unable to create branch"));
+        });
     }
 
     self.createTagAtRef = function(startPoint, suggestedName) {
