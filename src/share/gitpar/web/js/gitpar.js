@@ -6265,10 +6265,26 @@ gitpar.ChangedFilesView = function(workspaceView, type, label) {
 
     var self = this;
 
+    // Guards against two overlapping calls to update() - switching
+    // repo tabs, a remote action's own refresh, and a second click can
+    // each start one before the last has come back. status --porcelain
+    // is async, so the request that answers second isn't necessarily
+    // the one that was sent second; without this, whichever response
+    // arrived would append its own full set of rows on top of
+    // whatever the other one had already appended, since neither
+    // response knows the other exists. Only the response matching the
+    // generation current at the time it arrives is allowed to render -
+    // an overtaken one is dropped instead of appended.
+    self.updateGeneration = 0;
+
     self.update = function(onReady) {
+        var generation = ++self.updateGeneration;
         $(fileList).empty()
         var col = type == "working-copy" ? 1 : 0;
         gitpar.git("status --porcelain", function(data) {
+            if (generation != self.updateGeneration) {
+                return;
+            }
             self.filesCount = 0;
             gitpar.splitLines(data).forEach(function(line) {
                 var status = line[col];
