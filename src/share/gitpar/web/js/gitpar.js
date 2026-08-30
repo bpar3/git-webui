@@ -32,6 +32,11 @@ gitpar.workspaceRepos = [];
 gitpar.branches = [];
 gitpar.tags = [];
 gitpar.stashes = [];
+// True once gitpar.stashes actually reflects the open repository, rather
+// than being merely absent-of-stashes because nothing has loaded yet. The
+// log view needs this distinction to know whether it's safe to trust an
+// empty stash list when seeding its walk.
+gitpar.branchesLoaded = false;
 // Shas of commits no remote holds yet. A set, because every row in the
 // log asks whether it is one of these.
 gitpar.unpushed = [];
@@ -49,6 +54,7 @@ gitpar.clearRepoRefs = function() {
     gitpar.branches = [];
     gitpar.tags = [];
     gitpar.stashes = [];
+    gitpar.branchesLoaded = false;
     gitpar.setUnpushed([]);
 }
 
@@ -1256,10 +1262,20 @@ gitpar.Toolbar = function(mainView) {
             gitpar.branches = data.branches || [];
             gitpar.tags = data.tags || [];
             gitpar.stashes = data.stashes || [];
+            gitpar.branchesLoaded = true;
             gitpar.setUnpushed(data.unpushed);
             self.updateStatusMeta();
             if (mainView.historyView) {
                 mainView.historyView.refreshToolbar();
+                // The log's first render can land before this fetch
+                // resolves, in which case it walked --all without knowing
+                // about any stashes and drew their raw internal commits
+                // instead of a single collapsed stash row. Now that the
+                // real stash list is in, redraw it once to pick that up.
+                var logView = mainView.historyView.logView;
+                if (logView && logView.stashSeedPending) {
+                    logView.update(gitpar.historyRef);
+                }
             }
             if (callback) {
                 callback();
@@ -3318,6 +3334,12 @@ gitpar.LogView = function(historyView) {
 
     var self = this;
 
+    // Bumped on every update() so a populate() response that arrives after
+    // a newer update() has already reset the view (e.g. the stash-seed
+    // refresh in Toolbar.loadBranches racing the initial render) can tell
+    // it's stale and skip appending its rows onto the wrong generation.
+    self.populateGeneration = 0;
+
     self.update = function(ref) {
         $(svg).empty();
         streams = []
@@ -3326,10 +3348,12 @@ gitpar.LogView = function(historyView) {
         self.ref = ref || null;
         self.nextSkip = 0;
         self.lastShownDate = null;
+        self.populateGeneration++;
         self.populate();
     };
 
     self.populate = function(isRetry) {
+        var generation = self.populateGeneration;
         var maxCount = 1000;
         if (content.childElementCount > 0) {
             // The last node is the 'Show more commits placeholder'. Remove it.
@@ -3337,13 +3361,21 @@ gitpar.LogView = function(historyView) {
         }
         var startAt = content.childElementCount;
         var refSpec = self.ref ? self.ref : "--all";
-        // --all skips refs/stash, so stash commits are listed explicitly.
-        // Only when showing everything: focusing one ref shouldn't drag
-        // in stashes taken from somewhere else.
+        // --all walks refs/stash too, surfacing a stash's raw internal
+        // commits (its "index" and "untracked" parents) as ordinary,
+        // unmarked rows. Seeding the walk with the stash SHAs explicitly
+        // and hiding those internal parents (below) turns each stash back
+        // into a single recognizable row. Only when showing everything:
+        // focusing one ref shouldn't drag in stashes taken from elsewhere.
         self.stashCommits = {};
         self.hiddenCommits = {};
         var seededStash = false;
-        if (!self.ref) {
+        // gitpar.stashes starts out (and briefly stays, on first load or
+        // right after switching repos) empty before it's actually been
+        // fetched for this repo - seeding from it then would silently skip
+        // real stashes rather than draw them wrong, so wait for real data.
+        self.stashSeedPending = !self.ref && !gitpar.branchesLoaded;
+        if (!self.ref && gitpar.branchesLoaded) {
             (gitpar.stashes || []).forEach(function(stash) {
                 self.stashCommits[stash.commit] = stash;
                 refSpec += " " + stash.commit;
@@ -3360,6 +3392,12 @@ gitpar.LogView = function(historyView) {
         }
         var authorSpec = gitpar.historyAuthorFilter ? " --author=" + JSON.stringify(gitpar.historyAuthorFilter) : "";
         gitpar.git("log --date-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
+            if (generation !== self.populateGeneration) {
+                // A newer update() reset and repopulated the view while
+                // this request was in flight - appending now would
+                // duplicate rows onto content that's already current.
+                return;
+            }
             var start = 0;
             var count = 0;
             self.nextSkip = undefined;
