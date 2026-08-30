@@ -466,6 +466,12 @@ body {
             background: var(--gf-row-hover);
             color: var(--gf-text);
         }
+
+        // Pressed state, e.g. the diff pane's focus-mode toggle.
+        &.on {
+            background: var(--gf-accent-bg);
+            color: var(--gf-accent);
+        }
     }
 
     .toolbar-divider {
@@ -578,6 +584,12 @@ body {
         min-width: 14px;
         text-align: center;
     }
+}
+
+.toolbar-diff-controls {
+    .display-flex();
+    .align-items(center);
+    gap: 2px;
 }
 
 .toolbar-remote-actions {
@@ -3118,6 +3130,14 @@ body {
         cursor: pointer;
     }
 
+    // Toggled by the toolbar's focus (↗) button - hides the file
+    // list/message sidebar so a large diff gets the full window width.
+    // !important because #workspace-body #workspace-sidebar (3 ID
+    // selectors) otherwise outweighs this rule's 2 IDs + 1 class.
+    &.workspace-focus-mode #workspace-sidebar {
+        display: none !important;
+    }
+
     #workspace-body {
         .flex(1);
         .display-flex();
@@ -3206,17 +3226,19 @@ body {
                 }
 
                 textarea {
-                    height: 6.5em;
+                    height: 11em;
                     resize: vertical;
                     margin: 0;
                     border: 0;
                     outline: none;
-                    padding: 0.3em;
+                    padding: 0.5em;
                 }
 
                 .commit-message-commit {
                     margin: 8px;
+                    padding: 10px;
                     border-radius: 4px;
+                    font-weight: 600;
                 }
             }
         }

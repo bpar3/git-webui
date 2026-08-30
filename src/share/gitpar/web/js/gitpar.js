@@ -1562,13 +1562,51 @@ gitpar.Toolbar = function(mainView) {
     }
 
     self.showHistory = function() {
+        self.hideDiffControls();
         self.activateSection("history");
         mainView.historyView.update(gitpar.historyRef);
     }
 
     self.showBranches = function() {
+        self.hideDiffControls();
         self.activateSection("branches");
         mainView.branchesView.update();
+    }
+
+    // -- diff controls (hunk step / options / focus), shown in the main
+    // toolbar next to Fetch whenever the Changes view has a diff loaded,
+    // so they stay reachable without scrolling back up to the diff pane
+    // itself.
+
+    self.diffControlsTarget = null;
+
+    self.showDiffControls = function(diffView) {
+        self.diffControlsTarget = diffView;
+        var visible = !!(diffView && diffView.currentDiff);
+        $(".toolbar-diff-controls, .toolbar-diff-controls-divider", self.element).toggle(visible);
+    }
+
+    self.hideDiffControls = function() {
+        self.diffControlsTarget = null;
+        $(".toolbar-diff-controls, .toolbar-diff-controls-divider", self.element).hide();
+    }
+
+    self.renderDiffMoreMenu = function() {
+        var menu = $(".toolbar-menu[data-menu='diff-more']", self.element);
+        menu.empty();
+        var target = self.diffControlsTarget;
+        if (!target) {
+            return;
+        }
+        menu.append(self.appMenuItem("Ignore whitespace", null, function() {
+            target.toggleIgnoreWhitespace();
+        }, { checked: !!target.ignoreWhitespace }));
+        menu.append(self.appMenuItem("Complete file", null, function() {
+            target.allContext();
+        }, { checked: !!target.complete }));
+        menu.append(self.appMenuItem("Side-by-side", null, function() {
+            target.toggleSideBySide();
+        }, { checked: !!target.sideBySide }));
     }
 
     self.refreshActiveSection = function() {
@@ -2173,6 +2211,15 @@ gitpar.Toolbar = function(mainView) {
 
                                 '<div class="toolbar-spacer"></div>' +
 
+                                '<div class="toolbar-diff-controls" style="display:none">' +
+                                    '<button type="button" class="icon-btn" id="toolbar-diff-hunk-prev" title="Previous change" aria-label="Previous change">&#8963;</button>' +
+                                    '<button type="button" class="icon-btn" id="toolbar-diff-hunk-next" title="Next change" aria-label="Next change">&#8964;</button>' +
+                                    '<button type="button" class="icon-btn" id="toolbar-diff-more" title="Diff options" aria-label="Diff options">&#8942;</button>' +
+                                    '<div class="toolbar-menu" data-menu="diff-more"></div>' +
+                                    '<button type="button" class="icon-btn" id="toolbar-diff-focus" title="Focus diff" aria-label="Focus diff">&#8599;</button>' +
+                                '</div>' +
+                                '<div class="toolbar-divider toolbar-diff-controls-divider" style="display:none"></div>' +
+
                                 '<div class="toolbar-remote-actions">' +
                                     '<button type="button" class="toolbar-remote-btn" id="toolbar-pull" title="Left-click to pull, right-click for options">' +
                                         '<span class="toolbar-remote-btn-icon">&#8595;</span><span>Pull</span>' +
@@ -2263,6 +2310,24 @@ gitpar.Toolbar = function(mainView) {
     $("#toolbar-push", self.element).on("contextmenu", function(event) { self.onRemoteContextMenu("push", event); });
     $("#toolbar-fetch", self.element).click(self.onFetch);
     $("#toolbar-fetch", self.element).on("contextmenu", function(event) { self.onRemoteContextMenu("fetch", event); });
+
+    $("#toolbar-diff-hunk-prev", self.element).click(function() {
+        if (self.diffControlsTarget) { self.diffControlsTarget.stepHunk(-1); }
+    });
+    $("#toolbar-diff-hunk-next", self.element).click(function() {
+        if (self.diffControlsTarget) { self.diffControlsTarget.stepHunk(1); }
+    });
+    $("#toolbar-diff-more", self.element).click(function(event) {
+        event.stopPropagation();
+        self.renderDiffMoreMenu();
+        self.toggleMenu("diff-more", event.currentTarget);
+    });
+    $("#toolbar-diff-focus", self.element).click(function(event) {
+        if (mainView.workspaceView) {
+            var on = mainView.workspaceView.toggleFocusMode();
+            $(event.currentTarget).toggleClass("on", on).attr("aria-pressed", on);
+        }
+    });
 
     if (gitpar.viewonly) {
         $("#toolbar-push, #toolbar-pull, #app-menu-button", self.element).prop("disabled", true);
@@ -4082,6 +4147,9 @@ gitpar.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         } else {
             self.updateSimpleView(singleLines, diff);
         }
+        if (parent && parent.onDiffRefreshed) {
+            parent.onDiffRefreshed();
+        }
     }
 
     self.updateSimpleView = function(view, diff) {
@@ -4204,7 +4272,15 @@ gitpar.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         // (which toggles the whole hunk). Purely a rendering of the
         // line's selected state - the click still goes through
         // handleClick like clicking the line itself does.
-        if (hunkSelectionAllowed && !context.inHeader && (c == '+' || c == '-' || c == '@')) {
+        //
+        // A hunk header uses `hunk` rather than `!context.inHeader`: the
+        // very first hunk of a file is reached while context.inHeader is
+        // still true from the diff/index/---/+++ preamble - it's only
+        // cleared below, after this point - so gating on it here would
+        // silently skip the checkbox (and, further down, the Discard
+        // button) on that first hunk while later ones in the same diff
+        // render fine.
+        if (hunkSelectionAllowed && (hunk || (!context.inHeader && (c == '+' || c == '-')))) {
             $('<span class="diff-line-check">').appendTo(pre);
         } else if (hunkSelectionAllowed) {
             $('<span class="diff-line-check diff-line-check-empty">').appendTo(pre);
@@ -4218,8 +4294,9 @@ gitpar.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
         }
         $('<span class="diff-line-text">').text(line).appendTo(pre);
 
-        // Per-hunk discard, sitting on the hunk header row.
-        if (hunkSelectionAllowed && c == '@' && !context.inHeader && gitApplyType == "stage") {
+        // Per-hunk discard, sitting on the hunk header row. Uses `hunk`
+        // for the same reason as the checkbox above.
+        if (hunkSelectionAllowed && hunk && gitApplyType == "stage") {
             var discard = $('<button type="button" class="diff-hunk-discard">Discard</button>');
             discard.click(function(event) {
                 event.preventDefault();
@@ -6276,6 +6353,22 @@ gitpar.WorkspaceView = function(mainView) {
         mainView.switchTo(self.element);
     };
 
+    // The main toolbar's hunk-step / options / focus cluster proxies to
+    // whichever diff is currently loaded here - DiffView calls this after
+    // every refresh (selecting a file, clearing the selection, changing
+    // context lines, ...) so that cluster never goes stale or dangles on
+    // a file that's no longer shown.
+    self.onDiffRefreshed = function() {
+        mainView.repoChrome.showDiffControls(self.diffView);
+    };
+
+    // Hides the sidebar (file list + message box) so the diff fills the
+    // window width, for reading a large diff. Toggled from the same
+    // toolbar cluster.
+    self.toggleFocusMode = function() {
+        return $(self.element).toggleClass("workspace-focus-mode").hasClass("workspace-focus-mode");
+    };
+
     // Opens the Changes view on one particular file. The two lists are
     // rebuilt from a git call, so the selection is applied once they
     // have been - and a staged-only file is looked for in the second
@@ -6307,6 +6400,11 @@ gitpar.WorkspaceView = function(mainView) {
         self.conflictBanner.update();
         if (self.workingCopyView.getSelectedItemsCount() + self.stagingAreaView.getSelectedItemsCount() == 0) {
             self.diffView.update(undefined, undefined, undefined, mode);
+        } else {
+            // A selection survived from before this view was last shown -
+            // its diff never changed, so DiffView.refresh() (the usual
+            // trigger for onDiffRefreshed) doesn't run again on its own.
+            self.onDiffRefreshed();
         }
     };
 
