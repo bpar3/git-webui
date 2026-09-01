@@ -3738,10 +3738,60 @@ gitpar.CommitActionMenu = function(mainView) {
         self.list.append(button);
     }
 
+    // A stash's actions don't overlap the generic commit ones at all -
+    // there's no branch/tag to make from it and nothing to cherry-pick
+    // or revert (a stash is 2-3 parents deep with synthetic index/
+    // untracked-file commits, not a normal single change) - so a stash
+    // row gets its own menu entirely, matching what actually applies.
+    self.renderStashActions = function(stash) {
+        self.addAction("Unstash Changes", function() {
+            self.applyStash(stash, true);
+        }, gitpar.viewonly);
+        self.addAction("Unstash Changes and Keep Stash", function() {
+            self.applyStash(stash, false);
+        }, gitpar.viewonly);
+        self.addAction("Discard Stash", function() {
+            if (!window.confirm("Discard stash '" + stash.message + "'? This cannot be undone.")) {
+                return;
+            }
+            gitpar.apiPost("/api/stashes/drop", { ref: stash.ref }, function() {
+                self.afterStashChange();
+            }, function(xhr) {
+                gitpar.showError(gitpar.parseApiError(xhr, "Unable to discard stash"));
+            });
+        }, gitpar.viewonly, "danger");
+    }
+
+    self.applyStash = function(stash, pop) {
+        gitpar.apiPost("/api/stashes/apply", { ref: stash.ref, pop: pop }, function(data) {
+            gitpar.showResult(pop ? "Stash popped" : "Stash applied", data.message || "");
+            self.afterStashChange();
+        }, function(xhr) {
+            gitpar.showError(gitpar.parseApiError(xhr, "Unable to apply stash"));
+        });
+    }
+
+    // Popping or dropping changes the stash list itself (gitpar.stashes,
+    // which the log seeds its walk with to draw one row per stash - see
+    // LogView.populate) - refetching that before redrawing is what
+    // makes the row for this stash actually disappear, the same
+    // sequencing a remote action already uses (loadBranches, then
+    // redraw whatever section is showing).
+    self.afterStashChange = function() {
+        mainView.repoChrome.loadBranches(function() {
+            mainView.repoChrome.refreshActiveSection();
+        });
+    }
+
     self.render = function(entry) {
         $(".ref-action-menu-title", self.element).text(entry.abbrevMessage());
         $(".ref-action-menu-subtitle", self.element).text(entry.commit.substr(0, 12));
         self.list.empty();
+
+        if (entry.stash) {
+            self.renderStashActions(entry.stash);
+            return;
+        }
 
         self.addAction("Create Branch Here…", function() {
             mainView.repoChrome.createBranchAtRef(entry.commit, entry.commit.substr(0, 8) + "-branch");
