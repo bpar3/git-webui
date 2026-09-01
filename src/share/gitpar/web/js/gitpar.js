@@ -3882,13 +3882,22 @@ gitpar.LogView = function(historyView) {
             content.removeChild(content.lastElementChild);
         }
         var startAt = content.childElementCount;
-        var refSpec = self.ref ? self.ref : "--all";
-        // --all walks refs/stash too, surfacing a stash's raw internal
-        // commits (its "index" and "untracked" parents) as ordinary,
-        // unmarked rows. Seeding the walk with the stash SHAs explicitly
-        // and hiding those internal parents (below) turns each stash back
-        // into a single recognizable row. Only when showing everything:
-        // focusing one ref shouldn't drag in stashes taken from elsewhere.
+        // HEAD, not --all: the unfiltered "everything" view is still just
+        // the checked-out branch's own history (what GitFiend and every
+        // other git GUI show by default) - --all pulls in every other
+        // local/remote branch and tag too, so any repo with more than
+        // one active branch got their commits interleaved by date into
+        // what looked like a single linear history, misrepresenting
+        // ancestry that was never actually there (particularly visible
+        // after a squash-merge, whose original commits live on only via
+        // whatever branch made them, not as ancestors of the merge
+        // commit on this branch).
+        var refSpec = self.ref ? self.ref : "HEAD";
+        // Seeded with the stash SHAs below regardless of refSpec, which
+        // surfaces their raw internal commits (a stash's "index" and
+        // "untracked" parents) as ordinary, unmarked rows unless hidden.
+        // Only when showing everything: focusing one ref shouldn't drag
+        // in stashes taken from somewhere else.
         self.stashCommits = {};
         self.hiddenCommits = {};
         var seededStash = false;
