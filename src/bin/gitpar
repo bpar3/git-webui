@@ -38,10 +38,12 @@ except ImportError:
 
 if sys.version > '3':
     from http.server import SimpleHTTPRequestHandler, HTTPServer
+    from socketserver import ThreadingMixIn
     from urllib.parse import parse_qs, unquote, urlparse
 else:
     from SimpleHTTPServer import SimpleHTTPRequestHandler
     from BaseHTTPServer import HTTPServer
+    from SocketServer import ThreadingMixIn
     from urllib import unquote
     from urlparse import parse_qs, urlparse
 
@@ -53,7 +55,15 @@ IS_WINDOWS = platform.system() == "Windows"
 
 
 
-class GitParHttpServer(HTTPServer):
+class GitParHttpServer(ThreadingMixIn, HTTPServer):
+    # One thread per request rather than one at a time: a live credential
+    # prompt (see the askpass bridge) has to block one request's git
+    # subprocess while a *second* request - the one answering the prompt
+    # - reaches the server, which a single-threaded server can't do.
+    # daemon_threads=True so an in-flight request thread never keeps the
+    # process alive after the main thread wants to exit.
+    daemon_threads = True
+
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate = True):
         if not isinstance(server_address, tuple) or len(server_address) < 2:
             raise TypeError("server_address must be a tuple (address,port)")
@@ -112,10 +122,13 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
     AUTO_FETCH = False
 
     # Repos currently open as tabs, in tab order. REPO_ROOT (above) is
-    # whichever one of these is the active tab for the current request -
-    # see _apply_request_repo_context(), called once per request. The
-    # server is single-threaded (one request handled at a time), so
-    # flipping this class attribute per-request is safe.
+    # whichever one was last explicitly selected (open_repo/close_repo/
+    # set_repo_root) - the default a request falls back to when it names
+    # no repo of its own via a `repo` query param. Which repo a given
+    # request actually acts on is apply_request_repo_context()'s return
+    # value, kept as a local in do_GET/do_POST for that request only -
+    # not this attribute, so two concurrent requests for two different
+    # repos can't race each other over which one "the current repo" is.
     OPEN_REPOS = []
 
     @classmethod
@@ -380,8 +393,13 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 })
         return entries
 
-    def get_repo_context(self):
-        repo_root = GitParRequestHandler.REPO_ROOT
+    def get_repo_context(self, repo_root=None):
+        # No override given: read the class-level "currently selected"
+        # value fresh, for callers reporting on app-wide state (e.g. right
+        # after open_repo()/close_repo() just changed it) rather than on
+        # one specific request's own resolved repo.
+        if repo_root is None:
+            repo_root = GitParRequestHandler.REPO_ROOT
         repo_name = os.path.basename(repo_root) if repo_root else ""
         workspace_root = GitParRequestHandler.WORKSPACE_ROOT
         workspace_repos = []
@@ -412,16 +430,28 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
 
     def apply_request_repo_context(self):
         """Resolve which open repo this request targets from a `repo` query
-        param (present on every API call once more than one repo is open)
-        and make it the active GitParRequestHandler.REPO_ROOT for the
-        duration of this request. Falls back to whatever REPO_ROOT already
-        is when no `repo` param is given, or when it doesn't name a
-        currently open repo."""
+        param (present on every API call once more than one repo is open),
+        and return it - the caller (do_GET/do_POST) keeps this as a local
+        for the rest of the request, rather than this method mutating the
+        shared GitParRequestHandler.REPO_ROOT the way it used to.
+
+        That used to be safe purely because the server handled one request
+        at a time; with concurrent requests (needed so a live credential
+        prompt on one request can be answered by a second request instead
+        of the whole server hanging), a shared "current repo" mutated by
+        every request racing every other request would let one request's
+        git commands quietly run against a different, wrong repo, whatever
+        the last request to reach this line happened to set it to.
+
+        Falls back to whatever REPO_ROOT currently is when no `repo` param
+        is given, or when it doesn't name a currently open repo - both of
+        which are also the pre-multi-repo-tab behavior."""
         parsed = urlparse(self.path)
         self.request_path = parsed.path
         requested = parse_qs(parsed.query).get("repo", [None])[0]
         if requested and requested in GitParRequestHandler.OPEN_REPOS:
-            GitParRequestHandler.REPO_ROOT = requested
+            return requested
+        return GitParRequestHandler.REPO_ROOT
 
 
     def translate_path(self, path):
@@ -445,97 +475,97 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
 
 
     def do_GET(self):
-        self.apply_request_repo_context()
+        repo_root = self.apply_request_repo_context()
         if self.request_path == "/api/context":
-            self.send_json(200, self.get_repo_context())
+            self.send_json(200, self.get_repo_context(repo_root))
         elif self.path.startswith("/api/fs/list"):
             if self.is_view_only():
                 self.send_error(403)
                 return
             parsed_path = urlparse(self.path)
             requested_path = parse_qs(parsed_path.query).get("path", [None])[0]
-            self.send_json(200, list_directory_entries(requested_path, GitParRequestHandler.REPO_ROOT))
+            self.send_json(200, list_directory_entries(requested_path, repo_root))
         elif self.request_path == "/api/workspaces/current":
             if self.is_view_only():
                 self.send_error(403)
                 return
-            self.send_json(200, get_workspace_payload(GitParRequestHandler.WORKSPACE_ROOT, GitParRequestHandler.REPO_ROOT))
+            self.send_json(200, get_workspace_payload(GitParRequestHandler.WORKSPACE_ROOT, repo_root))
         elif self.request_path == "/api/branches":
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             self.send_json(200, {
-                "branches": get_branch_entries(GitParRequestHandler.REPO_ROOT),
-                "tags": get_tag_entries(GitParRequestHandler.REPO_ROOT),
-                "stashes": get_stash_entries(GitParRequestHandler.REPO_ROOT),
-                "unpushed": get_unpushed_commits(GitParRequestHandler.REPO_ROOT),
+                "branches": get_branch_entries(repo_root),
+                "tags": get_tag_entries(repo_root),
+                "stashes": get_stash_entries(repo_root),
+                "unpushed": get_unpushed_commits(repo_root),
             })
         elif self.request_path == "/api/remotes":
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
-            result = list_remotes(GitParRequestHandler.REPO_ROOT)
+            result = list_remotes(repo_root)
             self.send_json(result["status"], result["payload"])
         elif self.request_path.startswith("/api/commits/") and self.request_path.endswith("/is-ancestor"):
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             commit = self.request_path[len("/api/commits/"):-len("/is-ancestor")]
-            self.send_json(200, {"is_ancestor": is_ancestor_of_head(GitParRequestHandler.REPO_ROOT, commit)})
+            self.send_json(200, {"is_ancestor": is_ancestor_of_head(repo_root, commit)})
         elif self.request_path == "/api/worktrees":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
-            result = list_worktrees(GitParRequestHandler.REPO_ROOT)
+            result = list_worktrees(repo_root)
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/stashes":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
-            result = list_stashes(GitParRequestHandler.REPO_ROOT)
+            result = list_stashes(repo_root)
             self.send_json(result["status"], result["payload"])
         elif self.path.startswith("/api/reflog"):
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             parsed_path = urlparse(self.path)
             ref = parse_qs(parsed_path.query).get("ref", [None])[0]
-            result = list_reflog(GitParRequestHandler.REPO_ROOT, ref)
+            result = list_reflog(repo_root, ref)
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/submodules":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
-            result = list_submodules(GitParRequestHandler.REPO_ROOT)
+            result = list_submodules(repo_root)
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/conflicts/file":
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             requested_file = parse_qs(urlparse(self.path).query).get("path", [None])[0]
-            result = get_conflict_file(GitParRequestHandler.REPO_ROOT, requested_file)
+            result = get_conflict_file(repo_root, requested_file)
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/conflicts":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
-            result = get_conflict_status(GitParRequestHandler.REPO_ROOT)
+            result = get_conflict_status(repo_root)
             self.send_json(result["status"], result["payload"])
         elif self.path.startswith("/api/blame"):
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             parsed_path = urlparse(self.path)
             query = parse_qs(parsed_path.query)
             result = get_blame(
-                GitParRequestHandler.REPO_ROOT,
+                repo_root,
                 query.get("path", [None])[0],
                 query.get("rev", [None])[0],
             )
             self.send_json(result["status"], result["payload"])
         elif self.request_path.startswith("/git/cat-file/"):
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             obj = self.request_path[14:]
-            self.process(["git", "-c", "color.ui=false", "cat-file", "-p", obj], b"", True, False)
+            self.process(["git", "-c", "color.ui=false", "cat-file", "-p", obj], b"", True, False, repo_root=repo_root)
         elif self.request_path == "/dirname":
-            wc = os.path.split(GitParRequestHandler.REPO_ROOT)[1] if GitParRequestHandler.REPO_ROOT else ""
+            wc = os.path.split(repo_root)[1] if repo_root else ""
             self.send_text(200, codecs.encode(wc, "utf-8"))
         elif self.request_path == "/hostname":
             self.send_text(200, codecs.encode(socket.gethostname(), "utf-8"))
@@ -547,30 +577,30 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
 
 
     def do_POST(self):
-        self.apply_request_repo_context()
+        repo_root = self.apply_request_repo_context()
         if self.request_path == "/api/repos/select" or self.request_path == "/api/repos/open":
             if self.is_view_only():
                 self.send_error(403)
                 return
             payload = self.read_json_body()
             selected_path = payload.get("path")
-            repo_root = resolve_repo_root(selected_path)
-            if repo_root is None:
+            selected_repo_root = resolve_repo_root(selected_path)
+            if selected_repo_root is None:
                 self.send_json(400, {"error": "No git repository found at the selected path."})
                 return
-            GitParRequestHandler.open_repo(repo_root)
-            self.send_json(200, self.get_repo_context())
+            GitParRequestHandler.open_repo(selected_repo_root)
+            self.send_json(200, self.get_repo_context(selected_repo_root))
         elif self.request_path == "/api/repos/close":
             if self.is_view_only():
                 self.send_error(403)
                 return
             payload = self.read_json_body()
-            repo_root = payload.get("repo_id") or payload.get("path")
-            if not repo_root:
+            target_repo_root = payload.get("repo_id") or payload.get("path")
+            if not target_repo_root:
                 self.send_json(400, {"error": "A repo_id is required."})
                 return
-            GitParRequestHandler.close_repo(repo_root)
-            self.send_json(200, self.get_repo_context())
+            new_active = GitParRequestHandler.close_repo(target_repo_root)
+            self.send_json(200, self.get_repo_context(new_active))
         elif self.request_path == "/api/fs/pick-directory":
             if self.is_view_only():
                 self.send_error(403)
@@ -579,7 +609,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             result = pick_directory_path(
                 payload.get("path"),
                 payload.get("title"),
-                GitParRequestHandler.REPO_ROOT,
+                repo_root,
             )
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/workspaces/select":
@@ -593,7 +623,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 self.send_json(400, {"error": "No directory found at the selected path."})
                 return
             GitParRequestHandler.set_workspace_root(workspace_root)
-            workspace_repos = scan_workspace_repos(workspace_root, GitParRequestHandler.REPO_ROOT)
+            workspace_repos = scan_workspace_repos(workspace_root, repo_root)
             if len(workspace_repos) > 0 and not any(repo["active"] for repo in workspace_repos):
                 GitParRequestHandler.set_repo_root(workspace_repos[0]["path"])
             self.send_json(200, self.get_repo_context())
@@ -601,20 +631,20 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             if self.is_view_only():
                 self.send_error(403)
                 return
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             payload = self.read_json_body()
-            result = checkout_branch(GitParRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("remote_name"))
+            result = checkout_branch(repo_root, payload.get("local_name"), payload.get("remote_name"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/branches/create":
             if self.is_view_only():
                 self.send_error(403)
                 return
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             payload = self.read_json_body()
             result = create_branch(
-                GitParRequestHandler.REPO_ROOT,
+                repo_root,
                 payload.get("name"),
                 payload.get("start_point"),
                 payload.get("checkout", True),
@@ -624,26 +654,26 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             if self.is_view_only():
                 self.send_error(403)
                 return
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             payload = self.read_json_body()
-            result = delete_branch(GitParRequestHandler.REPO_ROOT, payload.get("local_name"), payload.get("force", False))
+            result = delete_branch(repo_root, payload.get("local_name"), payload.get("force", False))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/branches/delete-remote":
             if self.is_view_only():
                 self.send_error(403)
                 return
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             payload = self.read_json_body()
-            result = delete_remote_branch(GitParRequestHandler.REPO_ROOT, payload.get("remote_name"))
+            result = delete_remote_branch(repo_root, payload.get("remote_name"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/branches/compare":
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             payload = self.read_json_body()
             result = compare_branches(
-                GitParRequestHandler.REPO_ROOT,
+                repo_root,
                 payload.get("source_ref"),
                 payload.get("target_ref"),
             )
@@ -652,11 +682,11 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             if self.is_view_only():
                 self.send_error(403)
                 return
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             payload = self.read_json_body()
             result = merge_branch(
-                GitParRequestHandler.REPO_ROOT,
+                repo_root,
                 payload.get("source_ref"),
                 payload.get("target_ref"),
                 False,
@@ -666,11 +696,11 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             if self.is_view_only():
                 self.send_error(403)
                 return
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             payload = self.read_json_body()
             result = merge_branch(
-                GitParRequestHandler.REPO_ROOT,
+                repo_root,
                 payload.get("source_ref"),
                 payload.get("target_ref"),
                 True,
@@ -680,19 +710,19 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             if self.is_view_only():
                 self.send_error(403)
                 return
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             payload = self.read_json_body()
-            result = add_remote(GitParRequestHandler.REPO_ROOT, payload.get("name"), payload.get("url"))
+            result = add_remote(repo_root, payload.get("name"), payload.get("url"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/remotes/remove":
             if self.is_view_only():
                 self.send_error(403)
                 return
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             payload = self.read_json_body()
-            result = remove_remote(GitParRequestHandler.REPO_ROOT, payload.get("name"))
+            result = remove_remote(repo_root, payload.get("name"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/repos/clone":
             if self.is_view_only():
@@ -702,7 +732,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             result = clone_repo(payload.get("url"), payload.get("destination"), payload.get("directory_name"))
             if result["status"] == 200:
                 GitParRequestHandler.open_repo(result["payload"]["path"])
-                self.send_json(200, self.get_repo_context())
+                self.send_json(200, self.get_repo_context(result["payload"]["path"]))
             else:
                 self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/repos/create":
@@ -713,16 +743,16 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             result = create_repo(payload.get("destination"), payload.get("directory_name"))
             if result["status"] == 200:
                 GitParRequestHandler.open_repo(result["payload"]["path"])
-                self.send_json(200, self.get_repo_context())
+                self.send_json(200, self.get_repo_context(result["payload"]["path"]))
             else:
                 self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/worktrees/add":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
             result = add_worktree(
-                GitParRequestHandler.REPO_ROOT,
+                repo_root,
                 payload.get("path"),
                 payload.get("branch"),
                 payload.get("create_branch", False),
@@ -730,39 +760,39 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             )
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/worktrees/remove":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = remove_worktree(GitParRequestHandler.REPO_ROOT, payload.get("path"), payload.get("force", False))
+            result = remove_worktree(repo_root, payload.get("path"), payload.get("force", False))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/stashes/apply":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = apply_stash(GitParRequestHandler.REPO_ROOT, payload.get("ref"), payload.get("pop", False))
+            result = apply_stash(repo_root, payload.get("ref"), payload.get("pop", False))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/stashes/drop":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = drop_stash(GitParRequestHandler.REPO_ROOT, payload.get("ref"))
+            result = drop_stash(repo_root, payload.get("ref"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/submodules/update":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = update_submodules(GitParRequestHandler.REPO_ROOT, payload.get("init", True))
+            result = update_submodules(repo_root, payload.get("init", True))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/gitignore/add":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = add_to_gitignore(GitParRequestHandler.REPO_ROOT, payload.get("pattern"))
+            result = add_to_gitignore(repo_root, payload.get("pattern"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/settings/theme":
             payload = self.read_json_body()
@@ -777,29 +807,29 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             GitParRequestHandler.set_auto_fetch(payload.get("enabled"))
             self.send_json(200, {"auto_fetch": GitParRequestHandler.AUTO_FETCH})
         elif self.request_path == "/api/conflicts/save":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = save_resolved_file(GitParRequestHandler.REPO_ROOT, payload.get("path"),
+            result = save_resolved_file(repo_root, payload.get("path"),
                                         payload.get("content"), payload.get("stage", True))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/conflicts/resolve":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = resolve_conflict(GitParRequestHandler.REPO_ROOT, payload.get("path"), payload.get("resolution"))
+            result = resolve_conflict(repo_root, payload.get("path"), payload.get("resolution"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/rebase/plan":
-            if self.is_view_only() or not self.ensure_repo_selected():
+            if self.is_view_only() or not self.ensure_repo_selected(repo_root):
                 self.send_error(403 if self.is_view_only() else 409)
                 return
             payload = self.read_json_body()
-            result = run_interactive_rebase_plan(GitParRequestHandler.REPO_ROOT, payload.get("base"), payload.get("actions"))
+            result = run_interactive_rebase_plan(repo_root, payload.get("base"), payload.get("actions"))
             self.send_json(result["status"], result["payload"])
         elif self.request_path == "/git":
-            if not self.ensure_repo_selected():
+            if not self.ensure_repo_selected(repo_root):
                 return
             content_length = int(self.headers["Content-Length"])
             content = self.rfile.read(content_length)
@@ -816,7 +846,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             cmd = shlex.split("git -c color.ui=true " + args)
             action = cmd[3]
             if not self.is_view_only() or args in ["branch", "branch --remotes", "tag"] or action in ["show", "status", "log", "ls-tree"]:
-                self.process(cmd, stdin, True, True)
+                self.process(cmd, stdin, True, True, repo_root=repo_root)
             else:
                 self.send_error(403)
         else:
@@ -830,16 +860,21 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
         return False
 
 
-    def ensure_repo_selected(self):
-        if GitParRequestHandler.REPO_ROOT is not None:
+    def ensure_repo_selected(self, repo_root):
+        if repo_root is not None:
             return True
         self.send_json(409, {"error": "No repository is currently selected."})
         return False
 
 
-    def process(self, cmd, stdin, add_headers, add_footers, env = None):
+    def process(self, cmd, stdin, add_headers, add_footers, env = None, repo_root = None):
         if env is None:
             env = base_git_env()
+        # No override given: this request never resolved its own (callers
+        # that did - the /git and /git/cat-file/ endpoints - always pass
+        # one), so fall back to whichever repo is currently selected.
+        if repo_root is None:
+            repo_root = GitParRequestHandler.REPO_ROOT
         if add_headers:
             self.send_response(200)
             self.end_headers()
@@ -847,7 +882,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
         # Finially we add footers: a blank line followed by key / value pairs as in HTTP headers
         if IS_WINDOWS:
             # On windows we cannot pipe the process output directly to the socket.
-            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, cwd = GitParRequestHandler.REPO_ROOT, env = env)
+            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, cwd = repo_root, env = env)
             git.stdin.write(stdin)
             git.stdin.close()
             bufferlen = 64 * 1024
@@ -859,7 +894,7 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             stderr = git.stderr.read()
             git.wait()
         else:
-            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = self.wfile, stderr = subprocess.PIPE, cwd = GitParRequestHandler.REPO_ROOT, env = env)
+            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = self.wfile, stderr = subprocess.PIPE, cwd = repo_root, env = env)
             stdout, stderr = git.communicate(stdin)
         if add_footers:
             self.wfile.write(stderr)

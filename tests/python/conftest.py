@@ -2,6 +2,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import threading
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
@@ -71,6 +72,27 @@ def git_repo(tmp_path):
 def second_git_repo(tmp_path):
     """A second, independent throwaway git repo, for multi-repo tests."""
     return _make_git_repo(tmp_path / "repo2")
+
+
+@pytest.fixture()
+def live_server(backend, handler_state):
+    """A real GitParHttpServer bound to a random loopback port, running in
+    a background thread - for tests that need to exercise the actual
+    HTTP dispatch (do_GET/do_POST/process()), not just the business-logic
+    functions those call. Depends on handler_state so REPO_ROOT/OPEN_REPOS
+    etc. are isolated the same way.
+
+    Yields the port number; callers build their own request URLs."""
+    server = backend.GitParHttpServer(("127.0.0.1", 0), backend.GitParRequestHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield port
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 @pytest.fixture()
