@@ -27,6 +27,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import webbrowser
 
 try:
@@ -38,11 +39,13 @@ except ImportError:
 
 if sys.version > '3':
     from http.server import SimpleHTTPRequestHandler, HTTPServer
+    from http.client import HTTPConnection
     from socketserver import ThreadingMixIn
     from urllib.parse import parse_qs, unquote, urlparse
 else:
     from SimpleHTTPServer import SimpleHTTPRequestHandler
     from BaseHTTPServer import HTTPServer
+    from httplib import HTTPConnection
     from SocketServer import ThreadingMixIn
     from urllib import unquote
     from urlparse import parse_qs, urlparse
@@ -51,6 +54,11 @@ else:
 
 
 IS_WINDOWS = platform.system() == "Windows"
+
+# How long a credential prompt waits for a human to answer it before
+# giving up and letting the git subprocess fail, same as if the user had
+# cancelled a native prompt.
+ASKPASS_TIMEOUT_SECONDS = 120
 
 
 
@@ -104,6 +112,10 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
 
     WEB_ROOT = None
     REPO_ROOT = None
+    # Set once, right after the server binds - lets a spawned git
+    # subprocess's GIT_ASKPASS helper (a re-invocation of this same
+    # executable) call back into the server that spawned it.
+    SERVER_PORT = None
     APP_STATE_PATH = None
     RECENT_REPOS = []
     WORKSPACE_ROOT = None
@@ -130,6 +142,17 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
     # not this attribute, so two concurrent requests for two different
     # repos can't race each other over which one "the current repo" is.
     OPEN_REPOS = []
+
+    # Credential prompts a spawned git subprocess is currently blocked on,
+    # keyed by an opaque id. Genuinely concurrent state - the askpass
+    # helper's request thread blocks on entry["event"] while the
+    # frontend's poll and answer requests come in on other threads - so
+    # every access goes through ASKPASS_LOCK. Dict iteration order is
+    # insertion order, so the first not-yet-answered entry is also the
+    # oldest pending one; nothing extra is needed to track that.
+    ASKPASS_LOCK = threading.Lock()
+    ASKPASS_PENDING = {}
+    ASKPASS_NEXT_ID = 0
 
     @classmethod
     def initialize(cls, repo_root):
@@ -349,6 +372,58 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
         if cls.REPO_ROOT == repo_root:
             cls.REPO_ROOT = cls.OPEN_REPOS[0] if cls.OPEN_REPOS else None
         return cls.REPO_ROOT
+
+    @classmethod
+    def register_askpass_prompt(cls, prompt):
+        """Record a new credential prompt a git subprocess is waiting on.
+        Returns its id."""
+        with cls.ASKPASS_LOCK:
+            cls.ASKPASS_NEXT_ID += 1
+            prompt_id = str(cls.ASKPASS_NEXT_ID)
+            cls.ASKPASS_PENDING[prompt_id] = {
+                "prompt": prompt,
+                "event": threading.Event(),
+                "answer": None,
+            }
+        return prompt_id
+
+    @classmethod
+    def peek_pending_askpass_prompt(cls):
+        """The oldest still-unanswered prompt, as (id, prompt text), or
+        (None, None) if nothing is waiting."""
+        with cls.ASKPASS_LOCK:
+            for prompt_id, entry in cls.ASKPASS_PENDING.items():
+                if not entry["event"].is_set():
+                    return prompt_id, entry["prompt"]
+        return None, None
+
+    @classmethod
+    def answer_askpass_prompt(cls, prompt_id, value):
+        """Supplies the value for a pending prompt and wakes up the
+        askpass helper request that's blocked waiting for it. Returns
+        False if the id is unknown (already answered, timed out, or
+        never existed)."""
+        with cls.ASKPASS_LOCK:
+            entry = cls.ASKPASS_PENDING.get(prompt_id)
+            if not entry:
+                return False
+            entry["answer"] = value
+            entry["event"].set()
+        return True
+
+    @classmethod
+    def wait_for_askpass_answer(cls, prompt_id, timeout):
+        """Called from the askpass helper's own blocked request. Blocks
+        until answered or the timeout passes, then removes the entry
+        either way - a prompt nobody answers in time shouldn't linger in
+        the pending list forever."""
+        entry = cls.ASKPASS_PENDING.get(prompt_id)
+        if not entry:
+            return ""
+        answered = entry["event"].wait(timeout)
+        with cls.ASKPASS_LOCK:
+            cls.ASKPASS_PENDING.pop(prompt_id, None)
+        return entry["answer"] if answered and entry["answer"] is not None else ""
 
     @classmethod
     def get_open_repo_entries(cls):
@@ -572,6 +647,13 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
         elif self.request_path == "/viewonly":
             vo = "1" if self.is_view_only() else "0"
             self.send_text(200, codecs.encode(vo, "utf-8"))
+        elif self.request_path == "/api/askpass/pending":
+            # Polled by the frontend while a remote action is in flight,
+            # so a credential prompt a spawned git subprocess is
+            # currently blocked on can be shown in the UI instead of
+            # just sitting there until it times out.
+            prompt_id, prompt = GitParRequestHandler.peek_pending_askpass_prompt()
+            self.send_json(200, {"id": prompt_id, "prompt": prompt})
         else:
             SimpleHTTPRequestHandler.do_GET(self)
 
@@ -828,6 +910,24 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             result = run_interactive_rebase_plan(repo_root, payload.get("base"), payload.get("actions"))
             self.send_json(result["status"], result["payload"])
+        elif self.request_path == "/api/askpass/request":
+            # Called by the askpass helper subprocess (this same program,
+            # re-invoked - see run_askpass_helper), never by the browser.
+            # Blocks this request's own thread until answered or timed
+            # out - the whole reason the server is threaded now is so
+            # that doesn't freeze anything else, including the answer
+            # request below.
+            payload = self.read_json_body()
+            prompt_id = GitParRequestHandler.register_askpass_prompt(payload.get("prompt") or "")
+            answer = GitParRequestHandler.wait_for_askpass_answer(prompt_id, ASKPASS_TIMEOUT_SECONDS)
+            self.send_json(200, {"value": answer})
+        elif self.request_path == "/api/askpass/answer":
+            payload = self.read_json_body()
+            prompt_id = payload.get("id")
+            if not prompt_id or not GitParRequestHandler.answer_askpass_prompt(prompt_id, payload.get("value") or ""):
+                self.send_json(404, {"error": "That prompt is no longer waiting for an answer."})
+                return
+            self.send_json(200, {})
         elif self.request_path == "/git":
             if not self.ensure_repo_selected(repo_root):
                 return
@@ -1001,6 +1101,19 @@ def decode_output(data):
     return data
 
 
+def self_executable_path():
+    """A path git can exec() directly to re-invoke this same program -
+    used as GIT_ASKPASS/SSH_ASKPASS. In a frozen (PyInstaller) build,
+    sys.executable is the bundled binary itself; running from source,
+    sys.argv[0] is this script, which is directly executable (a real
+    shebang line, +x bit) rather than needing "python <script>" - which
+    matters because GIT_ASKPASS must name a single program, with no way
+    to also pass it a leading interpreter argument."""
+    if getattr(sys, "frozen", False):
+        return sys.executable
+    return os.path.abspath(sys.argv[0])
+
+
 def base_git_env():
     # GIT_TERMINAL_PROMPT=0: without it, a git subprocess that needs
     # credentials it doesn't have tries to prompt on stdin - but stdin
@@ -1010,7 +1123,54 @@ def base_git_env():
     # message instead.
     env = dict(os.environ)
     env["GIT_TERMINAL_PROMPT"] = "0"
+    # GIT_ASKPASS/SSH_ASKPASS: instead of just failing fast, actually
+    # surface the prompt in the UI and let the reader answer it. Set
+    # unconditionally (not just for fetch/pull/push/clone) since it's
+    # inert for any command that never ends up needing a credential, and
+    # only takes effect once SERVER_PORT is known (i.e. never before the
+    # server has actually bound its socket).
+    if GitParRequestHandler.SERVER_PORT:
+        askpass_path = self_executable_path()
+        env["GIT_ASKPASS"] = askpass_path
+        env["SSH_ASKPASS"] = askpass_path
+        # Modern OpenSSH otherwise only tries SSH_ASKPASS when it can't
+        # find a controlling terminal at all - true here anyway, but
+        # forcing it is cheap insurance against a platform where that
+        # detection doesn't work the way it does elsewhere.
+        env["SSH_ASKPASS_REQUIRE"] = "force"
+        env["GITPAR_ASKPASS_PORT"] = str(GitParRequestHandler.SERVER_PORT)
+        # Read by this same program's own entry point: distinguishes "I
+        # was just exec'd as GIT_ASKPASS" from a normal server start,
+        # since both would otherwise look identical from argv alone.
+        env["GITPAR_ASKPASS_MODE"] = "1"
     return env
+
+
+def run_askpass_helper(prompt):
+    """Entry point when this program is re-invoked as GIT_ASKPASS/
+    SSH_ASKPASS (see base_git_env). Blocks until a human answers via the
+    UI - or gives up - then prints the answer to stdout, which is
+    exactly what git/ssh expect an askpass program to do. Never talks to
+    the terminal directly; the calling git process has none to offer,
+    which is the entire reason this exists."""
+    port = os.environ.get("GITPAR_ASKPASS_PORT")
+    if not port:
+        return 1
+    try:
+        body = json.dumps({"prompt": prompt}).encode("utf-8")
+        connection = HTTPConnection("127.0.0.1", int(port), timeout=ASKPASS_TIMEOUT_SECONDS + 10)
+        connection.request(
+            "POST", "/api/askpass/request", body=body,
+            headers={"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        answer = json.loads(response.read().decode("utf-8")).get("value", "")
+        connection.close()
+    except Exception:
+        return 1
+    sys.stdout.write(answer)
+    sys.stdout.flush()
+    return 0 if answer else 1
 
 
 def run_command_capture(command):
@@ -2332,6 +2492,14 @@ def get_setting_boolean(args, name, default=False):
 
 
 if __name__ == '__main__':
+    # A spawned git subprocess re-invokes this same program as its
+    # GIT_ASKPASS/SSH_ASKPASS helper (see base_git_env/
+    # self_executable_path) - distinguished from a normal server start
+    # purely by this env var, since argv alone looks the same either way
+    # (a single string argument: the prompt text git wants answered).
+    if os.environ.get("GITPAR_ASKPASS_MODE"):
+        sys.exit(run_askpass_helper(sys.argv[1] if len(sys.argv) > 1 else ""))
+
     parser = argparse.ArgumentParser(description = "Simple HTTP server for GitPar")
     parser.add_argument("--port", type = int, help = "server port")
     parser.add_argument("--repo-root", help = "repository root path. By default goes up a dir until a '.git' directory is found")
@@ -2362,6 +2530,8 @@ if __name__ == '__main__':
             else:
                 sys.stderr.write("Port {} is already in use, trying another one\n".format(port))
                 port += 1
+
+    GitParRequestHandler.SERVER_PORT = port
 
     url = "http://{}:{}".format("localhost", port)
     print("Serving at {}".format(url))

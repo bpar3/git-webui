@@ -1952,12 +1952,95 @@ gitpar.Toolbar = function(mainView) {
 
     // -- Pull / Push / Fetch : left click executes, right click opens options --
 
+    // While a remote action's git subprocess is running, it may be
+    // blocked waiting on a credential prompt (see base_git_env's
+    // GIT_ASKPASS in the backend) - polling for one and surfacing it
+    // here is what actually answers it, rather than just letting the
+    // request fail once GIT_TERMINAL_PROMPT's fast-fail kicks in.
+    self.showAskpassPrompt = function(promptId, promptText, onDone) {
+        var isPassword = /password/i.test(promptText || "");
+        $(".askpass-prompt-text", self.askpassModal).text(promptText || "Credentials needed");
+        var input = $(".askpass-input", self.askpassModal)
+            .attr("type", isPassword ? "password" : "text")
+            .val("");
+        var submitted = false;
+        var submit = function(value) {
+            if (submitted) {
+                return;
+            }
+            submitted = true;
+            $(self.askpassModal).modal("hide");
+            // Either way the wait is over: a 404 here just means the
+            // prompt was already answered or timed out elsewhere.
+            gitpar.apiPost("/api/askpass/answer", { id: promptId, value: value }, onDone, onDone);
+        };
+        $(".askpass-submit", self.askpassModal).off("click").click(function() { submit(input.val()); });
+        // Cancelling submits an empty value rather than leaving the
+        // prompt open - the git subprocess is genuinely blocked on the
+        // other end, so "do nothing" would just make it wait out the
+        // full timeout instead of failing right away.
+        $(".askpass-cancel", self.askpassModal).off("click").click(function() { submit(""); });
+        input.off("keydown").on("keydown", function(event) {
+            if (event.key == "Enter") {
+                event.preventDefault();
+                submit(input.val());
+            }
+        });
+        $(self.askpassModal).modal("show");
+        setTimeout(function() { input.focus(); }, 200);
+    }
+
+    self.startAskpassPolling = function() {
+        var stopped = false;
+        var showing = false;
+        var poll = function() {
+            if (stopped) {
+                return;
+            }
+            // Deliberately not gitpar.apiGet: a transient failure here
+            // is routine (nothing to report, or the window closing) and
+            // should just retry quietly, not pop an error modal on top
+            // of whatever the reader is doing.
+            $.getJSON(gitpar.withRepoParam("/api/askpass/pending"))
+                .done(function(data) {
+                    if (stopped) {
+                        return;
+                    }
+                    if (data.id && !showing) {
+                        showing = true;
+                        self.showAskpassPrompt(data.id, data.prompt, function() {
+                            showing = false;
+                            if (!stopped) {
+                                setTimeout(poll, 300);
+                            }
+                        });
+                    } else if (!data.id) {
+                        setTimeout(poll, 500);
+                    }
+                    // else: a prompt is already showing - its own onDone
+                    // callback resumes polling once it's answered.
+                })
+                .fail(function() {
+                    if (!stopped) {
+                        setTimeout(poll, 1000);
+                    }
+                });
+        };
+        poll();
+        return function() {
+            stopped = true;
+            $(self.askpassModal).modal("hide");
+        };
+    }
+
     self.runRemoteAction = function(buttonId, cmd, callback, onError) {
         var button = $("#" + buttonId, self.element).addClass("toolbar-remote-btn-busy");
+        var stopAskpassPolling = self.startAskpassPolling();
         return gitpar.git(cmd, function(data) {
             callback(data);
         }, onError).always(function() {
             button.removeClass("toolbar-remote-btn-busy");
+            stopAskpassPolling();
         });
     }
 
@@ -2350,6 +2433,29 @@ gitpar.Toolbar = function(mainView) {
                                 '</div>' +
                             '</div>')[0];
 
+    // data-backdrop="static"/data-keyboard="false": the git subprocess on
+    // the other end is genuinely blocked waiting for an answer, so
+    // dismissing this by clicking outside or pressing Escape without
+    // actually answering would just leave it hanging - Cancel (which
+    // submits an empty value) is the only way out that doesn't.
+    self.askpassModal = $(   '<div class="modal fade" id="askpass-modal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false">' +
+                                '<div class="modal-dialog" role="document">' +
+                                    '<div class="modal-content">' +
+                                        '<div class="modal-header">' +
+                                            '<div class="repo-picker-eyebrow">Credentials needed</div>' +
+                                            '<h4 class="modal-title askpass-prompt-text"></h4>' +
+                                        '</div>' +
+                                        '<div class="modal-body">' +
+                                            '<input type="text" class="form-control askpass-input">' +
+                                        '</div>' +
+                                        '<div class="modal-footer">' +
+                                            '<button type="button" class="btn btn-default askpass-cancel">Cancel</button>' +
+                                            '<button type="button" class="btn btn-primary askpass-submit">Continue</button>' +
+                                        '</div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>')[0];
+
     $("#app-menu-button", self.element).click(function(event) {
         event.stopPropagation();
         self.renderAppMenu();
@@ -2447,6 +2553,7 @@ gitpar.Toolbar = function(mainView) {
     });
 
     $("body").append(self.compareModal);
+    $("body").append(self.askpassModal);
     self.activateSection("history");
 };
 
