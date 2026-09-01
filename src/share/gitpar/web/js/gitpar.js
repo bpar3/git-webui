@@ -1938,7 +1938,7 @@ gitpar.Toolbar = function(mainView) {
 
     self.runRemoteAction = function(buttonId, cmd, callback, onError) {
         var button = $("#" + buttonId, self.element).addClass("toolbar-remote-btn-busy");
-        gitpar.git(cmd, function(data) {
+        return gitpar.git(cmd, function(data) {
             callback(data);
         }, onError).always(function() {
             button.removeClass("toolbar-remote-btn-busy");
@@ -2024,6 +2024,19 @@ gitpar.Toolbar = function(mainView) {
         if (event) {
             event.preventDefault();
         }
+        if (!gitpar.repoPath) {
+            return;
+        }
+        // Keyed by repo rather than a plain flag: switching to a
+        // different repo tab while one repo's fetch is still in flight
+        // must still be able to fetch the newly-active one - only a
+        // second trigger for the *same* repo (the window regaining focus
+        // right after a tab switch already started one, say) should be
+        // skipped.
+        if (self.fetchInFlightFor == gitpar.activeRepoId) {
+            return;
+        }
+        self.fetchInFlightFor = gitpar.activeRepoId;
         // --prune: without it, a branch deleted on the remote keeps its
         // local remote-tracking ref indefinitely - fetch has no reason
         // to touch a ref it wasn't told to remove - so it goes on
@@ -2034,6 +2047,8 @@ gitpar.Toolbar = function(mainView) {
         self.runRemoteAction("toolbar-fetch", "fetch --prune", function(data) {
             self.loadBranches();
             self.refreshActiveSection();
+        }).always(function() {
+            self.fetchInFlightFor = null;
         });
     }
 
@@ -2185,6 +2200,7 @@ gitpar.Toolbar = function(mainView) {
         self.renderRepoTabs();
         self.update();
         self.refreshActiveSection();
+        self.onFetch();
     }
 
     self.closeRepoTab = function(repoId) {
@@ -2387,6 +2403,15 @@ gitpar.Toolbar = function(mainView) {
     });
 
     self.applyAutoFetch();
+
+    // Refresh remote state whenever the reader actually comes back to
+    // look at it - the window regaining OS/browser focus after being
+    // elsewhere, not just the periodic timer above. onFetch's own
+    // per-repo in-flight guard keeps this from overlapping that timer,
+    // a manual click, or the same trigger firing twice in a row.
+    $(window).on("focus", function() {
+        self.onFetch();
+    });
 
     $("body").append(self.compareModal);
     self.activateSection("history");
