@@ -402,6 +402,10 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             "pull_strategy": GitParRequestHandler.PULL_STRATEGY,
             "auto_fetch": GitParRequestHandler.AUTO_FETCH,
             "hostname": socket.gethostname(),
+            # So the frontend can suggest a platform-appropriate credential
+            # helper (osxkeychain / manager-core / wincred / cache) when
+            # none is configured, instead of guessing blind.
+            "platform": sys.platform,
         }
         return context
 
@@ -834,6 +838,8 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
 
 
     def process(self, cmd, stdin, add_headers, add_footers, env = None):
+        if env is None:
+            env = base_git_env()
         if add_headers:
             self.send_response(200)
             self.end_headers()
@@ -960,12 +966,25 @@ def decode_output(data):
     return data
 
 
+def base_git_env():
+    # GIT_TERMINAL_PROMPT=0: without it, a git subprocess that needs
+    # credentials it doesn't have tries to prompt on stdin - but stdin
+    # here is a pipe fed from an HTTP request body, not a real terminal,
+    # so the prompt has nowhere to go and the request hangs forever
+    # instead of failing. This makes it fail fast with a clear stderr
+    # message instead.
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
 def run_command_capture(command):
     try:
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=base_git_env(),
         )
         stdout, stderr = process.communicate()
         return {
@@ -988,6 +1007,7 @@ def run_git_capture(repo_root, git_args):
             cwd=repo_root,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=base_git_env(),
         )
         stdout, stderr = git.communicate()
         return {

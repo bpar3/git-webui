@@ -700,6 +700,40 @@ describe("gitpar.isBranchNotFullyMergedError", () => {
     });
 });
 
+describe("gitpar.parseCredentialsNeededError", () => {
+    let gitpar;
+
+    beforeEach(() => {
+        gitpar = loadGitpar();
+    });
+
+    test("recognises a missing-username failure", () => {
+        const message = "fatal: could not read Username for 'https://github.com': terminal prompts disabled\n";
+        expect(gitpar.parseCredentialsNeededError(message)).toEqual({
+            field: "Username",
+            url: "https://github.com",
+        });
+    });
+
+    test("recognises a missing-password failure, with a username already in the URL", () => {
+        const message = "fatal: could not read Password for 'https://someuser@example.com': terminal prompts disabled\n";
+        expect(gitpar.parseCredentialsNeededError(message)).toEqual({
+            field: "Password",
+            url: "https://someuser@example.com",
+        });
+    });
+
+    test("returns null for an unrelated failure", () => {
+        expect(gitpar.parseCredentialsNeededError("fatal: unable to access 'https://example.com/': Could not resolve host"))
+            .toBeNull();
+    });
+
+    test("returns null for an empty or missing message", () => {
+        expect(gitpar.parseCredentialsNeededError("")).toBeNull();
+        expect(gitpar.parseCredentialsNeededError(undefined)).toBeNull();
+    });
+});
+
 describe("gitpar.defaultRemoteName", () => {
     let gitpar;
 

@@ -724,6 +724,19 @@ gitpar.isBranchNotFullyMergedError = function(message) {
     return gitpar.NOT_FULLY_MERGED_PATTERN.test(String(message || ""));
 }
 
+// A remote needing credentials git doesn't have would otherwise hang the
+// request forever - the backend's GIT_TERMINAL_PROMPT=0 turns that into
+// this specific, fast failure instead. Recognising it is what turns a raw
+// "terminal prompts disabled" stderr line into a "set up credentials for
+// this remote" prompt, the same way parseNoUpstreamError recognises
+// push's message.
+gitpar.CREDENTIALS_NEEDED_PATTERN = /could not read (Username|Password) for '([^']*)': terminal prompts disabled/;
+
+gitpar.parseCredentialsNeededError = function(message) {
+    var match = gitpar.CREDENTIALS_NEEDED_PATTERN.exec(String(message || ""));
+    return match ? { field: match[1], url: match[2] } : null;
+}
+
 // Parses `git diff-tree --name-status` output into {status, path} pairs.
 // Fields are tab-separated; renames and copies carry a similarity score
 // on the status (R100) and a second path, which is the one to show.
@@ -1751,6 +1764,9 @@ gitpar.Toolbar = function(mainView) {
         panel.append(self.appMenuItem("Configure Remotes\u2026", null, function() {
             mainView.configureRemotesView.show();
         }, { disabled: noRepo }));
+        panel.append(self.appMenuItem("Credentials\u2026", null, function() {
+            mainView.credentialsView.show();
+        }, { disabled: noRepo }));
         panel.append(self.appMenuDivider());
         panel.append(self.appMenuItem("Stashes\u2026", null, function() {
             mainView.stashesView.show();
@@ -1961,6 +1977,22 @@ gitpar.Toolbar = function(mainView) {
     // - redraw the visible section in place - because switching a repo
     // tab needed the same thing.
 
+    // Recognises the backend's GIT_TERMINAL_PROMPT=0 failure (see
+    // base_git_env in src/bin/gitpar) and offers the fix instead of
+    // showing that stderr line raw. Shared by fetch/pull/push, the same
+    // way onPush's own onError below handles its own no-upstream case.
+    // Returns true (suppressing the generic error modal) when it applies.
+    self.handleCredentialsNeededError = function(message) {
+        var needed = gitpar.parseCredentialsNeededError(message);
+        if (!needed) {
+            return false;
+        }
+        if (window.confirm("This repository needs credentials for " + needed.url + ". Set them up now?")) {
+            mainView.credentialsView.show();
+        }
+        return true;
+    }
+
     self.onPull = function(event) {
         if (event) {
             event.preventDefault();
@@ -1976,7 +2008,7 @@ gitpar.Toolbar = function(mainView) {
         self.runRemoteAction("toolbar-pull", args, function(data) {
             self.loadBranches();
             self.refreshActiveSection();
-        });
+        }, self.handleCredentialsNeededError);
     }
 
     self.onPushSetUpstream = function(remote, branch) {
@@ -2007,6 +2039,7 @@ gitpar.Toolbar = function(mainView) {
                 self.onPushSetUpstream(noUpstream.remote, noUpstream.branch);
                 return true;
             }
+            return self.handleCredentialsNeededError(message);
         });
     }
 
@@ -2047,7 +2080,7 @@ gitpar.Toolbar = function(mainView) {
         self.runRemoteAction("toolbar-fetch", "fetch --prune", function(data) {
             self.loadBranches();
             self.refreshActiveSection();
-        }).always(function() {
+        }, self.handleCredentialsNeededError).always(function() {
             self.fetchInFlightFor = null;
         });
     }
@@ -2494,6 +2527,146 @@ gitpar.ConfigureRemotesView = function() {
                             '</div>' +
                         '</div>')[0];
     $(".configure-remotes-add-button", self.element).click(self.onAdd);
+    $("body").append(self.element);
+};
+
+// Built-in git credential helpers worth offering, per platform. "cache"
+// (in-memory, time-limited) is the safe default everywhere including
+// Linux, where a real secret-store helper (libsecret) may or may not
+// actually be installed - git config accepts the name unconditionally,
+// so the only reliable way to know if it works is trying it, which
+// happens naturally the first time something needs a credential.
+gitpar.CREDENTIAL_HELPER_CHOICES = {
+    darwin: [
+        { value: "osxkeychain", label: "macOS Keychain (recommended)" },
+        { value: "cache", label: "Cache in memory (times out)" },
+        { value: "store", label: "Store in a plain text file (less secure)" },
+    ],
+    win32: [
+        { value: "manager-core", label: "Git Credential Manager (recommended)" },
+        { value: "wincred", label: "Windows Credential Manager" },
+        { value: "cache", label: "Cache in memory (times out)" },
+        { value: "store", label: "Store in a plain text file (less secure)" },
+    ],
+    linux: [
+        { value: "cache", label: "Cache in memory (recommended, times out)" },
+        { value: "libsecret", label: "OS keyring via libsecret (needs git-credential-libsecret installed)" },
+        { value: "store", label: "Store in a plain text file (less secure)" },
+    ],
+};
+
+gitpar.suggestedCredentialHelpers = function() {
+    return gitpar.CREDENTIAL_HELPER_CHOICES[gitpar.platform] || gitpar.CREDENTIAL_HELPER_CHOICES.linux;
+}
+
+/*
+ * == CredentialsView ==========================================================
+ * Reads and writes git's own credential.helper config - GitPar never
+ * stores or sees a credential itself. Everything here rides straight on
+ * the existing unrestricted /git passthrough (gitpar.git), the same as a
+ * user typing these same commands into a real terminal; there is no
+ * dedicated backend endpoint for any of it.
+ */
+gitpar.CredentialsView = function() {
+
+    var self = this;
+
+    // git config --get resolves local > global > system on its own, so
+    // this is the value actually in effect right now. Its own separate
+    // --global --get tells "this repo overrides it" apart from
+    // "inheriting the global/system default" for display purposes.
+    // config --get exits 1 (not an error - just "unset") when nothing
+    // matches, so both reads treat that as an empty value rather than
+    // showing the generic error modal.
+    self.refresh = function() {
+        gitpar.git("config --get credential.helper", function(effective) {
+            gitpar.git("config --global --get credential.helper", function(global_) {
+                self.render(effective.trim(), global_.trim());
+            }, function() {
+                self.render(effective.trim(), "");
+                return true;
+            });
+        }, function() {
+            self.render("", "");
+            return true;
+        });
+    }
+
+    self.render = function(effective, global_) {
+        var status = $(".credentials-status", self.element);
+        if (!effective) {
+            status.text("No credential helper is configured - git will ask for a username and password every time, and won't remember them.");
+        } else if (effective == global_) {
+            status.text("Currently using “" + effective + "”, configured globally (all repositories).");
+        } else {
+            status.text("Currently using “" + effective + "”, configured for this repository only.");
+        }
+
+        var select = $(".credentials-helper-select", self.element);
+        select.empty();
+        select.append($('<option value="">Don’t store credentials</option>'));
+        gitpar.suggestedCredentialHelpers().forEach(function(choice) {
+            select.append($('<option>').attr("value", choice.value).text(choice.label));
+        });
+        select.val(effective);
+
+        $(".credentials-scope-select", self.element).val(effective && effective != global_ ? "repo" : "global");
+    }
+
+    self.onSave = function() {
+        var helper = $(".credentials-helper-select", self.element).val();
+        var scope = $(".credentials-scope-select", self.element).val();
+        var scopeFlag = scope == "global" ? "--global " : "";
+        // An empty value unsets the key at that scope, same as leaving
+        // it unconfigured - git config --unset rather than setting it to
+        // nothing, which config credential.helper "" would otherwise do.
+        var cmd = helper
+            ? "config " + scopeFlag + "credential.helper " + gitpar.quoteArg(helper)
+            : "config " + scopeFlag + "--unset credential.helper";
+        gitpar.git(cmd, function() {
+            self.refresh();
+        }, function(message) {
+            // --unset on a key that was never set exits non-zero too -
+            // not a real failure, there's simply nothing to remove.
+            if (!helper) {
+                self.refresh();
+                return true;
+            }
+            gitpar.showError(message);
+            return true;
+        });
+    }
+
+    self.show = function() {
+        self.refresh();
+        $(self.element).modal("show");
+    }
+
+    self.element = $(   '<div class="modal fade" id="credentials-modal" tabindex="-1" role="dialog">' +
+                            '<div class="modal-dialog" role="document">' +
+                                '<div class="modal-content">' +
+                                    '<div class="modal-header">' +
+                                        '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
+                                        '<div class="repo-picker-eyebrow">Credentials</div>' +
+                                        '<h4 class="modal-title">Repository Credentials</h4>' +
+                                    '</div>' +
+                                    '<div class="modal-body">' +
+                                        '<div class="credentials-status"></div>' +
+                                        '<div class="credentials-form">' +
+                                            '<label>Credential helper</label>' +
+                                            '<select class="form-control input-sm credentials-helper-select"></select>' +
+                                            '<label>Apply to</label>' +
+                                            '<select class="form-control input-sm credentials-scope-select">' +
+                                                '<option value="repo">This repository only</option>' +
+                                                '<option value="global">Global (all repositories)</option>' +
+                                            '</select>' +
+                                            '<button type="button" class="btn btn-primary btn-sm credentials-save-button">Save</button>' +
+                                        '</div>' +
+                                    '</div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>')[0];
+    $(".credentials-save-button", self.element).click(self.onSave);
     $("body").append(self.element);
 };
 
@@ -7089,6 +7262,7 @@ function MainUi() {
         gitpar.recentWorkspaces = context.recent_workspaces || [];
         gitpar.workspaceRepos = context.workspace_repos || [];
         gitpar.viewonly = context.view_only;
+        gitpar.platform = context.platform || "";
         gitpar.adoptTheme(context.theme);
         gitpar.adoptPullStrategy(context.pull_strategy);
         gitpar.adoptAutoFetchPreference(context.auto_fetch);
@@ -7105,6 +7279,7 @@ function MainUi() {
         self.commitActionMenu = new gitpar.CommitActionMenu(self);
         self.searchOverlay = new gitpar.SearchOverlay(self);
         self.configureRemotesView = new gitpar.ConfigureRemotesView();
+        self.credentialsView = new gitpar.CredentialsView();
         self.worktreesView = new gitpar.WorktreesView(self);
         self.stashesView = new gitpar.StashesView(self);
         self.reflogView = new gitpar.ReflogView(self);

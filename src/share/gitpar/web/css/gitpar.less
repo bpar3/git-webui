@@ -830,6 +830,31 @@ body {
     }
 }
 
+#credentials-modal {
+    .credentials-status {
+        margin-bottom: 14px;
+        color: var(--gf-text-muted);
+    }
+
+    .credentials-form {
+        .display-flex();
+        .flex-direction(column);
+        gap: 6px;
+
+        label {
+            font-size: 11.5px;
+            font-weight: bold;
+            color: var(--gf-text-muted);
+            margin: 6px 0 0;
+        }
+
+        .credentials-save-button {
+            margin-top: 10px;
+            align-self: flex-start;
+        }
+    }
+}
+
 .stashes-list, .reflog-list, .submodules-list {
     max-height: 22em;
     overflow-y: auto;
