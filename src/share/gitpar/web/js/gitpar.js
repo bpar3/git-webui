@@ -1569,7 +1569,19 @@ gitpar.Toolbar = function(mainView) {
         $("[data-section='" + sectionName + "']", self.element).addClass("active");
     }
 
+    // Remembers whichever section was showing right before Changes, so
+    // Escape can return to it - set here rather than only at the
+    // "jumped in from a commit's file" call sites, so it also covers
+    // arriving via the toolbar tab/keyboard shortcut the same way.
+    // Left untouched if already on workspace, so a second, unrelated
+    // showWorkspace() call (the Ctrl+1 shortcut fired twice, say) can't
+    // clobber a real return point with "workspace" itself.
+    self.workspaceReturnSection = null;
+
     self.showWorkspace = function() {
+        if (self.activeSectionName != "workspace") {
+            self.workspaceReturnSection = self.activeSectionName;
+        }
         self.activateSection("workspace");
         mainView.workspaceView.update("stage");
     }
@@ -2494,6 +2506,34 @@ gitpar.Toolbar = function(mainView) {
             self.onFetch();
         }
     });
+
+    // Clicking a file from a commit's changes, or from the working
+    // directory summary, jumps to the Changes view to show it -
+    // plain Escape returns to whichever section that jump left, the
+    // same "back" a modal or an expanded commit already gives.
+    $(document).on("keydown", function(event) {
+        if (event.key != "Escape" || self.activeSectionName != "workspace" || !self.workspaceReturnSection) {
+            return;
+        }
+        var target = event.target;
+        if (target && (target.tagName == "INPUT" || target.tagName == "TEXTAREA" || target.isContentEditable)) {
+            return;
+        }
+        // A modal or the Stash/Discard dropdown has its own, more
+        // specific meaning for Escape - let that happen instead of also
+        // navigating away underneath it.
+        if ($(".modal.in").length > 0 || $(".workspace-dropdown-menu.open").length > 0) {
+            return;
+        }
+        var returnTo = self.workspaceReturnSection;
+        self.workspaceReturnSection = null;
+        if (returnTo == "branches") {
+            self.showBranches();
+        } else {
+            self.showHistory();
+        }
+    });
+
     $("#toolbar-repo-label", self.element).click(function(event) {
         event.stopPropagation();
         self.renderRepoMenu();
