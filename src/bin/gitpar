@@ -579,6 +579,11 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 return
             result = list_remotes(repo_root)
             self.send_json(result["status"], result["payload"])
+        elif self.request_path == "/api/credentials/stored":
+            if not self.ensure_repo_selected(repo_root):
+                return
+            result = list_stored_credentials(repo_root)
+            self.send_json(result["status"], result["payload"])
         elif self.request_path.startswith("/api/commits/") and self.request_path.endswith("/is-ancestor"):
             if not self.ensure_repo_selected(repo_root):
                 return
@@ -1843,6 +1848,49 @@ def list_remotes(repo_root):
         else:
             remotes[name]["fetch_url"] = url
     return {"status": 200, "payload": {"remotes": [remotes[name] for name in order]}}
+
+
+def credential_store_file_path(repo_root):
+    """The file git's `store` credential helper actually reads from - its
+    own --file=<path> override if the configured helper has one, else
+    git's documented default of ~/.git-credentials."""
+    result = run_git_capture(repo_root, ["config", "--get", "credential.helper"])
+    helper_value = result["stdout"].strip() if result["returncode"] == 0 else ""
+    match = re.search(r'--file[= ]"?([^"\s]+)"?', helper_value)
+    if match:
+        return os.path.realpath(os.path.expanduser(match.group(1)))
+    return os.path.join(os.path.expanduser("~"), ".git-credentials")
+
+
+def list_stored_credentials(repo_root):
+    """Entries in the `store` helper's plaintext file - protocol/host/
+    username only, never the password itself, which this never reads
+    into memory as a distinct value at all (it's parsed out of the URL
+    along with everything else, then simply not included below)."""
+    path = credential_store_file_path(repo_root)
+    entries = []
+    if os.path.isfile(path):
+        try:
+            with open(path, "r") as store_file:
+                for line in store_file:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parsed = urlparse(line)
+                    if not parsed.hostname:
+                        continue
+                    entries.append({
+                        "protocol": parsed.scheme,
+                        "host": parsed.hostname,
+                        # store's URLs percent-encode the username, same
+                        # as any other URL component - undo that so what
+                        # displays is the actual username, not a mangled
+                        # copy of it.
+                        "username": unquote(parsed.username) if parsed.username else "",
+                    })
+        except (OSError, IOError):
+            pass
+    return {"status": 200, "payload": {"path": path, "entries": entries}}
 
 
 def add_remote(repo_root, name, url):

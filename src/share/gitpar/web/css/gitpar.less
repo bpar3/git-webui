@@ -853,6 +853,65 @@ body {
             align-self: flex-start;
         }
     }
+
+    .credentials-management {
+        &:empty {
+            display: none;
+        }
+
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid var(--gf-border);
+
+        .credentials-management-title {
+            margin: 0 0 8px;
+            font-size: 11.5px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--gf-text-muted);
+        }
+
+        .credentials-management-hint {
+            color: var(--gf-text-muted);
+        }
+
+        .credentials-stored-list {
+            max-height: 12em;
+            overflow-y: auto;
+        }
+
+        .credentials-stored-empty {
+            color: var(--gf-text-muted);
+        }
+
+        .credentials-stored-row {
+            .display-flex();
+            .align-items(center);
+            gap: 10px;
+            padding: 5px 0;
+            border-bottom: 1px solid var(--gf-border);
+
+            &:last-child {
+                border-bottom: 0;
+            }
+        }
+
+        .credentials-stored-host {
+            .flex(1);
+            font-weight: bold;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .credentials-stored-user {
+            color: var(--gf-text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    }
 }
 
 .stashes-list, .reflog-list, .submodules-list {

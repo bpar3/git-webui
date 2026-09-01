@@ -2666,6 +2666,15 @@ gitpar.suggestedCredentialHelpers = function() {
     return gitpar.CREDENTIAL_HELPER_CHOICES[gitpar.platform] || gitpar.CREDENTIAL_HELPER_CHOICES.linux;
 }
 
+// Where a native keychain-backed helper's entries actually live, so the
+// Credentials panel can point there rather than trying to reimplement
+// browsing a platform keychain in-app.
+gitpar.CREDENTIAL_HELPER_KEYCHAIN_HINTS = {
+    darwin: "Keychain Access",
+    win32: "Windows Credential Manager",
+    linux: "your keyring app (e.g. Seahorse or GNOME Passwords)",
+};
+
 /*
  * == CredentialsView ==========================================================
  * Reads and writes git's own credential.helper config - GitPar never
@@ -2718,6 +2727,102 @@ gitpar.CredentialsView = function() {
         select.val(effective);
 
         $(".credentials-scope-select", self.element).val(effective && effective != global_ ? "repo" : "global");
+
+        self.renderManagement(effective);
+    }
+
+    // Whatever's actually managing stored credentials right now gets a
+    // matching management affordance below the picker: store's entries
+    // can be listed and individually forgotten, cache's can only be
+    // cleared as a whole (it's an opaque in-memory daemon), and a native
+    // keychain helper's are pointed at rather than reimplemented here.
+    self.renderManagement = function(effective) {
+        var container = $(".credentials-management", self.element);
+        container.empty();
+        if (!effective) {
+            return;
+        }
+        if (effective == "store" || effective.indexOf("store ") == 0) {
+            self.renderStoredList(container);
+        } else if (effective == "cache" || effective.indexOf("cache ") == 0) {
+            self.renderCacheClear(container);
+        } else {
+            self.renderKeychainHint(container, effective);
+        }
+    }
+
+    self.renderStoredList = function(container) {
+        container.append('<h5 class="credentials-management-title">Stored credentials</h5>');
+        var list = $('<div class="credentials-stored-list">Loading…</div>').appendTo(container);
+        // Deliberately not gitpar.apiGet: listing what's stored is
+        // routine background info for this panel, not worth a full
+        // error modal if the file happens to be briefly unreadable.
+        $.getJSON(gitpar.withRepoParam("/api/credentials/stored"))
+            .done(function(data) {
+                list.empty();
+                if (!data.entries || data.entries.length == 0) {
+                    list.append($('<div class="credentials-stored-empty"></div>')
+                        .text("No stored credentials found in " + data.path + "."));
+                    return;
+                }
+                data.entries.forEach(function(entry) {
+                    var row = $(  '<div class="credentials-stored-row">' +
+                                        '<span class="credentials-stored-host"></span>' +
+                                        '<span class="credentials-stored-user"></span>' +
+                                        '<button type="button" class="btn btn-danger btn-xs credentials-stored-forget">Forget</button>' +
+                                    '</div>');
+                    $(".credentials-stored-host", row).text(entry.protocol + "://" + entry.host);
+                    $(".credentials-stored-user", row).text(entry.username || "(no username)");
+                    $(".credentials-stored-forget", row).click(function() {
+                        self.forgetStoredCredential(entry, row);
+                    });
+                    list.append(row);
+                });
+            })
+            .fail(function() {
+                list.text("Unable to read stored credentials.");
+            });
+    }
+
+    self.forgetStoredCredential = function(entry, row) {
+        if (!window.confirm("Forget the stored credential for " + entry.host +
+                (entry.username ? " (" + entry.username + ")" : "") + "?")) {
+            return;
+        }
+        // git credential reject removes whatever matches this from the
+        // *configured* helper - store here, since that's the only case
+        // this is ever called from - via the same key=value stdin
+        // protocol every git credential helper speaks, rather than this
+        // editing the file directly and having to reproduce store's own
+        // format/escaping rules to do it safely.
+        var stdin = "protocol=" + entry.protocol + "\nhost=" + entry.host +
+            (entry.username ? "\nusername=" + entry.username : "") + "\n\n";
+        gitpar.git("credential reject", stdin, function() {
+            row.remove();
+        }, function(message) {
+            gitpar.showError(message);
+            return true;
+        });
+    }
+
+    self.renderCacheClear = function(container) {
+        container.append('<h5 class="credentials-management-title">Cached credentials</h5>');
+        var button = $('<button type="button" class="btn btn-default btn-sm credentials-cache-clear">Clear cached credentials</button>')
+            .appendTo(container);
+        button.click(function() {
+            gitpar.git("credential-cache exit", function() {
+                gitpar.showResult("Cleared", "Cached credentials have been cleared.");
+            }, function(message) {
+                gitpar.showError(message);
+                return true;
+            });
+        });
+    }
+
+    self.renderKeychainHint = function(container, effective) {
+        var hint = gitpar.CREDENTIAL_HELPER_KEYCHAIN_HINTS[gitpar.platform] || "your system's credential manager";
+        container.append($('<div class="credentials-management-hint"></div>').text(
+            "Credentials go through " + effective + " - manage or remove individual entries in " + hint + "."));
     }
 
     self.onSave = function() {
@@ -2769,6 +2874,7 @@ gitpar.CredentialsView = function() {
                                             '</select>' +
                                             '<button type="button" class="btn btn-primary btn-sm credentials-save-button">Save</button>' +
                                         '</div>' +
+                                        '<div class="credentials-management"></div>' +
                                     '</div>' +
                                 '</div>' +
                             '</div>' +
