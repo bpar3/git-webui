@@ -328,6 +328,26 @@ body {
     }
 }
 
+// A commit that just landed via a soft log refresh (LogView.refresh) -
+// a brief highlight distinguishes "this is new" from the ordinary
+// fade-in every row would otherwise need, without a lasting visual
+// change once it settles in as just another row in the list.
+.log-entry-inserted {
+    animation: log-entry-insert 700ms ease-out;
+}
+
+@keyframes log-entry-insert {
+    from { opacity: 0; transform: translateY(-6px); background-color: var(--gf-accent-bg); }
+    60%  { opacity: 1; transform: none; }
+    to   { background-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .log-entry-inserted {
+        animation: none;
+    }
+}
+
 .repo-picker-eyebrow,
 .no-repo-kicker {
     font-size: 11px;

@@ -1640,7 +1640,13 @@ gitpar.Toolbar = function(mainView) {
         } else if (self.activeSectionName == "branches") {
             mainView.branchesView.update();
         } else {
-            mainView.historyView.update(gitpar.historyRef);
+            // refresh(), not update(): every caller here (a Fetch/Pull/
+            // Push, the auto-fetch timer, window focus) is re-checking
+            // an already-showing view for new commits, not switching to
+            // a different one - update() would blank the whole list and
+            // repopulate it from scratch just to show it gained a few
+            // rows.
+            mainView.historyView.refresh();
         }
     }
 
@@ -3964,24 +3970,20 @@ gitpar.LogView = function(historyView) {
         self.populate();
     };
 
-    self.populate = function(isRetry) {
-        var generation = self.populateGeneration;
-        var maxCount = 1000;
-        if (content.childElementCount > 0) {
-            // The last node is the 'Show more commits placeholder'. Remove it.
-            content.removeChild(content.lastElementChild);
-        }
-        var startAt = content.childElementCount;
-        // HEAD, not --all: the unfiltered "everything" view is still just
-        // the checked-out branch's own history (what GitFiend and every
-        // other git GUI show by default) - --all pulls in every other
-        // local/remote branch and tag too, so any repo with more than
-        // one active branch got their commits interleaved by date into
-        // what looked like a single linear history, misrepresenting
-        // ancestry that was never actually there (particularly visible
-        // after a squash-merge, whose original commits live on only via
-        // whatever branch made them, not as ancestors of the merge
-        // commit on this branch).
+    // HEAD, not --all: the unfiltered "everything" view is still just
+    // the checked-out branch's own history (what GitFiend and every
+    // other git GUI show by default) - --all pulls in every other
+    // local/remote branch and tag too, so any repo with more than
+    // one active branch got their commits interleaved by date into
+    // what looked like a single linear history, misrepresenting
+    // ancestry that was never actually there (particularly visible
+    // after a squash-merge, whose original commits live on only via
+    // whatever branch made them, not as ancestors of the merge
+    // commit on this branch).
+    //
+    // Shared by populate() and refresh() so both walk exactly the same
+    // set of refs - refresh()'s row-reconciliation assumes that.
+    self.buildRefSpec = function() {
         var refSpec = self.ref ? self.ref : "HEAD";
         // Seeded with the stash SHAs below regardless of refSpec, which
         // surfaces their raw internal commits (a stash's "index" and
@@ -4012,6 +4014,21 @@ gitpar.LogView = function(historyView) {
             });
         }
         var authorSpec = gitpar.historyAuthorFilter ? " --author=" + JSON.stringify(gitpar.historyAuthorFilter) : "";
+        return { refSpec: refSpec, authorSpec: authorSpec, seededStash: seededStash };
+    }
+
+    self.populate = function(isRetry) {
+        var generation = self.populateGeneration;
+        var maxCount = 1000;
+        if (content.childElementCount > 0) {
+            // The last node is the 'Show more commits placeholder'. Remove it.
+            content.removeChild(content.lastElementChild);
+        }
+        var startAt = content.childElementCount;
+        var built = self.buildRefSpec();
+        var refSpec = built.refSpec;
+        var authorSpec = built.authorSpec;
+        var seededStash = built.seededStash;
         gitpar.git("log --date-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
             if (generation !== self.populateGeneration) {
                 // A newer update() reset and repopulated the view while
@@ -4079,6 +4096,109 @@ gitpar.LogView = function(historyView) {
                 });
                 return true;
             }
+        });
+    };
+
+    // A soft refresh: re-fetches the same ref and reconciles the result
+    // against what's already rendered, instead of update()'s clear-then-
+    // repopulate - so a fetch/pull/push (manual, the auto-fetch timer,
+    // or window focus) doesn't blank the whole list just to show it a
+    // few new commits landed on top of exactly the same history. Falls
+    // back to the plain update() whenever that assumption doesn't hold:
+    // nothing rendered yet, no overlap found with what's there (a
+    // repo/branch switch), or the fetched history doesn't have the
+    // currently-rendered rows as an exact suffix (a rebase, amend, or
+    // force-push actually changed history rather than adding to it) -
+    // in all of those cases the set of commits is genuinely different,
+    // not just longer, and a fast-forward-only reconciliation can't
+    // represent that without risking a graph that doesn't match the
+    // real DAG.
+    self.refresh = function() {
+        var existingRows = [];
+        for (var i = 0; i < content.children.length; ++i) {
+            if (content.children[i].model) {
+                existingRows.push(content.children[i]);
+            }
+        }
+        if (existingRows.length == 0) {
+            self.update(self.ref);
+            return;
+        }
+        var existingShas = existingRows.map(function(row) { return row.model.commit; });
+        var generation = ++self.populateGeneration;
+        var built = self.buildRefSpec();
+        // Headroom for both real new commits and finding the overlap
+        // point - if more than this arrived, or history was rewritten
+        // beyond it, the fallback below still lands on the right
+        // answer, just via the plain path instead of the fast one.
+        var maxCount = existingShas.length + 250;
+        gitpar.git("log --date-order --pretty=raw --decorate=full --max-count=" + (maxCount + 1) + " " + built.refSpec + built.authorSpec + " --", function(data) {
+            if (generation !== self.populateGeneration) {
+                return;
+            }
+            var freshShas = [];
+            var freshRaws = [];
+            var start = 0;
+            while (true) {
+                var end = data.indexOf("\ncommit ", start);
+                var len = end != -1 ? end - start : undefined;
+                var raw = data.substr(start, len);
+                var commit = raw.substr(7, 40);
+                if (!self.hiddenCommits[commit]) {
+                    freshShas.push(commit);
+                    freshRaws.push(raw);
+                }
+                if (len == undefined) {
+                    break;
+                }
+                start = end + 1;
+            }
+
+            var k = freshShas.indexOf(existingShas[0]);
+            var isCleanPrefix = k != -1;
+            for (var i = 0; isCleanPrefix && i < existingShas.length && (k + i) < freshShas.length; ++i) {
+                if (freshShas[k + i] != existingShas[i]) {
+                    isCleanPrefix = false;
+                }
+            }
+            if (!isCleanPrefix) {
+                self.update(self.ref);
+                return;
+            }
+            if (k == 0) {
+                // Nothing new - a true no-op, not even a graph redraw.
+                return;
+            }
+
+            var fragment = document.createDocumentFragment();
+            for (var i = 0; i < k; ++i) {
+                var entry = new Entry(self, freshRaws[i]);
+                $(entry.element).addClass("log-entry-inserted");
+                entry.element.style.minHeight = self.lineHeight + "px";
+                fragment.appendChild(entry.element);
+            }
+            content.insertBefore(fragment, content.firstChild);
+            setTimeout(function() {
+                $(".log-entry-inserted", content).removeClass("log-entry-inserted");
+            }, 700);
+
+            // Every existing row just shifted down by k rows, so the
+            // graph (its SVG paths are absolute pixel positions built up
+            // incrementally as rows are walked from the top - see
+            // updateGraph) needs the same full redraw collapsing an
+            // expanded commit already does. Skipped while a commit is
+            // expanded rather than the list: #history-view is detached
+            // from the document then (see expandCommit), so the layout
+            // measurements a redraw depends on would all read back zero
+            // - collapseCommit() already redraws unconditionally on the
+            // way back, which is what fixes this up once the list is
+            // visible again.
+            if (!historyView.isCommitViewOpen()) {
+                self.redrawGraph();
+            }
+        }, function(message) {
+            self.update(self.ref);
+            return true;
         });
     };
 
@@ -6119,6 +6239,21 @@ gitpar.HistoryView = function(mainView) {
         self.show();
         self.refreshToolbar();
         self.logView.update(ref);
+        if (!gitpar.viewonly) {
+            self.uncommittedSummary.update();
+        }
+    };
+
+    // For "the same view, possibly with new commits" (a remote action,
+    // the auto-fetch timer, window focus) rather than update()'s "a
+    // different view entirely" (switching branches/refs, applying a
+    // filter) - no self.show(), since this only ever runs while History
+    // is already the visible section (see Toolbar.refreshActiveSection),
+    // and switchTo() detaching and reattaching the view resets its
+    // scroll position for no reason if nothing else changes.
+    self.refresh = function() {
+        self.refreshToolbar();
+        self.logView.refresh();
         if (!gitpar.viewonly) {
             self.uncommittedSummary.update();
         }
