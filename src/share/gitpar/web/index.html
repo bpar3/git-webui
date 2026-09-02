@@ -42,6 +42,43 @@ limitations under the License.
                 </div>
             </div>
         </div>
+        <!-- Confirm modal dialog - replaces window.confirm(), styled to
+             match the rest of the app rather than the browser's own
+             barebones dialog chrome. -->
+        <div class="modal fade" id="confirm-modal" tabindex="-1" role="dialog">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>
+                        <h4 class="modal-title confirm-modal-title"></h4>
+                    </div>
+                    <div class="modal-body confirm-modal-message"></div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-default confirm-modal-cancel" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary confirm-modal-ok"></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Prompt modal dialog - replaces window.prompt(). -->
+        <div class="modal fade" id="prompt-modal" tabindex="-1" role="dialog">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>
+                        <h4 class="modal-title prompt-modal-title"></h4>
+                    </div>
+                    <div class="modal-body">
+                        <div class="prompt-modal-message"></div>
+                        <input type="text" class="form-control prompt-modal-input" autocomplete="off">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-default prompt-modal-cancel" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary prompt-modal-ok"></button>
+                    </div>
+                </div>
+            </div>
+        </div>
         <!-- Help modal dialog -->
         <div class="modal fade" id="help-modal" tabindex="-1" role="dialog">
             <div class="modal-dialog modal-lg">

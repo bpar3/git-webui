@@ -226,6 +226,75 @@ gitpar.showResult = function(title, message) {
     gitpar.showModal(title, message, "info");
 }
 
+// Replaces window.confirm() with the app's own styled modal. Genuinely
+// asynchronous where window.confirm() blocked - onConfirm only runs if
+// the reader picks the OK-equivalent button; Cancel, the close button,
+// clicking outside, or Escape all just close it with no callback, the
+// same "did nothing" window.confirm() gave on Cancel.
+//
+// options: { title, okLabel, danger } - danger swaps the OK button to
+// the same red used for other destructive actions (discard, force
+// push, ...) rather than the default blue.
+gitpar.showConfirm = function(message, onConfirm, options) {
+    options = options || {};
+    var modal = $("#confirm-modal");
+    $(".confirm-modal-title", modal).text(options.title || "Confirm");
+    $(".confirm-modal-message", modal).text(message);
+    var okButton = $(".confirm-modal-ok", modal)
+        .text(options.okLabel || "OK")
+        .toggleClass("btn-primary", !options.danger)
+        .toggleClass("btn-danger", !!options.danger);
+    // .one() rather than a handler wired once at startup: each call
+    // targets this specific onConfirm, and the modal is a single shared
+    // instance every confirm in the app reuses.
+    okButton.off("click").one("click", function() {
+        modal.modal("hide");
+        onConfirm();
+    });
+    modal.modal("show");
+}
+
+// Replaces window.prompt() the same way. onSubmit is only called on
+// OK/Enter, with the input's current value (which may be empty - unlike
+// window.prompt(), Cancel is the only way to get a null-equivalent
+// "nothing happened", so callers still check for an empty string
+// themselves the same way they checked window.prompt()'s null/"").
+//
+// options: { message, okLabel, password } - message is optional
+// explanatory text above the input; password masks it, for the one or
+// two prompts that might ask for a secret.
+gitpar.showPrompt = function(title, defaultValue, onSubmit, options) {
+    options = options || {};
+    var modal = $("#prompt-modal");
+    $(".prompt-modal-title", modal).text(title);
+    $(".prompt-modal-message", modal).toggle(!!options.message).text(options.message || "");
+    var input = $(".prompt-modal-input", modal)
+        .attr("type", options.password ? "password" : "text")
+        .val(defaultValue || "");
+    $(".prompt-modal-ok", modal).text(options.okLabel || "OK");
+    var submitted = false;
+    var submit = function() {
+        if (submitted) {
+            return;
+        }
+        submitted = true;
+        var value = input.val();
+        modal.modal("hide");
+        onSubmit(value);
+    };
+    $(".prompt-modal-ok", modal).off("click").one("click", submit);
+    input.off("keydown").on("keydown", function(event) {
+        if (event.key == "Enter") {
+            event.preventDefault();
+            submit();
+        }
+    });
+    modal.off("shown.bs.modal").one("shown.bs.modal", function() {
+        input.trigger("focus").select();
+    });
+    modal.modal("show");
+}
+
 // A notice floats over the app in the bottom-right and takes itself
 // away. It used to be a dismissible block appended to <body>, which is
 // a flex column, so it became a layout row: the whole UI shifted down
@@ -1396,37 +1465,35 @@ gitpar.Toolbar = function(mainView) {
             return;
         }
         var actionLabel = squash ? "Squash merge" : "Merge";
-        if (!window.confirm(actionLabel + " '" + sourceRef + "' into '" + targetRef + "'?")) {
-            return;
-        }
-        gitpar.apiPost(squash ? "/api/branches/squash-merge" : "/api/branches/merge", {
-            source_ref: sourceRef,
-            target_ref: targetRef,
-        }, function(data) {
-            gitpar.setFlashMessage(
-                actionLabel + " completed",
-                data.message || ((squash ? "Squashed " : "Merged ") + sourceRef + " into " + targetRef),
-                "info"
-            );
-            gitpar.reloadWithPostAction(squash ? "workspace" : "history");
-        }, function(xhr) {
-            gitpar.setFlashMessage(
-                actionLabel + " needs attention",
-                gitpar.parseApiError(xhr, actionLabel + " failed"),
-                "error"
-            );
-            gitpar.reloadWithPostAction("workspace");
-        });
+        gitpar.showConfirm(actionLabel + " '" + sourceRef + "' into '" + targetRef + "'?", function() {
+            gitpar.apiPost(squash ? "/api/branches/squash-merge" : "/api/branches/merge", {
+                source_ref: sourceRef,
+                target_ref: targetRef,
+            }, function(data) {
+                gitpar.setFlashMessage(
+                    actionLabel + " completed",
+                    data.message || ((squash ? "Squashed " : "Merged ") + sourceRef + " into " + targetRef),
+                    "info"
+                );
+                gitpar.reloadWithPostAction(squash ? "workspace" : "history");
+            }, function(xhr) {
+                gitpar.setFlashMessage(
+                    actionLabel + " needs attention",
+                    gitpar.parseApiError(xhr, actionLabel + " failed"),
+                    "error"
+                );
+                gitpar.reloadWithPostAction("workspace");
+            });
+        }, { okLabel: actionLabel });
     }
 
     self.removeBranch = function(localName) {
         if (!localName) {
             return;
         }
-        if (!window.confirm("Delete branch '" + localName + "'?")) {
-            return;
-        }
-        self.deleteBranch(localName, false);
+        gitpar.showConfirm("Delete branch '" + localName + "'?", function() {
+            self.deleteBranch(localName, false);
+        }, { okLabel: "Delete", danger: true });
     }
 
     self.deleteBranch = function(localName, force) {
@@ -1439,13 +1506,15 @@ gitpar.Toolbar = function(mainView) {
             // one that's genuinely unmerged, anything else - still shows
             // as a normal error instead.
             if (!force && gitpar.isBranchNotFullyMergedError(message)) {
-                if (window.confirm(
+                gitpar.showConfirm(
                     "'" + localName + "' is not fully merged into its usual ancestry - normal " +
                     "after a squash or rebase merge, since neither leaves the original commits " +
-                    "reachable the way an ordinary merge does. Delete it anyway?"
-                )) {
-                    self.deleteBranch(localName, true);
-                }
+                    "reachable the way an ordinary merge does. Delete it anyway?",
+                    function() {
+                        self.deleteBranch(localName, true);
+                    },
+                    { okLabel: "Delete Anyway", danger: true }
+                );
                 return;
             }
             gitpar.showError(message);
@@ -1456,60 +1525,65 @@ gitpar.Toolbar = function(mainView) {
         if (!remoteName) {
             return;
         }
-        if (!window.confirm("Delete '" + remoteName + "' from the remote? This cannot be undone.")) {
-            return;
-        }
-        gitpar.apiPost("/api/branches/delete-remote", {remote_name: remoteName}, gitpar.reloadApp);
+        gitpar.showConfirm("Delete '" + remoteName + "' from the remote? This cannot be undone.", function() {
+            gitpar.apiPost("/api/branches/delete-remote", {remote_name: remoteName}, gitpar.reloadApp);
+        }, { okLabel: "Delete", danger: true });
     }
 
     self.createBranchAtRef = function(startPoint, suggestedName) {
-        var branchName = window.prompt("New branch name", suggestedName || "");
-        if (!branchName) {
-            return;
-        }
-        // Which remote to publish to is only ever ambiguous with more
-        // than one configured - a single remote (or none) is exactly
-        // what git itself would use, so there's nothing to ask and the
-        // branch is created the same way it always was. This is also
-        // why the remote list is fetched here rather than kept cached
-        // anywhere: it's read once, right before the one prompt that
-        // needs it, rather than a piece of state to keep in sync.
-        gitpar.apiGet("/api/remotes", function(data) {
-            var remotes = data.remotes || [];
-            if (remotes.length < 2) {
-                self.createBranchWithRemote(branchName, startPoint, null);
+        gitpar.showPrompt("New branch name", suggestedName || "", function(branchName) {
+            if (!branchName) {
                 return;
             }
-            var names = remotes.map(function(remote) { return remote.name; });
-            var typed = window.prompt(
-                "Push '" + branchName + "' to which remote? (" + names.join(", ") + ")\n" +
-                "Leave blank to create it locally only.",
-                gitpar.defaultRemoteName(remotes)
-            );
-            if (!typed || !typed.trim()) {
-                self.createBranchWithRemote(branchName, startPoint, null);
-                return;
-            }
-            var remote = gitpar.matchRemoteName(remotes, typed);
-            if (!remote) {
-                // createBranchWithRemote ends in a full page reload
-                // (checkout switched branches, which the rest of the
-                // app needs to pick up) - a showError here would be
-                // wiped out before it could be read, the same way any
-                // DOM state is. setFlashMessage is what survives that,
-                // read back and shown once the reload completes.
-                gitpar.setFlashMessage(
-                    "Branch created locally only",
-                    "'" + typed.trim() + "' is not one of this repo's remotes (" + names.join(", ") + ").",
-                    "error"
+            // Which remote to publish to is only ever ambiguous with
+            // more than one configured - a single remote (or none) is
+            // exactly what git itself would use, so there's nothing to
+            // ask and the branch is created the same way it always was.
+            // This is also why the remote list is fetched here rather
+            // than kept cached anywhere: it's read once, right before
+            // the one prompt that needs it, rather than a piece of
+            // state to keep in sync.
+            gitpar.apiGet("/api/remotes", function(data) {
+                var remotes = data.remotes || [];
+                if (remotes.length < 2) {
+                    self.createBranchWithRemote(branchName, startPoint, null);
+                    return;
+                }
+                var names = remotes.map(function(remote) { return remote.name; });
+                gitpar.showPrompt(
+                    "Push '" + branchName + "' to which remote?",
+                    gitpar.defaultRemoteName(remotes),
+                    function(typed) {
+                        if (!typed || !typed.trim()) {
+                            self.createBranchWithRemote(branchName, startPoint, null);
+                            return;
+                        }
+                        var remote = gitpar.matchRemoteName(remotes, typed);
+                        if (!remote) {
+                            // createBranchWithRemote ends in a full page
+                            // reload (checkout switched branches, which
+                            // the rest of the app needs to pick up) - a
+                            // showError here would be wiped out before
+                            // it could be read, the same way any DOM
+                            // state is. setFlashMessage is what survives
+                            // that, read back and shown once the reload
+                            // completes.
+                            gitpar.setFlashMessage(
+                                "Branch created locally only",
+                                "'" + typed.trim() + "' is not one of this repo's remotes (" + names.join(", ") + ").",
+                                "error"
+                            );
+                        }
+                        self.createBranchWithRemote(branchName, startPoint, remote);
+                    },
+                    { message: "One of: " + names.join(", ") + ". Leave blank to create it locally only." }
                 );
-            }
-            self.createBranchWithRemote(branchName, startPoint, remote);
-        }, function(xhr) {
-            // No remotes to ask about, or the listing itself failed -
-            // either way, falling back to the plain local create is the
-            // one behaviour that was always available.
-            self.createBranchWithRemote(branchName, startPoint, null);
+            }, function(xhr) {
+                // No remotes to ask about, or the listing itself failed -
+                // either way, falling back to the plain local create is
+                // the one behaviour that was always available.
+                self.createBranchWithRemote(branchName, startPoint, null);
+            });
         });
     }
 
@@ -1547,12 +1621,13 @@ gitpar.Toolbar = function(mainView) {
     }
 
     self.createTagAtRef = function(startPoint, suggestedName) {
-        var tagName = window.prompt("New tag name", suggestedName || "");
-        if (!tagName) {
-            return;
-        }
-        gitpar.git("tag " + tagName + (startPoint ? " " + startPoint : ""), function() {
-            gitpar.showResult("Tag created", "Created tag " + tagName);
+        gitpar.showPrompt("New tag name", suggestedName || "", function(tagName) {
+            if (!tagName) {
+                return;
+            }
+            gitpar.git("tag " + tagName + (startPoint ? " " + startPoint : ""), function() {
+                gitpar.showResult("Tag created", "Created tag " + tagName);
+            });
         });
     }
 
@@ -1921,49 +1996,51 @@ gitpar.Toolbar = function(mainView) {
     }
 
     self.cloneRepo = function() {
-        var url = window.prompt("Repository URL to clone");
-        if (!url) {
-            return;
-        }
-        gitpar.apiPost("/api/fs/pick-directory", {
-            path: gitpar.workspacePath || gitpar.repoPath || null,
-            title: "Choose destination folder",
-        }, function(data) {
-            if (data.unsupported) {
-                gitpar.showWarning(data.error || "Native folder picker unavailable.");
+        gitpar.showPrompt("Repository URL to clone", "", function(url) {
+            if (!url) {
                 return;
             }
-            if (data.cancelled) {
-                return;
-            }
-            gitpar.apiPost("/api/repos/clone", {url: url, destination: data.path}, function(context) {
-                gitpar.applyOpenedRepoContext(mainView, context);
-            }, function(xhr) {
-                gitpar.showError(gitpar.parseApiError(xhr, "Clone failed"));
+            gitpar.apiPost("/api/fs/pick-directory", {
+                path: gitpar.workspacePath || gitpar.repoPath || null,
+                title: "Choose destination folder",
+            }, function(data) {
+                if (data.unsupported) {
+                    gitpar.showWarning(data.error || "Native folder picker unavailable.");
+                    return;
+                }
+                if (data.cancelled) {
+                    return;
+                }
+                gitpar.apiPost("/api/repos/clone", {url: url, destination: data.path}, function(context) {
+                    gitpar.applyOpenedRepoContext(mainView, context);
+                }, function(xhr) {
+                    gitpar.showError(gitpar.parseApiError(xhr, "Clone failed"));
+                });
             });
         });
     }
 
     self.createRepoFlow = function() {
-        var name = window.prompt("New repository folder name");
-        if (!name) {
-            return;
-        }
-        gitpar.apiPost("/api/fs/pick-directory", {
-            path: gitpar.workspacePath || gitpar.repoPath || null,
-            title: "Choose parent folder",
-        }, function(data) {
-            if (data.unsupported) {
-                gitpar.showWarning(data.error || "Native folder picker unavailable.");
+        gitpar.showPrompt("New repository folder name", "", function(name) {
+            if (!name) {
                 return;
             }
-            if (data.cancelled) {
-                return;
-            }
-            gitpar.apiPost("/api/repos/create", {destination: data.path, directory_name: name}, function(context) {
-                gitpar.applyOpenedRepoContext(mainView, context);
-            }, function(xhr) {
-                gitpar.showError(gitpar.parseApiError(xhr, "Create repo failed"));
+            gitpar.apiPost("/api/fs/pick-directory", {
+                path: gitpar.workspacePath || gitpar.repoPath || null,
+                title: "Choose parent folder",
+            }, function(data) {
+                if (data.unsupported) {
+                    gitpar.showWarning(data.error || "Native folder picker unavailable.");
+                    return;
+                }
+                if (data.cancelled) {
+                    return;
+                }
+                gitpar.apiPost("/api/repos/create", {destination: data.path, directory_name: name}, function(context) {
+                    gitpar.applyOpenedRepoContext(mainView, context);
+                }, function(xhr) {
+                    gitpar.showError(gitpar.parseApiError(xhr, "Create repo failed"));
+                });
             });
         });
     }
@@ -2088,9 +2165,9 @@ gitpar.Toolbar = function(mainView) {
         if (!needed) {
             return false;
         }
-        if (window.confirm("This repository needs credentials for " + needed.url + ". Set them up now?")) {
+        gitpar.showConfirm("This repository needs credentials for " + needed.url + ". Set them up now?", function() {
             mainView.credentialsView.show();
-        }
+        }, { okLabel: "Set Up" });
         return true;
     }
 
@@ -2113,18 +2190,18 @@ gitpar.Toolbar = function(mainView) {
     }
 
     self.onPushSetUpstream = function(remote, branch) {
-        if (!window.confirm("'" + branch + "' has no upstream yet. Publish it to '" + remote + "' and track it there?")) {
-            return;
-        }
-        // remote/branch are ref-format tokens straight out of git's own
-        // suggested command line, never free-form text - the same
-        // reason branch and tag names are embedded unquoted elsewhere
-        // (createTagAtRef, for one): git's own naming rules already
-        // forbid the characters that would need escaping here.
-        self.runRemoteAction("toolbar-push", "push --set-upstream " + remote + " " + branch, function(data) {
-            self.loadBranches();
-            self.refreshActiveSection();
-        });
+        gitpar.showConfirm("'" + branch + "' has no upstream yet. Publish it to '" + remote + "' and track it there?", function() {
+            // remote/branch are ref-format tokens straight out of git's
+            // own suggested command line, never free-form text - the
+            // same reason branch and tag names are embedded unquoted
+            // elsewhere (createTagAtRef, for one): git's own naming
+            // rules already forbid the characters that would need
+            // escaping here.
+            self.runRemoteAction("toolbar-push", "push --set-upstream " + remote + " " + branch, function(data) {
+                self.loadBranches();
+                self.refreshActiveSection();
+            });
+        }, { okLabel: "Publish" });
     }
 
     self.onPush = function(event) {
@@ -2145,13 +2222,12 @@ gitpar.Toolbar = function(mainView) {
     }
 
     self.onForcePush = function() {
-        if (!window.confirm("Force push may overwrite remote history. Continue?")) {
-            return;
-        }
-        self.runRemoteAction("toolbar-push", "push --force", function(data) {
-            self.loadBranches();
-            self.refreshActiveSection();
-        });
+        gitpar.showConfirm("Force push may overwrite remote history. Continue?", function() {
+            self.runRemoteAction("toolbar-push", "push --force", function(data) {
+                self.loadBranches();
+                self.refreshActiveSection();
+            });
+        }, { okLabel: "Force Push", danger: true });
     }
 
     self.onFetch = function(event) {
@@ -2640,14 +2716,13 @@ gitpar.ConfigureRemotesView = function() {
             $(".configure-remotes-name", row).text(remote.name);
             $(".configure-remotes-url", row).text(remote.fetch_url || "");
             $(".configure-remotes-remove", row).click(function() {
-                if (!window.confirm("Remove remote '" + remote.name + "'?")) {
-                    return;
-                }
-                gitpar.apiPost("/api/remotes/remove", {name: remote.name}, function(data) {
-                    self.render(data.remotes || []);
-                }, function(xhr) {
-                    gitpar.showError(gitpar.parseApiError(xhr, "Unable to remove remote"));
-                });
+                gitpar.showConfirm("Remove remote '" + remote.name + "'?", function() {
+                    gitpar.apiPost("/api/remotes/remove", {name: remote.name}, function(data) {
+                        self.render(data.remotes || []);
+                    }, function(xhr) {
+                        gitpar.showError(gitpar.parseApiError(xhr, "Unable to remove remote"));
+                    });
+                }, { okLabel: "Remove", danger: true });
             });
             list.append(row);
         });
@@ -2843,24 +2918,24 @@ gitpar.CredentialsView = function() {
     }
 
     self.forgetStoredCredential = function(entry, row) {
-        if (!window.confirm("Forget the stored credential for " + entry.host +
-                (entry.username ? " (" + entry.username + ")" : "") + "?")) {
-            return;
-        }
-        // git credential reject removes whatever matches this from the
-        // *configured* helper - store here, since that's the only case
-        // this is ever called from - via the same key=value stdin
-        // protocol every git credential helper speaks, rather than this
-        // editing the file directly and having to reproduce store's own
-        // format/escaping rules to do it safely.
-        var stdin = "protocol=" + entry.protocol + "\nhost=" + entry.host +
-            (entry.username ? "\nusername=" + entry.username : "") + "\n\n";
-        gitpar.git("credential reject", stdin, function() {
-            row.remove();
-        }, function(message) {
-            gitpar.showError(message);
-            return true;
-        });
+        gitpar.showConfirm("Forget the stored credential for " + entry.host +
+                (entry.username ? " (" + entry.username + ")" : "") + "?", function() {
+            // git credential reject removes whatever matches this from
+            // the *configured* helper - store here, since that's the
+            // only case this is ever called from - via the same
+            // key=value stdin protocol every git credential helper
+            // speaks, rather than this editing the file directly and
+            // having to reproduce store's own format/escaping rules to
+            // do it safely.
+            var stdin = "protocol=" + entry.protocol + "\nhost=" + entry.host +
+                (entry.username ? "\nusername=" + entry.username : "") + "\n\n";
+            gitpar.git("credential reject", stdin, function() {
+                row.remove();
+            }, function(message) {
+                gitpar.showError(message);
+                return true;
+            });
+        }, { okLabel: "Forget", danger: true });
     }
 
     self.renderCacheClear = function(container) {
@@ -3136,14 +3211,13 @@ gitpar.WorktreesView = function(mainView) {
     }
 
     self.removeWorktree = function(path) {
-        if (!window.confirm("Remove worktree at '" + path + "'?")) {
-            return;
-        }
-        gitpar.apiPost("/api/worktrees/remove", {path: path, force: true}, function() {
-            self.refresh();
-        }, function(xhr) {
-            gitpar.showError(gitpar.parseApiError(xhr, "Unable to remove worktree"));
-        });
+        gitpar.showConfirm("Remove worktree at '" + path + "'?", function() {
+            gitpar.apiPost("/api/worktrees/remove", {path: path, force: true}, function() {
+                self.refresh();
+            }, function(xhr) {
+                gitpar.showError(gitpar.parseApiError(xhr, "Unable to remove worktree"));
+            });
+        }, { okLabel: "Remove", danger: true });
     }
 
     // Starting a new branch is a different intent from reattaching to one
@@ -3152,17 +3226,19 @@ gitpar.WorktreesView = function(mainView) {
     // here" elsewhere in the app, which is the same two-step shape: name
     // the branch, then confirm where.
     self.onNewBranch = function() {
-        var branchName = window.prompt("New branch name");
-        if (!branchName || !branchName.trim()) {
-            return;
-        }
-        branchName = branchName.trim();
-        var suggested = gitpar.suggestWorktreePath(gitpar.repoPath, branchName);
-        var path = window.prompt("Worktree path for '" + branchName + "'", suggested);
-        if (!path || !path.trim()) {
-            return;
-        }
-        self.addWorktree(branchName, path, true, gitpar.historyRef || "HEAD");
+        gitpar.showPrompt("New branch name", "", function(branchName) {
+            if (!branchName || !branchName.trim()) {
+                return;
+            }
+            branchName = branchName.trim();
+            var suggested = gitpar.suggestWorktreePath(gitpar.repoPath, branchName);
+            gitpar.showPrompt("Worktree path for '" + branchName + "'", suggested, function(path) {
+                if (!path || !path.trim()) {
+                    return;
+                }
+                self.addWorktree(branchName, path, true, gitpar.historyRef || "HEAD");
+            });
+        });
     }
 
     self.onFilterInput = function(event) {
@@ -3230,14 +3306,13 @@ gitpar.StashesView = function(mainView) {
             $(".stashes-pop", row).click(function() { self.apply(stash.ref, true); });
             $(".stashes-apply", row).click(function() { self.apply(stash.ref, false); });
             $(".stashes-drop", row).click(function() {
-                if (!window.confirm("Drop stash '" + stash.message + "'?")) {
-                    return;
-                }
-                gitpar.apiPost("/api/stashes/drop", {ref: stash.ref}, function(data) {
-                    self.render(data.stashes || []);
-                }, function(xhr) {
-                    gitpar.showError(gitpar.parseApiError(xhr, "Unable to drop stash"));
-                });
+                gitpar.showConfirm("Drop stash '" + stash.message + "'?", function() {
+                    gitpar.apiPost("/api/stashes/drop", {ref: stash.ref}, function(data) {
+                        self.render(data.stashes || []);
+                    }, function(xhr) {
+                        gitpar.showError(gitpar.parseApiError(xhr, "Unable to drop stash"));
+                    });
+                }, { okLabel: "Drop", danger: true });
             });
             list.append(row);
         });
@@ -3307,14 +3382,13 @@ gitpar.ReflogView = function(mainView) {
             $(".reflog-row-action", row).text(entry.action);
             $(".reflog-row-date", row).text(entry.date);
             $(".reflog-reset", row).click(function() {
-                if (!window.confirm("Hard reset the current branch to " + entry.selector + " (" + entry.action + ")? This cannot be undone.")) {
-                    return;
-                }
-                gitpar.git("reset --hard " + entry.commit, function() {
-                    gitpar.showResult("Reset complete", "Reset to " + entry.selector);
-                    $(self.element).modal("hide");
-                    gitpar.reloadWithPostAction("history");
-                });
+                gitpar.showConfirm("Hard reset the current branch to " + entry.selector + " (" + entry.action + ")? This cannot be undone.", function() {
+                    gitpar.git("reset --hard " + entry.commit, function() {
+                        gitpar.showResult("Reset complete", "Reset to " + entry.selector);
+                        $(self.element).modal("hide");
+                        gitpar.reloadWithPostAction("history");
+                    });
+                }, { okLabel: "Reset", danger: true });
             });
             list.append(row);
         });
@@ -3461,16 +3535,15 @@ gitpar.InteractiveRebaseView = function(mainView) {
         if (actions.length == 0) {
             return;
         }
-        if (!window.confirm("Rewrite " + actions.length + " commit(s) onto " + self.base + "? This rewrites history.")) {
-            return;
-        }
-        gitpar.apiPost("/api/rebase/plan", {base: self.base, actions: actions}, function(data) {
-            gitpar.showResult("Rebase completed", data.message || "");
-            $(self.element).modal("hide");
-            gitpar.reloadWithPostAction("history");
-        }, function(xhr) {
-            gitpar.showError(gitpar.parseApiError(xhr, "Rebase failed"));
-        });
+        gitpar.showConfirm("Rewrite " + actions.length + " commit(s) onto " + self.base + "? This rewrites history.", function() {
+            gitpar.apiPost("/api/rebase/plan", {base: self.base, actions: actions}, function(data) {
+                gitpar.showResult("Rebase completed", data.message || "");
+                $(self.element).modal("hide");
+                gitpar.reloadWithPostAction("history");
+            }, function(xhr) {
+                gitpar.showError(gitpar.parseApiError(xhr, "Rebase failed"));
+            });
+        }, { okLabel: "Rewrite History", danger: true });
     }
 
     self.element = $(   '<div class="modal fade" id="interactive-rebase-modal" tabindex="-1" role="dialog">' +
@@ -3769,14 +3842,13 @@ gitpar.CommitActionMenu = function(mainView) {
             self.applyStash(stash, false);
         }, gitpar.viewonly);
         self.addAction("Discard Stash", function() {
-            if (!window.confirm("Discard stash '" + stash.message + "'? This cannot be undone.")) {
-                return;
-            }
-            gitpar.apiPost("/api/stashes/drop", { ref: stash.ref }, function() {
-                self.afterStashChange();
-            }, function(xhr) {
-                gitpar.showError(gitpar.parseApiError(xhr, "Unable to discard stash"));
-            });
+            gitpar.showConfirm("Discard stash '" + stash.message + "'? This cannot be undone.", function() {
+                gitpar.apiPost("/api/stashes/drop", { ref: stash.ref }, function() {
+                    self.afterStashChange();
+                }, function(xhr) {
+                    gitpar.showError(gitpar.parseApiError(xhr, "Unable to discard stash"));
+                });
+            }, { okLabel: "Discard", danger: true });
         }, gitpar.viewonly, "danger");
     }
 
@@ -3824,13 +3896,12 @@ gitpar.CommitActionMenu = function(mainView) {
         gitpar.apiGet("/api/commits/" + entry.commit + "/is-ancestor", function(data) {
             if (data.is_ancestor) {
                 self.addAction("Revert Changes in this Commit…", function() {
-                    if (!window.confirm("Revert commit " + entry.commit.substr(0, 8) + "?")) {
-                        return;
-                    }
-                    gitpar.git("revert --no-edit " + entry.commit, function() {
-                        gitpar.showResult("Revert completed", "Reverted " + entry.commit.substr(0, 8));
-                        mainView.historyView.update(gitpar.historyRef);
-                    });
+                    gitpar.showConfirm("Revert commit " + entry.commit.substr(0, 8) + "?", function() {
+                        gitpar.git("revert --no-edit " + entry.commit, function() {
+                            gitpar.showResult("Revert completed", "Reverted " + entry.commit.substr(0, 8));
+                            mainView.historyView.update(gitpar.historyRef);
+                        });
+                    }, { okLabel: "Revert" });
                 }, gitpar.viewonly, "danger");
             } else {
                 self.addAction("Cherry-pick Changes in this Commit…", function() {
@@ -5209,21 +5280,20 @@ gitpar.DiffView = function(initialSideBySide, hunkSelectionAllowed, parent) {
     // Selects exactly the changed lines of one hunk, then reverse-applies
     // them to the working tree - i.e. throws that hunk's changes away.
     self.discardHunk = function(hunkElement) {
-        if (!window.confirm("Discard this hunk? The changes cannot be recovered.")) {
-            return;
-        }
-        var container = hunkElement.parentElement;
-        $(".diff-view-line", container).removeClass("active");
-        for (var elt = hunkElement.nextElementSibling; elt; elt = elt.nextElementSibling) {
-            var c = self.lineText(elt)[0];
-            if (c == '@') {
-                break;
+        gitpar.showConfirm("Discard this hunk? The changes cannot be recovered.", function() {
+            var container = hunkElement.parentElement;
+            $(".diff-view-line", container).removeClass("active");
+            for (var elt = hunkElement.nextElementSibling; elt; elt = elt.nextElementSibling) {
+                var c = self.lineText(elt)[0];
+                if (c == '@') {
+                    break;
+                }
+                if (c == '+' || c == '-') {
+                    $(elt).addClass("active");
+                }
             }
-            if (c == '+' || c == '-') {
-                $(elt).addClass("active");
-            }
-        }
-        self.applySelection(true, false);
+            self.applySelection(true, false);
+        }, { okLabel: "Discard", danger: true });
     }
 
     // Builds a patch from the selected lines of a unified diff.
@@ -6633,14 +6703,13 @@ gitpar.ConflictBannerView = function(workspaceView) {
     }
 
     self.onAbort = function() {
-        if (!window.confirm("Abort the in-progress merge/rebase?")) {
-            return;
-        }
-        var cmd = self.lastStatus && self.lastStatus.rebasing ? "rebase --abort" : "merge --abort";
-        gitpar.git(cmd, function() {
-            self.update();
-            workspaceView.update("stage");
-        });
+        gitpar.showConfirm("Abort the in-progress merge/rebase?", function() {
+            var cmd = self.lastStatus && self.lastStatus.rebasing ? "rebase --abort" : "merge --abort";
+            gitpar.git(cmd, function() {
+                self.update();
+                workspaceView.update("stage");
+            });
+        }, { okLabel: "Abort", danger: true });
     }
 
     self.onContinue = function() {
@@ -7157,17 +7226,16 @@ gitpar.WorkspaceView = function(mainView) {
     }
 
     self.discardChanges = function(selectedOnly) {
-        if (!window.confirm(selectedOnly ? "Discard selected changes?" : "Discard all changes?")) {
-            return;
-        }
-        if (selectedOnly) {
-            self.workingCopyView.cancel();
-            self.stagingAreaView.cancel();
-        } else {
-            gitpar.git("checkout -- .", function() {
-                self.update("stage");
-            });
-        }
+        gitpar.showConfirm(selectedOnly ? "Discard selected changes?" : "Discard all changes?", function() {
+            if (selectedOnly) {
+                self.workingCopyView.cancel();
+                self.stagingAreaView.cancel();
+            } else {
+                gitpar.git("checkout -- .", function() {
+                    self.update("stage");
+                });
+            }
+        }, { okLabel: "Discard", danger: true });
     }
 
     self.element = $(   '<div id="workspace-view">' +

@@ -209,6 +209,29 @@ body {
     }
 }
 
+#confirm-modal, #prompt-modal {
+    .confirm-modal-message, .prompt-modal-message {
+        // Several call sites build multi-line messages (a remote list,
+        // a hint on its own line below the question) the same way the
+        // window.confirm()/prompt() text they replace did - a plain div
+        // collapses that to one line without this.
+        white-space: pre-line;
+        color: var(--gf-text);
+
+        &:empty {
+            display: none;
+        }
+    }
+
+    .prompt-modal-message {
+        margin-bottom: 10px;
+    }
+
+    .prompt-modal-input {
+        width: 100%;
+    }
+}
+
 #help-modal {
 
     img {
