@@ -163,8 +163,40 @@ if [ "$DO_CLEAN" = "1" ]; then
 fi
 
 echo "=== 1. Frontend dependencies (npm, bower) ==="
-npm install --no-audit --no-fund
-npx --yes bower install --allow-root
+
+# npm/bower are already fast no-ops when nothing changed, but on a repeat
+# build even that no-op costs a network round-trip to check the registry.
+# Skip the call entirely when the installed tree's stamp still matches the
+# lock file that produced it - the stamp is written from the lock file's
+# hash right after a successful install, so it tracks exactly what's on
+# disk rather than assuming install left the lock file untouched.
+hash_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    else
+        openssl dgst -sha256 "$1" | sed 's/^.*= *//'
+    fi
+}
+
+NPM_STAMP="node_modules/.install-stamp"
+if [ -d node_modules ] && [ -f "$NPM_STAMP" ] && [ -f package-lock.json ] \
+        && [ "$(cat "$NPM_STAMP")" = "$(hash_file package-lock.json)" ]; then
+    echo "node_modules already matches package-lock.json - skipping npm install."
+else
+    npm install --no-audit --no-fund
+    hash_file package-lock.json > "$NPM_STAMP"
+fi
+
+BOWER_STAMP="bower_components/.install-stamp"
+if [ -d bower_components ] && [ -f "$BOWER_STAMP" ] && [ -f bower.json ] \
+        && [ "$(cat "$BOWER_STAMP")" = "$(hash_file bower.json)" ]; then
+    echo "bower_components already matches bower.json - skipping bower install."
+else
+    npx --yes bower install --allow-root
+    hash_file bower.json > "$BOWER_STAMP"
+fi
 
 echo
 echo "=== 2. Building dist/ (grunt) ==="
