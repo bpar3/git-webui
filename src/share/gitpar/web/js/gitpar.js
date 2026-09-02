@@ -2335,6 +2335,18 @@ gitpar.Toolbar = function(mainView) {
         self.update();
         self.refreshActiveSection();
         self.onFetch();
+        // Switching tabs is otherwise purely client-side - nothing here
+        // tells the server which repo is now showing. A full reload
+        // (gitpar.reloadApp, used after creating/checking out a branch,
+        // among others) re-requests the bare app URL with no repo of
+        // its own to ask for, so it falls back to whichever repo the
+        // server last had explicitly selected - which, without this,
+        // could be a much older tab rather than the one just switched
+        // to. Fire-and-forget: the UI has already updated optimistically
+        // above, this only needs to land before the next reload - a
+        // failure isn't worth interrupting the switch the reader
+        // already sees succeed to report.
+        gitpar.apiPost("/api/repos/select", { path: repoId }, function() {}, function() {});
     }
 
     self.closeRepoTab = function(repoId) {
