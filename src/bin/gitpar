@@ -985,28 +985,41 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
         # Convention : send first all git output, then stderr.
         # Finially we add footers: a blank line followed by key / value pairs as in HTTP headers
-        if IS_WINDOWS:
-            # On windows we cannot pipe the process output directly to the socket.
-            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, cwd = repo_root, env = env)
-            git.stdin.write(stdin)
-            git.stdin.close()
-            bufferlen = 64 * 1024
-            while True:
-                data = git.stdout.read(bufferlen)
-                self.wfile.write(data)
-                if len(data) < bufferlen:
-                    break
-            stderr = git.stderr.read()
-            git.wait()
-        else:
-            git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = self.wfile, stderr = subprocess.PIPE, cwd = repo_root, env = env)
-            stdout, stderr = git.communicate(stdin)
+        try:
+            if IS_WINDOWS:
+                # On windows we cannot pipe the process output directly to the socket.
+                git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, cwd = repo_root, env = env)
+                git.stdin.write(stdin)
+                git.stdin.close()
+                bufferlen = 64 * 1024
+                while True:
+                    data = git.stdout.read(bufferlen)
+                    self.wfile.write(data)
+                    if len(data) < bufferlen:
+                        break
+                stderr = git.stderr.read()
+                git.wait()
+            else:
+                git = subprocess.Popen(cmd, stdin = subprocess.PIPE, stdout = self.wfile, stderr = subprocess.PIPE, cwd = repo_root, env = env)
+                stdout, stderr = git.communicate(stdin)
+            returncode = git.returncode
+        except OSError as error:
+            # Popen itself failed - the git process never started (e.g.
+            # "git", or a transport helper like git-remote-https, isn't
+            # reachable in this process's PATH/environment). add_headers
+            # already flushed a 200 above, so the only way to still
+            # report this is through the normal footer convention below,
+            # the same as any other failed command - otherwise the
+            # response just cuts off here with no body the reader could
+            # do anything with, and the frontend has nothing to show.
+            stderr = codecs.encode(str(error), "utf-8")
+            returncode = 1
         if add_footers:
             self.wfile.write(stderr)
             self.wfile.write(b"\r\n")
             self.wfile.write(codecs.encode("\r\nGit-Stderr-Length: " + str(len(stderr)), "utf-8"))
-            self.wfile.write(codecs.encode("\r\nGit-Return-Code: " + str(git.returncode), "utf-8"))
-        elif git.returncode != 0:
+            self.wfile.write(codecs.encode("\r\nGit-Return-Code: " + str(returncode), "utf-8"))
+        elif returncode != 0:
             print(stderr)
 
 
