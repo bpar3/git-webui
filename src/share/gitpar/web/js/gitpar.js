@@ -6186,6 +6186,18 @@ gitpar.HistoryView = function(mainView) {
     historyMain.appendChild(self.logView.element);
     $(self.logView.element).scroll(self.syncRefScroll);
 
+    // .history-view-refs has overflow:hidden - it mirrors the log's
+    // scroll position (syncRefScroll above) rather than scrolling on its
+    // own, since its chips are placed against row geometry that has to
+    // stay in step with the log rather than drift independently. That
+    // also means a wheel scroll starting over it had nowhere to go.
+    // Forward it to the log's own scrollable element instead; scrolling
+    // that already re-syncs this column through the listener above.
+    $(".history-view-refs", self.element).on("wheel", function(event) {
+        self.logView.element.scrollTop += event.originalEvent.deltaY;
+        event.preventDefault();
+    });
+
     // The graph is one SVG laid over the rows, so its left edge is a
     // pixel offset read from a real row's gutter - which moves whenever
     // the rows reflow. Nothing recomputed it after the first draw, so
