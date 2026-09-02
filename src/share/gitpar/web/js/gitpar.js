@@ -4053,21 +4053,28 @@ gitpar.LogView = function(historyView) {
         self.populate();
     };
 
-    // HEAD, not --all: the unfiltered "everything" view is still just
-    // the checked-out branch's own history (what GitFiend and every
-    // other git GUI show by default) - --all pulls in every other
-    // local/remote branch and tag too, so any repo with more than
-    // one active branch got their commits interleaved by date into
-    // what looked like a single linear history, misrepresenting
-    // ancestry that was never actually there (particularly visible
-    // after a squash-merge, whose original commits live on only via
-    // whatever branch made them, not as ancestors of the merge
-    // commit on this branch).
+    // Every branch and tag, not just HEAD - matching GitFiend's actual
+    // default (a single graph-laned view of everything, not a scope
+    // limited to the checked-out branch). --branches --tags --remotes
+    // rather than --all specifically to leave out refs/stash, which
+    // --all would otherwise walk too, surfacing each stash's raw
+    // internal commits as ordinary, unmarked rows on top of (and
+    // duplicating) the explicit stash-seeding below.
+    //
+    // A flat, date-sorted row list built from every branch necessarily
+    // interleaves unrelated lines of history by timestamp - a commit
+    // that's never actually an ancestor of another can still land right
+    // next to it in the list, most visibly right after a squash-merge,
+    // whose original commits survive only on whatever branch made them.
+    // That's fine: updateGraph's per-lane rendering (see "needs a lane
+    // of its own" below) is exactly what disambiguates real ancestry
+    // from row adjacency, the same way gitk/GitFiend's own graph does -
+    // the row order alone was never the thing conveying ancestry.
     //
     // Shared by populate() and refresh() so both walk exactly the same
     // set of refs - refresh()'s row-reconciliation assumes that.
     self.buildRefSpec = function() {
-        var refSpec = self.ref ? self.ref : "HEAD";
+        var refSpec = self.ref ? self.ref : "--branches --tags --remotes";
         // Seeded with the stash SHAs below regardless of refSpec, which
         // surfaces their raw internal commits (a stash's "index" and
         // "untracked" parents) as ordinary, unmarked rows unless hidden.
@@ -4112,7 +4119,7 @@ gitpar.LogView = function(historyView) {
         var refSpec = built.refSpec;
         var authorSpec = built.authorSpec;
         var seededStash = built.seededStash;
-        gitpar.git("log --date-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
+        gitpar.git("log --topo-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
             if (generation !== self.populateGeneration) {
                 // A newer update() reset and repopulated the view while
                 // this request was in flight - appending now would
@@ -4215,7 +4222,7 @@ gitpar.LogView = function(historyView) {
         // beyond it, the fallback below still lands on the right
         // answer, just via the plain path instead of the fast one.
         var maxCount = existingShas.length + 250;
-        gitpar.git("log --date-order --pretty=raw --decorate=full --max-count=" + (maxCount + 1) + " " + built.refSpec + built.authorSpec + " --", function(data) {
+        gitpar.git("log --topo-order --pretty=raw --decorate=full --max-count=" + (maxCount + 1) + " " + built.refSpec + built.authorSpec + " --", function(data) {
             if (generation !== self.populateGeneration) {
                 return;
             }
