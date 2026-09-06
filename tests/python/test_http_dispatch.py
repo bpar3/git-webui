@@ -97,6 +97,21 @@ def test_ensure_repo_selected_returns_409_with_no_repo(live_server):
     assert status == 409
 
 
+def test_edit_remote_endpoint_updates_the_selected_repo(live_server, git_repo, run_git):
+    _post_json(live_server, "/api/repos/select", {"path": str(git_repo)})
+    run_git(git_repo, "remote", "add", "origin", "https://example.com/old.git")
+
+    status, result = _post_json(
+        live_server,
+        "/api/remotes/edit",
+        {"name": "origin", "new_name": "upstream", "url": "https://example.com/new.git"},
+    )
+
+    assert status == 200
+    assert result["remotes"][0]["name"] == "upstream"
+    assert result["remotes"][0]["fetch_url"] == "https://example.com/new.git"
+
+
 def test_concurrent_requests_for_different_repos_never_cross_wires(live_server, git_repo, second_git_repo, run_git):
     """GitParHttpServer is threaded specifically so a live credential
     prompt on one request can be answered by a second request instead of

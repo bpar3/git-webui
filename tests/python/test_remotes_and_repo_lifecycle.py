@@ -37,6 +37,27 @@ def test_remove_remote_unknown_name_fails(backend, git_repo):
     assert response["status"] == 400
 
 
+def test_edit_remote_renames_and_updates_url(backend, git_repo):
+    backend.add_remote(str(git_repo), "origin", "https://example.com/old.git")
+
+    response = backend.edit_remote(str(git_repo), "origin", "upstream", "https://example.com/new.git")
+
+    assert response["status"] == 200
+    assert response["payload"]["remotes"] == [
+        {
+            "name": "upstream",
+            "fetch_url": "https://example.com/new.git",
+            "push_url": "https://example.com/new.git",
+        }
+    ]
+
+
+def test_edit_remote_requires_name_and_url(backend, git_repo):
+    assert backend.edit_remote(str(git_repo), "", "upstream", "https://example.com/repo.git")["status"] == 400
+    assert backend.edit_remote(str(git_repo), "origin", "", "https://example.com/repo.git")["status"] == 400
+    assert backend.edit_remote(str(git_repo), "origin", "upstream", "")["status"] == 400
+
+
 def test_create_repo(backend, tmp_path):
     response = backend.create_repo(str(tmp_path), "new-repo")
     assert response["status"] == 200

@@ -2709,12 +2709,28 @@ gitpar.ConfigureRemotesView = function() {
         }
         remotes.forEach(function(remote) {
             var row = $(  '<div class="configure-remotes-row">' +
-                                '<div class="configure-remotes-name"></div>' +
-                                '<div class="configure-remotes-url"></div>' +
+                                '<input type="text" class="form-control input-sm configure-remotes-name">' +
+                                '<input type="text" class="form-control input-sm configure-remotes-url">' +
+                                '<button type="button" class="btn btn-default btn-xs configure-remotes-save">Save</button>' +
                                 '<button type="button" class="btn btn-danger btn-xs configure-remotes-remove">Remove</button>' +
                             '</div>');
-            $(".configure-remotes-name", row).text(remote.name);
-            $(".configure-remotes-url", row).text(remote.fetch_url || "");
+            var nameInput = $(".configure-remotes-name", row).val(remote.name);
+            var urlInput = $(".configure-remotes-url", row).val(remote.fetch_url || "");
+            $(".configure-remotes-save", row).click(function() {
+                var newName = nameInput.val().trim();
+                var newUrl = urlInput.val().trim();
+                if (!newName || !newUrl) {
+                    return;
+                }
+                if (newName == remote.name && newUrl == (remote.fetch_url || "")) {
+                    return;
+                }
+                gitpar.apiPost("/api/remotes/edit", {name: remote.name, new_name: newName, url: newUrl}, function(data) {
+                    self.render(data.remotes || []);
+                }, function(xhr) {
+                    gitpar.showError(gitpar.parseApiError(xhr, "Unable to update remote"));
+                });
+            });
             $(".configure-remotes-remove", row).click(function() {
                 gitpar.showConfirm("Remove remote '" + remote.name + "'?", function() {
                     gitpar.apiPost("/api/remotes/remove", {name: remote.name}, function(data) {

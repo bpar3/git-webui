@@ -811,6 +811,15 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             result = remove_remote(repo_root, payload.get("name"))
             self.send_json(result["status"], result["payload"])
+        elif self.request_path == "/api/remotes/edit":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected(repo_root):
+                return
+            payload = self.read_json_body()
+            result = edit_remote(repo_root, payload.get("name"), payload.get("new_name"), payload.get("url"))
+            self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/repos/clone":
             if self.is_view_only():
                 self.send_error(403)
@@ -1923,6 +1932,30 @@ def remove_remote(repo_root, name):
     result = run_git_capture(repo_root, ["remote", "remove", name.strip()])
     if result["returncode"] != 0:
         return {"status": 400, "payload": {"error": result["stderr"] or "Unable to remove remote."}}
+    return list_remotes(repo_root)
+
+
+def edit_remote(repo_root, name, new_name, url):
+    if not name or not name.strip():
+        return {"status": 400, "payload": {"error": "Remote name is required."}}
+    if not new_name or not new_name.strip():
+        return {"status": 400, "payload": {"error": "Remote name is required."}}
+    if not url or not url.strip():
+        return {"status": 400, "payload": {"error": "Remote URL is required."}}
+    name = name.strip()
+    new_name = new_name.strip()
+    url = url.strip()
+    # Rename first, then set-url by the new name - a no-op rename to the
+    # same name is skipped since git errors on renaming a remote onto
+    # itself.
+    if new_name != name:
+        result = run_git_capture(repo_root, ["remote", "rename", name, new_name])
+        if result["returncode"] != 0:
+            return {"status": 400, "payload": {"error": result["stderr"] or "Unable to rename remote."}}
+        name = new_name
+    result = run_git_capture(repo_root, ["remote", "set-url", name, url])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to update remote URL."}}
     return list_remotes(repo_root)
 
 
