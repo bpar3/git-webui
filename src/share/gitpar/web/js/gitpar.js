@@ -4119,7 +4119,7 @@ gitpar.LogView = function(historyView) {
         var refSpec = built.refSpec;
         var authorSpec = built.authorSpec;
         var seededStash = built.seededStash;
-        gitpar.git("log --topo-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
+        gitpar.git("log --date-order --pretty=raw --decorate=full --skip=" + self.nextSkip + " --max-count=" + (maxCount + 1) + " " + refSpec + authorSpec + " --", function(data) {
             if (generation !== self.populateGeneration) {
                 // A newer update() reset and repopulated the view while
                 // this request was in flight - appending now would
@@ -4222,7 +4222,7 @@ gitpar.LogView = function(historyView) {
         // beyond it, the fallback below still lands on the right
         // answer, just via the plain path instead of the fast one.
         var maxCount = existingShas.length + 250;
-        gitpar.git("log --topo-order --pretty=raw --decorate=full --max-count=" + (maxCount + 1) + " " + built.refSpec + built.authorSpec + " --", function(data) {
+        gitpar.git("log --date-order --pretty=raw --decorate=full --max-count=" + (maxCount + 1) + " " + built.refSpec + built.authorSpec + " --", function(data) {
             if (generation !== self.populateGeneration) {
                 return;
             }

@@ -262,6 +262,32 @@ describe("gitpar.withRepoParam", () => {
     });
 });
 
+describe("gitpar.LogView", () => {
+    let gitpar;
+
+    beforeEach(() => {
+        gitpar = loadGitpar();
+    });
+
+    test("uses date order for the default all-refs history", () => {
+        const git = jest.fn();
+        gitpar.git = git;
+        const historyView = {
+            positionRefChips: jest.fn(),
+            isCommitViewOpen: jest.fn(() => false),
+        };
+
+        new gitpar.LogView(historyView).update();
+
+        expect(git).toHaveBeenCalledWith(
+            expect.stringContaining("log --date-order --pretty=raw"),
+            expect.any(Function),
+            expect.any(Function)
+        );
+        expect(git.mock.calls[0][0]).not.toContain("--topo-order");
+    });
+});
+
 describe("gitpar.setRefChipFilter", () => {
     let gitpar;
     let $;
