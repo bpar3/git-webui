@@ -7436,7 +7436,7 @@ gitpar.ChangedFilesView = function(workspaceView, type, label) {
     }
 
     self.select = function(event) {
-        var clicked = event.target;
+        var clicked = event.currentTarget;
 
         if (event.shiftKey && selectedIndex !== null) {
             var clickedIndex = gitpar.getNodeIndex(clicked);
