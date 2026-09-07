@@ -7428,6 +7428,10 @@ gitpar.ChangedFilesView = function(workspaceView, type, label) {
                         });
                         ignoreBtn.appendTo(item);
                     }
+                    $(".changed-file-check", item).click(function(event) {
+                        event.stopPropagation();
+                        self.toggleChecked(item);
+                    });
                     $(item).click(self.select);
                     $(item).dblclick(self.process);
                 }
@@ -7465,6 +7469,22 @@ gitpar.ChangedFilesView = function(workspaceView, type, label) {
         }
         return false;
     }
+
+    // A single click directly on the checkbox toggles that one file's
+    // checked state on or off, independent of the diff-preview click
+    // handling below - the natural way to uncheck a single file, rather
+    // than having to hold ctrl.
+    self.toggleChecked = function(item) {
+        $(item).toggleClass("active");
+        selectedIndex = gitpar.getNodeIndex(item);
+        if (type == "working-copy") {
+            workspaceView.stagingAreaView.unselect();
+        } else {
+            workspaceView.workingCopyView.unselect();
+        }
+        self.refreshCounter();
+        self.refreshDiff(item);
+    };
 
     self.select = function(event) {
         var clicked = event.currentTarget;

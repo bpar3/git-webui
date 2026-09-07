@@ -3109,8 +3109,12 @@ body {
 }
 
 .changed-file-check {
-    .display-flex();
-    .align-items(center);
+    // Not .display-flex() - that mixin sets display:flex, which
+    // blockifies the element and knocks it onto its own line ahead of
+    // the filename text next to it. inline-flex keeps it in the normal
+    // inline flow while still centering the checkmark glyph.
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
     width: 12px;
     height: 12px;
@@ -3285,7 +3289,13 @@ body {
         cursor: default;
 
         #workspace-sidebar-resizer {
-            .flex(0 0 5px);
+            // .flex() only takes a single value and expands it into all
+            // three flex longhands (@value @value 0) - passing it a
+            // 3-value shorthand like "0 0 5px" produces an invalid
+            // 7-value `flex` declaration that the browser drops
+            // entirely, collapsing this to width 0. Write the shorthand
+            // out directly instead.
+            flex: 0 0 5px;
             position: relative;
             cursor: col-resize;
             background: var(--gf-border);
@@ -3297,7 +3307,8 @@ body {
         }
 
         #workspace-sidebar {
-            .flex(0 0 340px);
+            // See #workspace-sidebar-resizer above - same .flex() misuse.
+            flex: 0 0 340px;
             .display-flex();
             .flex-direction(column);
             min-width: 0;
@@ -3367,7 +3378,8 @@ body {
             }
 
             #commit-message-view {
-                .flex(0 0 auto);
+                // See #workspace-sidebar-resizer above - same .flex() misuse.
+                flex: 0 0 auto;
                 .display-flex();
                 .flex-direction(column);
                 border-width: 1px 0 0 0;
