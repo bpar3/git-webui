@@ -7287,6 +7287,7 @@ gitpar.WorkspaceView = function(mainView) {
                                 '<div id="workspace-sidebar">' +
                                     '<div id="workspace-file-lists"></div>' +
                                 '</div>' +
+                                '<div id="workspace-sidebar-resizer"></div>' +
                                 '<div id="workspace-diff-view"></div>' +
                             '</div>' +
                         '</div>')[0];
@@ -7328,6 +7329,36 @@ gitpar.WorkspaceView = function(mainView) {
     workspaceFileLists.appendChild(self.workingCopyView.element);
     self.commitMessageView = new gitpar.CommitMessageView(self);
     workspaceSidebar.appendChild(self.commitMessageView.element);
+
+    // The sidebar's width is a plain per-user UI preference, not
+    // per-repo state, so it belongs in localStorage rather than being
+    // synced to the server the way the active repo tab is.
+    var SIDEBAR_WIDTH_KEY = "gitpar-workspace-sidebar-width";
+    var MIN_SIDEBAR_WIDTH = 220;
+    var MAX_SIDEBAR_WIDTH = 640;
+    var storedWidth = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY), 10);
+    if (storedWidth) {
+        workspaceSidebar.style.flexBasis = Math.min(Math.max(storedWidth, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH) + "px";
+    }
+    var sidebarResizer = $("#workspace-sidebar-resizer", self.element)[0];
+    sidebarResizer.addEventListener("mousedown", function(event) {
+        event.preventDefault();
+        var startX = event.clientX;
+        var startWidth = workspaceSidebar.getBoundingClientRect().width;
+        $(sidebarResizer).addClass("active");
+        function onMouseMove(moveEvent) {
+            var width = Math.min(Math.max(startWidth + (moveEvent.clientX - startX), MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH);
+            workspaceSidebar.style.flexBasis = width + "px";
+        }
+        function onMouseUp() {
+            $(sidebarResizer).removeClass("active");
+            localStorage.setItem(SIDEBAR_WIDTH_KEY, Math.round(workspaceSidebar.getBoundingClientRect().width));
+            $(document).off("mousemove", onMouseMove);
+            $(document).off("mouseup", onMouseUp);
+        }
+        $(document).on("mousemove", onMouseMove);
+        $(document).on("mouseup", onMouseUp);
+    });
 
     // Only relevant once both lists exist - refreshCounter() (called by
     // each list after every update or selection change) drives this.
@@ -7455,9 +7486,10 @@ gitpar.ChangedFilesView = function(workspaceView, type, label) {
             $(clicked).toggleClass("active");
             selectedIndex = gitpar.getNodeIndex(clicked);
         } else {
-            for (var i = 0; i < fileList.childElementCount; ++i) {
-                $(fileList.children[i]).removeClass("active");
-            }
+            // A plain click previews this file's diff and checks it for
+            // staging, but leaves whatever else was already checked
+            // alone - checking off a file you'd already picked takes an
+            // explicit ctrl+click, same as GitFiend.
             $(clicked).addClass("active");
             selectedIndex = gitpar.getNodeIndex(clicked);
         }

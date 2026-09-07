@@ -2885,28 +2885,18 @@ body {
                     min-width: 0;
                 }
 
+                // The "diff --git a/... b/...", "index ...", "---"/"+++"
+                // preamble is kept in the DOM - createSelectionPatch()
+                // reads it back out to rebuild a valid patch when staging
+                // a single hunk - but the filename it repeats is already
+                // shown by the file list and the diff toolbar, so it's
+                // hidden rather than removed.
                 .diff-line-header {
-                    font-weight: bold;
-                    background-color: var(--gf-diff-header-bg);
+                    display: none;
                 }
 
                 .diff-line-phantom {
                     background-color: var(--gf-diff-header-bg);
-                }
-
-                .diff-line-header.diff-line-add {
-                    background-color: var(--gf-diff-header-bg);
-                    color: @diff-added-dark;
-                }
-
-                .diff-line-header.diff-line-del {
-                    background-color: var(--gf-diff-header-bg);
-                    color: @diff-removed-dark;
-                }
-
-                .diff-line-header.diff-line-offset {
-                    background-color: var(--gf-diff-header-bg);
-                    color: @diff-offset-dark;
                 }
 
                 .diff-line-add {
@@ -3294,14 +3284,23 @@ body {
         border-width: 1px 0 0 0;
         cursor: default;
 
+        #workspace-sidebar-resizer {
+            .flex(0 0 5px);
+            position: relative;
+            cursor: col-resize;
+            background: var(--gf-border);
+
+            &:hover,
+            &.active {
+                background: var(--gf-accent);
+            }
+        }
+
         #workspace-sidebar {
             .flex(0 0 340px);
             .display-flex();
             .flex-direction(column);
             min-width: 0;
-            border-width: 0 1px 0 0;
-            border-style: solid;
-            border-color: var(--gf-border);
 
             #workspace-file-lists {
                 .no-select();
