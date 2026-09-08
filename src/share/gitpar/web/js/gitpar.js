@@ -2337,12 +2337,6 @@ gitpar.Toolbar = function(mainView) {
                 event.stopPropagation();
                 self.closeRepoTab(repo.path);
             });
-            // Reordering is purely a client-side arrangement - open_repos
-            // is persisted with a merge-safe add/remove delta (see
-            // save_open_repos_delta) so two instances' tab lists combine
-            // safely; an explicit order doesn't merge the same way; so a
-            // drag here doesn't survive a reload or reach other repo
-            // tabs, only this window's.
             tab.on("dragstart", function(event) {
                 self.draggedRepoId = repo.path;
                 tab.addClass("dragging");
@@ -2388,6 +2382,12 @@ gitpar.Toolbar = function(mainView) {
         var moved = gitpar.openRepos.splice(fromIndex, 1)[0];
         gitpar.openRepos.splice(toIndex, 0, moved);
         self.renderRepoTabs();
+        // Persisted against whatever's on disk, not by overwriting the
+        // whole list (see reorder_open_repos/save_open_repos_order on
+        // the backend) - a tab another instance opened that this one
+        // doesn't know about survives the reorder, just moved to the
+        // end instead of wherever it happened to sit.
+        gitpar.apiPost("/api/repos/reorder", { order: gitpar.openRepos.map(function(repo) { return repo.path; }) });
     }
 
     self.switchActiveRepo = function(repoId) {

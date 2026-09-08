@@ -42,6 +42,12 @@ fn wait_for_port(port: u16, attempts: u32, delay: Duration) -> bool {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // Restores the main window's size, position and maximized
+        // state from the last run, and saves it back on resize/move/
+        // close - the window is declared in tauri.conf.json rather
+        // than created here, so registering the plugin is the only
+        // wiring this needs.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             let port = pick_free_port();
             let repo_root = std::env::var("GITPAR_REPO_ROOT").unwrap_or_else(|_| {

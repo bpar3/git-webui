@@ -328,6 +328,44 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             release_state_lock(lock)
 
     @classmethod
+    def save_open_repos_order(cls, order):
+        """Persist a drag-to-reorder of this instance's own tabs.
+
+        Same reasoning as save_open_repos_delta: applied against
+        whatever is on disk right now rather than replacing the whole
+        list outright, since another instance may have opened a tab
+        this one doesn't know about (and so couldn't have included in
+        `order`). That tab is kept, just moved to the end rather than
+        left in the middle of a reorder it wasn't part of.
+        """
+        if not cls.APP_STATE_PATH:
+            return
+        state_dir = os.path.dirname(cls.APP_STATE_PATH)
+        if not os.path.isdir(state_dir):
+            os.makedirs(state_dir)
+        lock = acquire_state_lock(cls.APP_STATE_PATH)
+        try:
+            document = cls.read_state_document()
+            open_repos = list(document.get("open_repos") or [])
+            known = set(order)
+            reordered = [repo for repo in order if repo in open_repos]
+            unknown = [repo for repo in open_repos if repo not in known]
+            document["open_repos"] = reordered + unknown
+            write_json_atomically(cls.APP_STATE_PATH, document)
+        finally:
+            release_state_lock(lock)
+
+    @classmethod
+    def reorder_open_repos(cls, order):
+        """Apply a drag-to-reorder of the tab strip to OPEN_REPOS."""
+        order = [os.path.realpath(repo) for repo in order]
+        known = set(order)
+        reordered = [repo for repo in order if repo in cls.OPEN_REPOS]
+        unknown = [repo for repo in cls.OPEN_REPOS if repo not in known]
+        cls.OPEN_REPOS = reordered + unknown
+        cls.save_open_repos_order(cls.OPEN_REPOS)
+
+    @classmethod
     def set_theme(cls, theme):
         # "system" defers to whatever the desktop reports; the browser
         # resolves it, so the server only has to remember the choice.
@@ -688,6 +726,17 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
                 return
             new_active = GitParRequestHandler.close_repo(target_repo_root)
             self.send_json(200, self.get_repo_context(new_active))
+        elif self.request_path == "/api/repos/reorder":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            payload = self.read_json_body()
+            order = payload.get("order")
+            if not isinstance(order, list):
+                self.send_json(400, {"error": "An order list is required."})
+                return
+            GitParRequestHandler.reorder_open_repos(order)
+            self.send_json(200, {"open_repos": GitParRequestHandler.get_open_repo_entries()})
         elif self.request_path == "/api/fs/pick-directory":
             if self.is_view_only():
                 self.send_error(403)
