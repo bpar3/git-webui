@@ -2395,6 +2395,9 @@ gitpar.Toolbar = function(mainView) {
             return;
         }
         var entry = gitpar.openRepos.filter(function(repo) { return repo.path == repoId; })[0];
+        if (mainView.historyView) {
+            mainView.historyView.saveRepoState(gitpar.activeRepoId);
+        }
         gitpar.activeRepoId = repoId;
         gitpar.repoPath = repoId;
         gitpar.repo = entry ? entry.name : repoId;
@@ -2409,6 +2412,9 @@ gitpar.Toolbar = function(mainView) {
         gitpar.clearRepoRefs();
         self.renderRepoTabs();
         self.update();
+        if (self.activeSectionName == "history") {
+            mainView.historyView.restoreRepoState(repoId);
+        }
         self.refreshActiveSection();
         self.onFetch();
         // Switching tabs is otherwise purely client-side - nothing here
@@ -2436,6 +2442,9 @@ gitpar.Toolbar = function(mainView) {
                 return;
             }
             if (context.repo_id != gitpar.activeRepoId) {
+                if (mainView.historyView) {
+                    mainView.historyView.saveRepoState(gitpar.activeRepoId);
+                }
                 gitpar.activeRepoId = context.repo_id;
                 gitpar.repoPath = context.repo_path;
                 gitpar.repo = context.repo_name;
@@ -2443,6 +2452,9 @@ gitpar.Toolbar = function(mainView) {
                 gitpar.historyAuthorFilter = null;
                 gitpar.refChipFilterName = null;
                 self.update();
+                if (self.activeSectionName == "history") {
+                    mainView.historyView.restoreRepoState(context.repo_id);
+                }
                 self.refreshActiveSection();
             }
         });
@@ -5958,6 +5970,7 @@ gitpar.CommitView = function(historyView) {
 
         }
         currentCommit = entry.commit;
+        self.entry = entry;
         self.showDiff();
         buttonBox.select(0);
         diffView.update("show", [entry.commit]);
@@ -6168,6 +6181,7 @@ gitpar.CommitDetailView = function(historyView) {
 gitpar.HistoryView = function(mainView) {
 
     var self = this;
+    self.repoStates = {};
     // Which commits currently have their collapsed "+N" ref pill opened.
     self.expandedRefCommits = {};
 
@@ -6376,6 +6390,39 @@ gitpar.HistoryView = function(mainView) {
         self.commitView.update(entry);
         self.commitView.showTree();
         mainView.switchTo(self.commitView.element);
+    };
+
+    self.saveRepoState = function(repoId) {
+        if (!repoId) {
+            return;
+        }
+        if (self.commitDetailView.element.parentElement) {
+            self.repoStates[repoId] = {
+                kind: "detail",
+                entry: self.commitDetailView.entry,
+                selectedPath: self.commitDetailView.selectedPath
+            };
+        } else if (self.commitView.element.parentElement) {
+            self.repoStates[repoId] = {
+                kind: "tree",
+                entry: self.commitView.entry
+            };
+        } else {
+            delete self.repoStates[repoId];
+        }
+    };
+
+    self.restoreRepoState = function(repoId) {
+        var state = self.repoStates[repoId];
+        if (!state || !state.entry) {
+            self.show();
+            return;
+        }
+        if (state.kind == "tree") {
+            self.showTreeForCommit(state.entry);
+        } else {
+            self.expandCommit(state.entry, state.selectedPath);
+        }
     };
 
     self.collapseCommit = function() {
@@ -7249,13 +7296,17 @@ gitpar.WorkspaceView = function(mainView) {
     }
 
     self.discardChanges = function(selectedOnly) {
-        gitpar.showConfirm(selectedOnly ? "Discard selected changes?" : "Discard all changes?", function() {
+        var message = selectedOnly ? "Discard selected changes?" :
+            "Discard all changes? This will reset staged and modified files and remove untracked files.";
+        gitpar.showConfirm(message, function() {
             if (selectedOnly) {
                 self.workingCopyView.cancel();
                 self.stagingAreaView.cancel();
             } else {
-                gitpar.git("checkout -- .", function() {
-                    self.update("stage");
+                gitpar.git("reset --hard", function() {
+                    gitpar.git("clean -fd", function() {
+                        self.update("stage");
+                    });
                 });
             }
         }, { okLabel: "Discard", danger: true });
