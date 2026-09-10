@@ -804,6 +804,15 @@ class GitParRequestHandler(SimpleHTTPRequestHandler):
             payload = self.read_json_body()
             result = delete_remote_branch(repo_root, payload.get("remote_name"))
             self.send_json(result["status"], result["payload"])
+        elif self.request_path == "/api/branches/remote":
+            if self.is_view_only():
+                self.send_error(403)
+                return
+            if not self.ensure_repo_selected(repo_root):
+                return
+            payload = self.read_json_body()
+            result = set_branch_remote(repo_root, payload.get("branch"), payload.get("remote"))
+            self.send_json(result["status"], result["payload"])
         elif self.request_path == "/api/branches/compare":
             if not self.ensure_repo_selected(repo_root):
                 return
@@ -1794,6 +1803,26 @@ def checkout_branch(repo_root, local_name, remote_name):
         result = run_git_capture(repo_root, ["checkout", "--track", remote_name])
         return build_branch_action_response(repo_root, result, "Checked out " + remote_name)
     return {"status": 400, "payload": {"error": "No branch specified."}}
+
+
+def set_branch_remote(repo_root, branch_name, remote_name):
+    if not branch_name or not branch_name.strip():
+        return {"status": 400, "payload": {"error": "A local branch is required."}}
+    if not remote_name or not remote_name.strip():
+        return {"status": 400, "payload": {"error": "A remote is required."}}
+    branch_name = branch_name.strip()
+    remote_name = remote_name.strip()
+    branch = run_git_capture(repo_root, ["show-ref", "--verify", "--quiet", "refs/heads/" + branch_name])
+    if branch["returncode"] != 0:
+        return {"status": 400, "payload": {"error": "Local branch not found."}}
+    remote = run_git_capture(repo_root, ["remote", "get-url", remote_name])
+    if remote["returncode"] != 0:
+        return {"status": 400, "payload": {"error": "Remote not found."}}
+    result = run_git_capture(repo_root, ["config", "branch." + branch_name + ".remote", remote_name])
+    if result["returncode"] != 0:
+        return {"status": 400, "payload": {"error": result["stderr"] or "Unable to configure branch remote."}}
+    result = run_git_capture(repo_root, ["config", "branch." + branch_name + ".merge", "refs/heads/" + branch_name])
+    return build_branch_action_response(repo_root, result, "Configured " + remote_name + " for " + branch_name)
 
 
 def create_branch(repo_root, name, start_point, checkout):

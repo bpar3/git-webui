@@ -2714,6 +2714,20 @@ gitpar.ConfigureRemotesView = function() {
     }
 
     self.render = function(remotes) {
+        var branchRemote = $(".configure-remotes-branch-remote", self.element);
+        var branchSelect = $(".configure-remotes-branch-select", self.element);
+        if (self.branch && remotes.length > 1) {
+            var configuredRemote = (self.branch.upstream || "").split("/")[0];
+            $(".configure-remotes-branch-name", self.element).text(self.branch.local_name);
+            branchSelect.empty();
+            remotes.forEach(function(remote) {
+                branchSelect.append($("<option>").val(remote.name).text(remote.name));
+            });
+            branchSelect.val(configuredRemote || remotes[0].name);
+            branchRemote.show();
+        } else {
+            branchRemote.hide();
+        }
         var list = $(".configure-remotes-list", self.element);
         list.empty();
         if (remotes.length == 0) {
@@ -2770,7 +2784,24 @@ gitpar.ConfigureRemotesView = function() {
         });
     }
 
-    self.show = function() {
+    self.setBranchRemote = function(event) {
+        var remote = event.currentTarget.value;
+        gitpar.apiPost("/api/branches/remote", {
+            branch: self.branch.local_name,
+            remote: remote
+        }, function() {
+            self.branch.upstream = remote + "/" + self.branch.local_name;
+            if (self.onBranchRemoteChanged) {
+                self.onBranchRemoteChanged();
+            }
+        }, function(xhr) {
+            gitpar.showError(gitpar.parseApiError(xhr, "Unable to configure branch remote"));
+        });
+    };
+
+    self.show = function(branch, onBranchRemoteChanged) {
+        self.branch = branch && branch.local_name ? branch : null;
+        self.onBranchRemoteChanged = onBranchRemoteChanged || null;
         self.refresh();
         $(self.element).modal("show");
     }
@@ -2782,8 +2813,12 @@ gitpar.ConfigureRemotesView = function() {
                                         '<button type="button" class="close" data-dismiss="modal"><span>&times;</span><span class="sr-only">Close</span></button>' +
                                         '<div class="repo-picker-eyebrow">Remotes</div>' +
                                         '<h4 class="modal-title">Configure Remotes</h4>' +
-                                    '</div>' +
-                                    '<div class="modal-body">' +
+                                     '</div>' +
+                                     '<div class="modal-body">' +
+                                        '<div class="configure-remotes-branch-remote">' +
+                                            '<label>Remote for <strong class="configure-remotes-branch-name"></strong></label>' +
+                                            '<select class="form-control input-sm configure-remotes-branch-select"></select>' +
+                                        '</div>' +
                                         '<div class="configure-remotes-list"></div>' +
                                         '<div class="configure-remotes-add">' +
                                             '<input type="text" class="form-control input-sm configure-remotes-add-name" placeholder="name (e.g. origin)">' +
@@ -2795,6 +2830,7 @@ gitpar.ConfigureRemotesView = function() {
                             '</div>' +
                         '</div>')[0];
     $(".configure-remotes-add-button", self.element).click(self.onAdd);
+    $(".configure-remotes-branch-select", self.element).change(self.setBranchRemote);
     $("body").append(self.element);
 };
 
@@ -3768,7 +3804,9 @@ gitpar.RefActionMenu = function(mainView) {
             gitpar.copyToClipboard(entry.commit, "Commit hash");
         }, !entry.commit);
         self.addAction("Configure Remotes", function() {
-            mainView.configureRemotesView.show();
+            mainView.configureRemotesView.show(branch, function() {
+                mainView.repoChrome.loadBranches();
+            });
         }, gitpar.viewonly);
     }
 

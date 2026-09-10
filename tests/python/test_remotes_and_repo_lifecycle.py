@@ -58,6 +58,21 @@ def test_edit_remote_requires_name_and_url(backend, git_repo):
     assert backend.edit_remote(str(git_repo), "origin", "upstream", "")["status"] == 400
 
 
+def test_set_branch_remote_configures_the_branch_upstream(backend, git_repo, run_git):
+    run_git(git_repo, "remote", "add", "origin", "https://example.com/origin.git")
+    run_git(git_repo, "remote", "add", "upstream", "https://example.com/upstream.git")
+
+    response = backend.set_branch_remote(str(git_repo), "master", "upstream")
+
+    assert response["status"] == 200
+    assert response["payload"]["branches"][0]["upstream"] == "upstream/master"
+
+
+def test_set_branch_remote_requires_existing_branch_and_remote(backend, git_repo):
+    assert backend.set_branch_remote(str(git_repo), "missing", "origin")["status"] == 400
+    assert backend.set_branch_remote(str(git_repo), "master", "origin")["status"] == 400
+
+
 def test_create_repo(backend, tmp_path):
     response = backend.create_repo(str(tmp_path), "new-repo")
     assert response["status"] == 200
